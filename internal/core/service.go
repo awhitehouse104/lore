@@ -14,6 +14,7 @@ import (
 	"lore/internal/id"
 	"lore/internal/lock"
 	"lore/internal/repository"
+	"lore/internal/search"
 )
 
 type Clock interface {
@@ -32,18 +33,20 @@ type CaptureGit interface {
 }
 
 type Service struct {
-	Repo  *repository.Repository
-	Git   CaptureGit
-	Clock Clock
-	IDs   id.Generator
+	Repo     *repository.Repository
+	Git      CaptureGit
+	Clock    Clock
+	IDs      id.Generator
+	Searcher search.Searcher
 }
 
 func NewService(repo *repository.Repository) *Service {
 	return &Service{
-		Repo:  repo,
-		Git:   gitx.New(),
-		Clock: RealClock{},
-		IDs:   id.CryptoGenerator{},
+		Repo:     repo,
+		Git:      gitx.New(),
+		Clock:    RealClock{},
+		IDs:      id.CryptoGenerator{},
+		Searcher: search.FilesystemLexicalSearcher{},
 	}
 }
 

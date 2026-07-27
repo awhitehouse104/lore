@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-Milestone 2 — capture and Git durability (complete).
+Milestone 3 — read and search (complete).
 
 ## Completed work
 
@@ -17,6 +17,9 @@ Milestone 2 — capture and Git durability (complete).
 - Added bounded UTF-8 input, cryptographic source ULIDs, deterministic source serialization, and exact-body hashing.
 - Added inspectable advisory write locking and atomic no-clobber source publication.
 - Added path-limited capture commits, explicit branch pushes, push policy handling, and partial-failure recovery details.
+- Added a shared managed-document catalog with priority-based reference resolution and ambiguity diagnostics.
+- Added exact, one-indexed line reads with clamping, Lore URIs, and whole-file revision hashes.
+- Added deterministic Unicode-aware lexical search with explainable scoring, bounded snippets, scopes, kind filters, and stable tie-breaking.
 
 ## Commands implemented
 
@@ -24,6 +27,8 @@ Milestone 2 — capture and Git durability (complete).
 - `lore init`
 - `lore lint` (all non-link structural and document-integrity checks; Git/link hardening remains in Milestone 4)
 - `lore capture`
+- `lore read`
+- `lore search`
 
 ## Checks passing
 
@@ -34,7 +39,7 @@ Milestone 2 — capture and Git durability (complete).
 
 ## Known issues
 
-- `search`, `read`, and `recent` are not implemented yet.
+- `recent` is not implemented yet.
 - Lint link validation and optional Git-state warnings remain for Milestone 4.
 
 ## Material deviations from spec
@@ -43,4 +48,4 @@ Milestone 2 — capture and Git durability (complete).
 
 ## Next milestone
 
-Milestone 3 — read and search.
+Milestone 4 — complete lint and recent history.

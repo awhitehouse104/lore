@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"lore/internal/core"
@@ -17,6 +18,7 @@ import (
 	"lore/internal/lint"
 	"lore/internal/output"
 	"lore/internal/repository"
+	"lore/internal/search"
 	"lore/internal/version"
 )
 
@@ -47,6 +49,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runInit(ctx, remaining[1:], global, s)
 	case "capture":
 		return runCapture(ctx, remaining[1:], global, s)
+	case "read":
+		return runRead(ctx, remaining[1:], global, s)
+	case "search":
+		return runSearch(ctx, remaining[1:], global, s)
 	case "lint":
 		return runLint(ctx, remaining[1:], global, s)
 	case "version":
@@ -57,6 +63,208 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	default:
 		return emitError(s, global.json, core.NewError(core.ExitUsage, "unknown_command", fmt.Sprintf("unknown command %q", remaining[0])))
 	}
+}
+
+type searchFlags struct {
+	repo       string
+	json       bool
+	scope      search.Scope
+	kind       string
+	limit      int
+	queryParts []string
+}
+
+func runSearch(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := searchFlags{
+		repo:  global.repo,
+		json:  global.json,
+		scope: search.ScopeAll,
+		limit: search.DefaultLimit,
+	}
+	if help, apiErr := parseSearchFlags(args, &flags, s.out); help {
+		return core.ExitOK
+	} else if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	service := core.NewService(repo)
+	queryText := strings.Join(flags.queryParts, " ")
+	result, err := service.Search(ctx, search.Query{
+		Text: queryText, Scope: flags.scope, Kind: flags.kind, Limit: flags.limit,
+	})
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write search output: %w", err))
+		}
+		return core.ExitOK
+	}
+	for _, item := range result.Results {
+		title := item.Title
+		if title == "" {
+			title = item.ID
+		}
+		fmt.Fprintf(s.out, "%d. %s:%d-%d  [%s] %s  score=%d\n", item.Rank, item.Path, item.LineStart, item.LineEnd, item.Kind, title, item.Score)
+		for _, line := range strings.Split(item.Snippet, "\n") {
+			fmt.Fprintf(s.out, "   %s\n", line)
+		}
+		fmt.Fprintf(s.out, "   %s\n", item.URI)
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(s.err, "warning: %s: %s\n", warning.Path, warning.Message)
+	}
+	return core.ExitOK
+}
+
+func parseSearchFlags(args []string, flags *searchFlags, help io.Writer) (bool, *core.APIError) {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, `Usage: lore [--repo PATH] search QUERY... [options]
+
+Options:
+  --scope all|pages|sources
+  --kind TOKEN
+  --limit N             default 10, maximum 100
+  --json`)
+			return true, nil
+		case arg == "--json":
+			flags.json = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return false, err
+			}
+			flags.repo, index = value, next
+		case arg == "--scope" || strings.HasPrefix(arg, "--scope="):
+			value, next, err := flagValue(args, index, "--scope")
+			if err != nil {
+				return false, err
+			}
+			flags.scope, index = search.Scope(value), next
+		case arg == "--kind" || strings.HasPrefix(arg, "--kind="):
+			value, next, err := flagValue(args, index, "--kind")
+			if err != nil {
+				return false, err
+			}
+			flags.kind, index = value, next
+		case arg == "--limit" || strings.HasPrefix(arg, "--limit="):
+			value, next, err := flagValue(args, index, "--limit")
+			if err != nil {
+				return false, err
+			}
+			limit, parseErr := strconv.Atoi(value)
+			if parseErr != nil || limit < 1 || limit > search.MaximumLimit {
+				return false, core.NewError(core.ExitUsage, "invalid_limit", fmt.Sprintf("--limit must be between 1 and %d", search.MaximumLimit))
+			}
+			flags.limit, index = limit, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return false, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore search: unknown flag %q", arg))
+			}
+			flags.queryParts = append(flags.queryParts, arg)
+		}
+	}
+	if len(flags.queryParts) == 0 {
+		return false, core.NewError(core.ExitUsage, "query_required", "lore search requires a query")
+	}
+	switch flags.scope {
+	case search.ScopeAll, search.ScopePages, search.ScopeSources:
+	default:
+		return false, core.NewError(core.ExitUsage, "invalid_scope", "--scope must be all, pages, or sources")
+	}
+	return false, nil
+}
+
+type readFlags struct {
+	repo      string
+	json      bool
+	reference string
+	lineText  string
+	lineSet   bool
+}
+
+func runRead(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := readFlags{repo: global.repo, json: global.json}
+	if help, apiErr := parseReadFlags(args, &flags, s.out); help {
+		return core.ExitOK
+	} else if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	var requested *core.LineRange
+	if flags.lineSet {
+		value, err := core.ParseLineRange(flags.lineText)
+		if err != nil {
+			return emitError(s, flags.json, core.NewError(core.ExitUsage, "invalid_line_range", err.Error()))
+		}
+		requested = &value
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	service := core.NewService(repo)
+	result, err := service.Read(ctx, flags.reference, requested)
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write read output: %w", err))
+		}
+		return core.ExitOK
+	}
+	fmt.Fprintf(s.err, "%s  %s  lines %d-%d  %s\n", result.Path, result.ID, result.LineStart, result.LineEnd, result.Revision)
+	if _, err := io.WriteString(s.out, result.Content); err != nil {
+		return emitOperationError(s, false, fmt.Errorf("write read output: %w", err))
+	}
+	return core.ExitOK
+}
+
+func parseReadFlags(args []string, flags *readFlags, help io.Writer) (bool, *core.APIError) {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, "Usage: lore [--repo PATH] read REFERENCE [--lines START:END] [--json]")
+			return true, nil
+		case arg == "--json":
+			flags.json = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return false, err
+			}
+			flags.repo, index = value, next
+		case arg == "--lines" || strings.HasPrefix(arg, "--lines="):
+			value, next, err := flagValue(args, index, "--lines")
+			if err != nil {
+				return false, err
+			}
+			if flags.lineSet {
+				return false, core.NewError(core.ExitUsage, "duplicate_flag", "--lines may be supplied only once")
+			}
+			flags.lineText, flags.lineSet, index = value, true, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return false, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore read: unknown flag %q", arg))
+			}
+			if flags.reference != "" {
+				return false, core.NewError(core.ExitUsage, "unexpected_argument", "lore read accepts exactly one reference")
+			}
+			flags.reference = arg
+		}
+	}
+	if flags.reference == "" {
+		return false, core.NewError(core.ExitUsage, "reference_required", "lore read requires a reference")
+	}
+	return false, nil
 }
 
 type captureFlags struct {

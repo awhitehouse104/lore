@@ -90,3 +90,69 @@ func TestCaptureJSONFromStdin(t *testing.T) {
 		t.Fatalf("capture did not preserve body: result=%+v file=%q", result, data)
 	}
 }
+
+func TestSearchAndReadJSON(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	page := []byte(`---
+id: page_project_foo
+title: Project Foo
+kind: project
+aliases: [foo]
+created: "2026-07-22"
+updated: "2026-07-22"
+status: active
+sensitivity: normal
+tags: [deployment]
+---
+# Summary
+
+Project Foo should remain deployable without Kubernetes.
+`)
+	if err := os.WriteFile(filepath.Join(root, "pages", "project-foo.md"), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{"search", "deploy", "Foo", "Kubernetes", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("search returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var searched struct {
+		SchemaVersion int `json:"schema_version"`
+		Results       []struct {
+			Path      string `json:"path"`
+			LineStart int    `json:"line_start"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &searched); err != nil {
+		t.Fatal(err)
+	}
+	if searched.SchemaVersion != 1 || len(searched.Results) != 1 || searched.Results[0].Path != "pages/project-foo.md" {
+		t.Fatalf("search result: %+v", searched)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"--repo", root, "read", "foo", "--lines", "12:99", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("read returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var read struct {
+		SchemaVersion int    `json:"schema_version"`
+		Path          string `json:"path"`
+		Content       string `json:"content"`
+		LineStart     int    `json:"line_start"`
+		LineEnd       int    `json:"line_end"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &read); err != nil {
+		t.Fatal(err)
+	}
+	if read.SchemaVersion != 1 || read.Path != "pages/project-foo.md" || read.LineStart != 12 || read.LineEnd != 14 || read.Content != "# Summary\n\nProject Foo should remain deployable without Kubernetes.\n" {
+		t.Fatalf("read result: %+v", read)
+	}
+}

@@ -340,6 +340,87 @@ func TestCaptureRealPushFailureKeepsLocalCommit(t *testing.T) {
 	}
 }
 
+func TestReadResolutionAndAmbiguity(t *testing.T) {
+	repo := newServiceRepository(t)
+	firstPath := filepath.Join(repo.Root, "pages", "project-foo.md")
+	first := []byte(`---
+id: page_project_foo
+title: Project Foo
+kind: project
+aliases:
+  - foo
+  - shared
+created: "2026-07-22"
+updated: "2026-07-22"
+status: active
+sensitivity: normal
+---
+# Summary
+
+Line two.
+`)
+	secondPath := filepath.Join(repo.Root, "pages", "other.md")
+	second := []byte(`---
+id: page_other
+title: Other
+kind: topic
+aliases:
+  - shared
+created: "2026-07-22"
+updated: "2026-07-22"
+status: active
+sensitivity: normal
+---
+Other body.
+`)
+	if err := os.WriteFile(firstPath, first, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, second, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service := core.NewService(repo)
+	references := []string{
+		"pages/project-foo.md",
+		"page_project_foo",
+		"project-foo",
+		"PROJECT FOO",
+		"FOO",
+	}
+	for _, reference := range references {
+		result, err := service.Read(context.Background(), reference, nil)
+		if err != nil {
+			t.Errorf("Read(%q): %v", reference, err)
+			continue
+		}
+		if result.Path != "pages/project-foo.md" || result.Content != string(first) {
+			t.Errorf("Read(%q) = %+v", reference, result)
+		}
+	}
+	requested := &core.LineRange{Start: 13, End: 200}
+	result, err := service.Read(context.Background(), "page_project_foo", requested)
+	if err != nil {
+		t.Fatalf("Read range: %v", err)
+	}
+	if result.LineStart != 13 || result.LineEnd != 15 || result.Content != "# Summary\n\nLine two.\n" {
+		t.Fatalf("range result: %+v", result)
+	}
+	_, err = service.Read(context.Background(), "shared", nil)
+	var ambiguous *core.APIError
+	if !errors.As(err, &ambiguous) || ambiguous.Code != "ambiguous_reference" || ambiguous.ExitCode != core.ExitConflict {
+		t.Fatalf("ambiguous read error = %T %v", err, err)
+	}
+	candidates, ok := ambiguous.Details["candidates"].([]string)
+	if !ok || len(candidates) != 2 || candidates[0] != "pages/other.md" || candidates[1] != "pages/project-foo.md" {
+		t.Fatalf("ambiguity candidates = %#v", ambiguous.Details["candidates"])
+	}
+	_, err = service.Read(context.Background(), "../outside", nil)
+	var unsafe *core.APIError
+	if !errors.As(err, &unsafe) || unsafe.Code != "unsafe_reference" {
+		t.Fatalf("unsafe read error = %T %v", err, err)
+	}
+}
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
