@@ -421,6 +421,64 @@ Other body.
 	}
 }
 
+func TestRecentHistoryContentFilterAndAll(t *testing.T) {
+	requireGit(t)
+	root := initializeGitRepository(t)
+	readmePath := filepath.Join(root, "README.md")
+	readme, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(readmePath, append(readme, []byte("\nConfig-only history.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "--", "README.md")
+	runGit(t, root, "commit", "-m", "test: config only")
+
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	captureService := testService(repo, gitx.New())
+	captured, err := captureService.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("history evidence"),
+	})
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+
+	service := core.NewService(repo)
+	content, err := service.Recent(context.Background(), core.RecentOptions{Limit: 20})
+	if err != nil {
+		t.Fatalf("Recent content: %v", err)
+	}
+	for _, commit := range content.Commits {
+		if commit.Subject == "test: config only" {
+			t.Fatalf("content history included config-only commit: %+v", content.Commits)
+		}
+		if len(commit.Hash) != 40 || commit.CommittedAt.IsZero() {
+			t.Fatalf("invalid commit fields: %+v", commit)
+		}
+	}
+	if len(content.Commits) == 0 || content.Commits[0].Hash != captured.Commit {
+		t.Fatalf("content history does not begin with capture: %+v", content.Commits)
+	}
+
+	all, err := service.Recent(context.Background(), core.RecentOptions{Limit: 20, All: true})
+	if err != nil {
+		t.Fatalf("Recent all: %v", err)
+	}
+	foundConfig := false
+	for _, commit := range all.Commits {
+		if commit.Subject == "test: config only" {
+			foundConfig = true
+		}
+	}
+	if !foundConfig {
+		t.Fatalf("all history excluded config-only commit: %+v", all.Commits)
+	}
+}
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

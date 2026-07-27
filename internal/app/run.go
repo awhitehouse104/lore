@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"lore/internal/core"
 	"lore/internal/gitx"
@@ -53,6 +54,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runRead(ctx, remaining[1:], global, s)
 	case "search":
 		return runSearch(ctx, remaining[1:], global, s)
+	case "recent":
+		return runRecent(ctx, remaining[1:], global, s)
 	case "lint":
 		return runLint(ctx, remaining[1:], global, s)
 	case "version":
@@ -63,6 +66,83 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	default:
 		return emitError(s, global.json, core.NewError(core.ExitUsage, "unknown_command", fmt.Sprintf("unknown command %q", remaining[0])))
 	}
+}
+
+type recentFlags struct {
+	repo  string
+	json  bool
+	limit int
+	all   bool
+}
+
+func runRecent(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := recentFlags{
+		repo:  global.repo,
+		json:  global.json,
+		limit: core.DefaultRecentLimit,
+	}
+	if help, apiErr := parseRecentFlags(args, &flags, s.out); help {
+		return core.ExitOK
+	} else if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	service := core.NewService(repo)
+	result, err := service.Recent(ctx, core.RecentOptions{Limit: flags.limit, All: flags.all})
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write recent output: %w", err))
+		}
+		return core.ExitOK
+	}
+	for _, commit := range result.Commits {
+		fmt.Fprintf(s.out, "%s  %s  %s  %s <%s>\n",
+			shortHash(commit.Hash), commit.CommittedAt.Format(time.RFC3339), commit.Subject, commit.AuthorName, commit.AuthorEmail)
+	}
+	return core.ExitOK
+}
+
+func parseRecentFlags(args []string, flags *recentFlags, help io.Writer) (bool, *core.APIError) {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, "Usage: lore [--repo PATH] recent [--limit N] [--all] [--json]")
+			return true, nil
+		case arg == "--json":
+			flags.json = true
+		case arg == "--all":
+			flags.all = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return false, err
+			}
+			flags.repo, index = value, next
+		case arg == "--limit" || strings.HasPrefix(arg, "--limit="):
+			value, next, err := flagValue(args, index, "--limit")
+			if err != nil {
+				return false, err
+			}
+			limit, parseErr := strconv.Atoi(value)
+			if parseErr != nil || limit < 1 || limit > core.MaximumRecentLimit {
+				return false, core.NewError(core.ExitUsage, "invalid_limit", fmt.Sprintf("--limit must be between 1 and %d", core.MaximumRecentLimit))
+			}
+			flags.limit, index = limit, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return false, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore recent: unknown flag %q", arg))
+			}
+			return false, core.NewError(core.ExitUsage, "unexpected_argument", "lore recent does not accept positional arguments")
+		}
+	}
+	return false, nil
 }
 
 type searchFlags struct {
@@ -622,11 +702,11 @@ func runLint(ctx context.Context, args []string, global globalOptions, s streams
 	if fs.NArg() != 0 {
 		return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore lint does not accept positional arguments"))
 	}
-	repo, apiErr := openRepository(repoPath)
+	root, apiErr := resolveRepositoryRoot(repoPath)
 	if apiErr != nil {
 		return emitError(s, jsonOutput, apiErr)
 	}
-	result, err := lint.Run(ctx, repo, gitx.New())
+	result, err := lint.RunRoot(ctx, root, gitx.New())
 	if err != nil {
 		return emitOperationError(s, jsonOutput, err)
 	}
@@ -680,16 +760,8 @@ func runVersion(args []string, global globalOptions, s streams) int {
 }
 
 func openRepository(explicit string) (*repository.Repository, *core.APIError) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		apiErr := core.NewError(core.ExitRuntime, "filesystem_error", "could not determine the current directory")
-		apiErr.Cause = err
-		return nil, apiErr
-	}
-	root, err := repository.Resolve(explicit, cwd, os.Getenv)
-	if err != nil {
-		apiErr := core.NewError(core.ExitUsage, "repository_not_found", err.Error())
-		apiErr.Cause = err
+	root, apiErr := resolveRepositoryRoot(explicit)
+	if apiErr != nil {
 		return nil, apiErr
 	}
 	repo, err := repository.Open(root)
@@ -699,6 +771,22 @@ func openRepository(explicit string) (*repository.Repository, *core.APIError) {
 		return nil, apiErr
 	}
 	return repo, nil
+}
+
+func resolveRepositoryRoot(explicit string) (string, *core.APIError) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		apiErr := core.NewError(core.ExitRuntime, "filesystem_error", "could not determine the current directory")
+		apiErr.Cause = err
+		return "", apiErr
+	}
+	root, err := repository.Resolve(explicit, cwd, os.Getenv)
+	if err != nil {
+		apiErr := core.NewError(core.ExitUsage, "repository_not_found", err.Error())
+		apiErr.Cause = err
+		return "", apiErr
+	}
+	return root, nil
 }
 
 func emitOperationError(s streams, jsonOutput bool, err error) int {

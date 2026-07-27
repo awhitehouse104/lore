@@ -184,15 +184,9 @@ func (r *Repository) Relative(path string) (string, error) {
 // SafeContentPath resolves a repository-relative path under pages/ or sources/
 // and rejects traversal, absolute paths, NUL bytes, and symlink traversal.
 func (r *Repository) SafeContentPath(relative string) (string, error) {
-	if strings.ContainsRune(relative, '\x00') {
-		return "", fmt.Errorf("path contains a NUL byte")
-	}
-	if relative == "" || filepath.IsAbs(relative) {
-		return "", fmt.Errorf("path must be repository-relative")
-	}
-	clean := filepath.Clean(filepath.FromSlash(relative))
-	if clean == "." || escapes(clean) {
-		return "", fmt.Errorf("path escapes repository")
+	target, clean, err := r.safeRepositoryPath(relative)
+	if err != nil {
+		return "", err
 	}
 	first := clean
 	if index := strings.IndexRune(clean, filepath.Separator); index >= 0 {
@@ -201,16 +195,38 @@ func (r *Repository) SafeContentPath(relative string) (string, error) {
 	if first != "pages" && first != "sources" {
 		return "", fmt.Errorf("path must be under pages/ or sources/")
 	}
+	return target, nil
+}
+
+// SafeRepositoryPath resolves a repository-relative path and rejects escape
+// and symlink traversal. It is used for document-derived relative links, which
+// may validly target assets or other repository files.
+func (r *Repository) SafeRepositoryPath(relative string) (string, error) {
+	target, _, err := r.safeRepositoryPath(relative)
+	return target, err
+}
+
+func (r *Repository) safeRepositoryPath(relative string) (string, string, error) {
+	if strings.ContainsRune(relative, '\x00') {
+		return "", "", fmt.Errorf("path contains a NUL byte")
+	}
+	if relative == "" || filepath.IsAbs(relative) {
+		return "", "", fmt.Errorf("path must be repository-relative")
+	}
+	clean := filepath.Clean(filepath.FromSlash(relative))
+	if clean == "." || escapes(clean) {
+		return "", "", fmt.Errorf("path escapes repository")
+	}
 
 	target := filepath.Join(r.Root, clean)
 	relativeCheck, err := filepath.Rel(r.Root, target)
 	if err != nil || escapes(relativeCheck) {
-		return "", fmt.Errorf("path escapes repository")
+		return "", "", fmt.Errorf("path escapes repository")
 	}
 	if err := rejectSymlinkComponents(r.Root, clean); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return target, nil
+	return target, clean, nil
 }
 
 func (r *Repository) ManagedMarkdown() (paths []string, issues []WalkIssue, err error) {

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVersionJSON(t *testing.T) {
@@ -154,5 +156,93 @@ Project Foo should remain deployable without Kubernetes.
 	}
 	if read.SchemaVersion != 1 || read.Path != "pages/project-foo.md" || read.LineStart != 12 || read.LineEnd != 14 || read.Content != "# Summary\n\nProject Foo should remain deployable without Kubernetes.\n" {
 		t.Fatalf("read result: %+v", read)
+	}
+}
+
+func TestRecentJSON(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(
+		context.Background(),
+		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "test"},
+		strings.NewReader("history source"),
+		&stdout,
+		&stderr,
+	); code != 0 {
+		t.Fatalf("capture returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(context.Background(), []string{"recent", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("recent returned %d: %s", code, stderr.String())
+	}
+	var result struct {
+		SchemaVersion int `json:"schema_version"`
+		Commits       []struct {
+			Hash        string `json:"hash"`
+			CommittedAt string `json:"committed_at"`
+			Subject     string `json:"subject"`
+		} `json:"commits"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.SchemaVersion != 1 || len(result.Commits) < 1 || len(result.Commits[0].Hash) != 40 || !strings.HasPrefix(result.Commits[0].Subject, "capture: user_statement ") {
+		t.Fatalf("recent result: %+v", result)
+	}
+	if _, err := time.Parse(time.RFC3339, result.Commits[0].CommittedAt); err != nil {
+		t.Fatalf("recent timestamp %q: %v", result.Commits[0].CommittedAt, err)
+	}
+}
+
+func TestLintReportsMissingAndInvalidConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   []byte
+		wantCode string
+	}{
+		{name: "missing", wantCode: "missing_config"},
+		{name: "invalid", config: []byte("version: 1\nunknown: true\n"), wantCode: "invalid_config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tt.config != nil {
+				if err := os.WriteFile(filepath.Join(root, "lore.yaml"), tt.config, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var stdout, stderr bytes.Buffer
+			code := Run(context.Background(), []string{"--repo", root, "lint", "--json"}, strings.NewReader(""), &stdout, &stderr)
+			if code != 1 {
+				t.Fatalf("lint returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+			}
+			var result struct {
+				SchemaVersion int `json:"schema_version"`
+				Findings      []struct {
+					Code string `json:"code"`
+				} `json:"findings"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.SchemaVersion != 1 || len(result.Findings) != 1 || result.Findings[0].Code != tt.wantCode {
+				t.Fatalf("lint result: %+v", result)
+			}
+		})
 	}
 }

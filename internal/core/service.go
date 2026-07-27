@@ -32,12 +32,18 @@ type CaptureGit interface {
 	PushHead(context.Context, string, string) error
 }
 
+type HistoryGit interface {
+	IsRepository(context.Context, string) (bool, error)
+	Recent(context.Context, string, int, bool) ([]gitx.Commit, error)
+}
+
 type Service struct {
 	Repo     *repository.Repository
 	Git      CaptureGit
 	Clock    Clock
 	IDs      id.Generator
 	Searcher search.Searcher
+	History  HistoryGit
 }
 
 func NewService(repo *repository.Repository) *Service {
@@ -47,6 +53,7 @@ func NewService(repo *repository.Repository) *Service {
 		Clock:    RealClock{},
 		IDs:      id.CryptoGenerator{},
 		Searcher: search.FilesystemLexicalSearcher{},
+		History:  gitx.New(),
 	}
 }
 

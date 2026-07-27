@@ -219,8 +219,10 @@ func ValidateSource(source *Source) []error {
 	if !ValidToken(source.Kind) {
 		errs = append(errs, fmt.Errorf("kind must match %s", tokenPattern))
 	}
-	if _, err := time.Parse(time.RFC3339, string(source.CapturedAt)); err != nil {
+	if captured, err := time.Parse(time.RFC3339, string(source.CapturedAt)); err != nil {
 		errs = append(errs, fmt.Errorf("captured_at must be RFC 3339"))
+	} else if _, offset := captured.Zone(); offset != 0 {
+		errs = append(errs, fmt.Errorf("captured_at must use UTC"))
 	}
 	if !ValidToken(source.Origin) {
 		errs = append(errs, fmt.Errorf("origin must match %s", tokenPattern))

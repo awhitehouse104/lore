@@ -1,8 +1,10 @@
 package lint
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,6 +43,35 @@ type Result struct {
 }
 
 var sourceFilenamePattern = regexp.MustCompile(`^(src_[0-9A-Z]{26})-([a-z][a-z0-9_-]*)\.md$`)
+
+func RunRoot(ctx context.Context, root string, git gitx.Client) (Result, error) {
+	repo, err := repository.Open(root)
+	if err == nil {
+		return Run(ctx, repo, git)
+	}
+	configPath := filepath.Join(root, "lore.yaml")
+	_, statErr := os.Stat(configPath)
+	code := "invalid_config"
+	message := err.Error()
+	if os.IsNotExist(statErr) {
+		code = "missing_config"
+		message = "lore.yaml is missing"
+	} else if statErr != nil {
+		return Result{}, fmt.Errorf("inspect lore.yaml: %w", statErr)
+	}
+	result := Result{
+		SchemaVersion: 1,
+		Findings: []Finding{{
+			Severity: SeverityError,
+			Code:     code,
+			Path:     "lore.yaml",
+			Line:     1,
+			Message:  message,
+		}},
+	}
+	finish(&result)
+	return result, nil
+}
 
 func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Result, error) {
 	result := Result{SchemaVersion: 1, Valid: true, Findings: []Finding{}}
@@ -167,6 +198,33 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 
 	checkDuplicateIDs(&result, documents)
 	checkAliasCollisions(&result, documents)
+	checkLinks(&result, repo, documents)
+	if isGit {
+		changes, changesErr := git.SourceChanges(ctx, repo.Root)
+		if changesErr != nil {
+			return Result{}, changesErr
+		}
+		for _, change := range changes {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "uncommitted_source_change",
+				Path:     change.Path,
+				Message:  fmt.Sprintf("source has uncommitted Git status %q", change.Status),
+			})
+		}
+		_, detached, branchErr := git.BranchState(ctx, repo.Root)
+		if branchErr != nil {
+			return Result{}, branchErr
+		}
+		if detached {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "detached_head",
+				Path:     ".git/HEAD",
+				Message:  "Git HEAD is detached",
+			})
+		}
+	}
 	finish(&result)
 	return result, nil
 }
@@ -184,7 +242,7 @@ func checkSource(result *Result, document *docs.Document) {
 	}
 
 	parts := strings.Split(filepath.ToSlash(document.Path), "/")
-	if len(parts) < 4 {
+	if len(parts) != 4 {
 		result.Findings = append(result.Findings, Finding{
 			Severity: SeverityError,
 			Code:     "invalid_source_path",
@@ -286,6 +344,147 @@ func checkAliasCollisions(result *Result, documents []*docs.Document) {
 			})
 		}
 	}
+}
+
+func checkLinks(result *Result, repo *repository.Repository, documents []*docs.Document) {
+	for _, document := range documents {
+		bodyStart := bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1
+		for index, line := range strings.Split(string(document.Body), "\n") {
+			for _, destination := range markdownDestinations(line) {
+				checkLink(result, repo, document.Path, bodyStart+index, destination)
+			}
+		}
+	}
+}
+
+func checkLink(result *Result, repo *repository.Repository, documentPath string, line int, destination string) {
+	if destination == "" || strings.HasPrefix(destination, "#") {
+		return
+	}
+	parsed, err := url.Parse(destination)
+	if err != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "invalid_link",
+			Path:     documentPath,
+			Line:     line,
+			Message:  fmt.Sprintf("invalid Markdown link %q", destination),
+		})
+		return
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		return
+	}
+	targetPath, err := url.PathUnescape(parsed.Path)
+	if err != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "invalid_link",
+			Path:     documentPath,
+			Line:     line,
+			Message:  fmt.Sprintf("invalid escaped Markdown link %q", destination),
+		})
+		return
+	}
+	if targetPath == "" {
+		return
+	}
+	if filepath.IsAbs(filepath.FromSlash(targetPath)) {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "link_escapes_repository",
+			Path:     documentPath,
+			Line:     line,
+			Message:  fmt.Sprintf("relative Markdown link %q is absolute", destination),
+		})
+		return
+	}
+	relative := filepath.Clean(filepath.Join(filepath.Dir(filepath.FromSlash(documentPath)), filepath.FromSlash(targetPath)))
+	absolute, safeErr := repo.SafeRepositoryPath(relative)
+	if safeErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "link_escapes_repository",
+			Path:     documentPath,
+			Line:     line,
+			Message:  fmt.Sprintf("Markdown link %q is unsafe: %v", destination, safeErr),
+		})
+		return
+	}
+	if _, statErr := os.Stat(absolute); statErr != nil {
+		if os.IsNotExist(statErr) {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "broken_link",
+				Path:     documentPath,
+				Line:     line,
+				Message:  fmt.Sprintf("Markdown link target %q does not exist", destination),
+			})
+			return
+		}
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "link_target_error",
+			Path:     documentPath,
+			Line:     line,
+			Message:  fmt.Sprintf("could not inspect Markdown link target %q: %v", destination, statErr),
+		})
+	}
+}
+
+func markdownDestinations(line string) []string {
+	var destinations []string
+	for searchFrom := 0; searchFrom < len(line); {
+		relative := strings.Index(line[searchFrom:], "](")
+		if relative < 0 {
+			break
+		}
+		open := searchFrom + relative + 1
+		start := open + 1
+		depth := 1
+		escaped := false
+		closeIndex := -1
+		for index := start; index < len(line); index++ {
+			value := line[index]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if value == '\\' {
+				escaped = true
+				continue
+			}
+			switch value {
+			case '(':
+				depth++
+			case ')':
+				depth--
+				if depth == 0 {
+					closeIndex = index
+				}
+			}
+			if closeIndex >= 0 {
+				break
+			}
+		}
+		if closeIndex < 0 {
+			break
+		}
+		raw := strings.TrimSpace(line[start:closeIndex])
+		destination := raw
+		if strings.HasPrefix(raw, "<") {
+			if end := strings.Index(raw, ">"); end >= 0 {
+				destination = raw[1:end]
+			}
+		} else {
+			if end := strings.IndexAny(raw, " \t"); end >= 0 {
+				destination = raw[:end]
+			}
+		}
+		destinations = append(destinations, destination)
+		searchFrom = closeIndex + 1
+	}
+	return destinations
 }
 
 func finish(result *Result) {

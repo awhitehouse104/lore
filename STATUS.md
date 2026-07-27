@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-Milestone 3 — read and search (complete).
+Milestone 4 — lint and recent history (complete).
 
 ## Completed work
 
@@ -20,6 +20,8 @@ Milestone 3 — read and search (complete).
 - Added a shared managed-document catalog with priority-based reference resolution and ambiguity diagnostics.
 - Added exact, one-indexed line reads with clamping, Lore URIs, and whole-file revision hashes.
 - Added deterministic Unicode-aware lexical search with explainable scoring, bounded snippets, scopes, kind filters, and stable tie-breaking.
+- Completed lint with configuration, relative-link, repository-escape, Git dirty-source, and detached-HEAD checks.
+- Added deterministic NUL-delimited Git history parsing with content-only and all-commit modes.
 
 ## Commands implemented
 
@@ -29,6 +31,7 @@ Milestone 3 — read and search (complete).
 - `lore capture`
 - `lore read`
 - `lore search`
+- `lore recent`
 
 ## Checks passing
 
@@ -39,8 +42,7 @@ Milestone 3 — read and search (complete).
 
 ## Known issues
 
-- `recent` is not implemented yet.
-- Lint link validation and optional Git-state warnings remain for Milestone 4.
+- User documentation and release hardening remain for Milestone 5.
 
 ## Material deviations from spec
 
@@ -48,4 +50,4 @@ Milestone 3 — read and search (complete).
 
 ## Next milestone
 
-Milestone 4 — complete lint and recent history.
+Milestone 5 — hardening and v0.1 release readiness.

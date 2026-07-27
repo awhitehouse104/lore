@@ -82,6 +82,7 @@ func TestValidateRejectsInvalidMetadata(t *testing.T) {
 		{"id", func(s *Source) { s.ID = "src_bad" }},
 		{"kind", func(s *Source) { s.Kind = "Bad Kind" }},
 		{"timestamp", func(s *Source) { s.CapturedAt = "yesterday" }},
+		{"timestamp_not_utc", func(s *Source) { s.CapturedAt = "2026-07-22T12:00:00-04:00" }},
 		{"origin", func(s *Source) { s.Origin = "" }},
 		{"hash", func(s *Source) { s.RawSHA256 = "sha256:nope" }},
 		{"sensitivity", func(s *Source) { s.Sensitivity = "secret" }},
