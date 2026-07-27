@@ -117,10 +117,24 @@ func TestValidateSourceIDCanonical(t *testing.T) {
 	}
 }
 
+func TestValidToken(t *testing.T) {
+	for _, value := range []string{"project", "user_statement", "local-note2"} {
+		if !ValidToken(value) {
+			t.Errorf("ValidToken(%q) = false", value)
+		}
+	}
+	for _, value := range []string{"", "Project", "2project", "has space", "café"} {
+		if ValidToken(value) {
+			t.Errorf("ValidToken(%q) = true", value)
+		}
+	}
+}
+
 func TestParseRequiresFrontmatter(t *testing.T) {
 	for _, data := range [][]byte{
 		[]byte("hello"),
 		[]byte("---\nid: x\n"),
+		[]byte("---\nid: x\n---"),
 		[]byte(" ---\nid: x\n---\n"),
 	} {
 		if _, err := Parse("pages/test.md", data); err == nil {

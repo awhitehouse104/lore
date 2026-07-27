@@ -71,14 +71,14 @@ func (c Client) Init(ctx context.Context, dir, branch string) error {
 func (c Client) IdentityConfigured(ctx context.Context, dir string) (bool, error) {
 	name, nameErr := c.run(ctx, dir, "config", "--get", "user.name")
 	email, emailErr := c.run(ctx, dir, "config", "--get", "user.email")
-	if nameErr != nil || emailErr != nil {
-		if configMissing(nameErr) || configMissing(emailErr) {
-			return false, nil
-		}
-		if nameErr != nil {
-			return false, nameErr
-		}
+	if nameErr != nil && !configMissing(nameErr) {
+		return false, nameErr
+	}
+	if emailErr != nil && !configMissing(emailErr) {
 		return false, emailErr
+	}
+	if nameErr != nil || emailErr != nil {
+		return false, nil
 	}
 	return strings.TrimSpace(string(name)) != "" && strings.TrimSpace(string(email)) != "", nil
 }

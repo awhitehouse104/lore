@@ -2,7 +2,7 @@
 
 ## Current milestone
 
-Milestone 4 — lint and recent history (complete).
+Milestone 5 — hardening and v0.1 release readiness (complete).
 
 ## Completed work
 
@@ -22,12 +22,14 @@ Milestone 4 — lint and recent history (complete).
 - Added deterministic Unicode-aware lexical search with explainable scoring, bounded snippets, scopes, kind filters, and stable tie-breaking.
 - Completed lint with configuration, relative-link, repository-escape, Git dirty-source, and detached-HEAD checks.
 - Added deterministic NUL-delimited Git history parsing with content-only and all-commit modes.
+- Hardened JSON error handling, option/path safety, cancellation, deterministic output ordering, and runtime symlink checks.
+- Completed the README, CLI/data-model/security guides, build metadata injection, and v0.1.0 release notes.
 
 ## Commands implemented
 
 - `lore version`
 - `lore init`
-- `lore lint` (all non-link structural and document-integrity checks; Git/link hardening remains in Milestone 4)
+- `lore lint`
 - `lore capture`
 - `lore read`
 - `lore search`
@@ -39,10 +41,13 @@ Milestone 4 — lint and recent history (complete).
 - `go vet ./...`
 - `go build ./cmd/lore`
 - `go test -race ./...`
+- `make check`
+- `make test-race`
+- End-to-end CLI session covering init, capture, search, read, lint, recent, and version
 
 ## Known issues
 
-- User documentation and release hardening remain for Milestone 5.
+- No known v0.1 correctness issues. Deliberate product limitations are documented in `README.md` and the release notes.
 
 ## Material deviations from spec
 
@@ -50,4 +55,4 @@ Milestone 4 — lint and recent history (complete).
 
 ## Next milestone
 
-Milestone 5 — hardening and v0.1 release readiness.
+The v0.1 definition of done is complete. Planned v0.2 safe synthesized-write transactions have not been started.

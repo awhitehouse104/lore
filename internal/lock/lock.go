@@ -40,12 +40,27 @@ type Handle struct {
 
 func Acquire(repoRoot, command string, now time.Time) (*Handle, error) {
 	runtimeDir := filepath.Join(repoRoot, ".lore")
-	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create Lore runtime directory: %w", err)
+	info, err := os.Lstat(runtimeDir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect Lore runtime directory: %w", err)
+		}
+		if err := os.Mkdir(runtimeDir, 0o700); err != nil {
+			return nil, fmt.Errorf("create Lore runtime directory: %w", err)
+		}
+	} else if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("Lore runtime path must be a real directory, not a symlink or non-directory")
 	}
 	lockDir := filepath.Join(runtimeDir, directoryName)
 	if err := os.Mkdir(lockDir, 0o700); err != nil {
 		if errors.Is(err, os.ErrExist) {
+			lockInfo, statErr := os.Lstat(lockDir)
+			if statErr != nil {
+				return nil, fmt.Errorf("inspect repository write lock: %w", statErr)
+			}
+			if lockInfo.Mode()&os.ModeSymlink != 0 || !lockInfo.IsDir() {
+				return nil, fmt.Errorf("repository write lock path must be a real directory")
+			}
 			metadata, readErr := readMetadata(lockDir)
 			return nil, &ContentionError{
 				Path:     lockDir,

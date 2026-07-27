@@ -52,6 +52,8 @@ func TestParseValidation(t *testing.T) {
 		"version: 1\ncapture:\n  max_bytes: 0\n",
 		"version: 1\ncapture:\n  max_bytes: 67108865\n",
 		"version: 1\ngit:\n  remote: \"\"\n",
+		"version: 1\ngit:\n  remote: \"--upload-pack=bad\"\n",
+		"version: 1\ngit:\n  remote: \"bad remote\"\n",
 	}
 	for _, data := range tests {
 		if _, err := Parse([]byte(data)); err == nil {

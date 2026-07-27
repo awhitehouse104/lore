@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"unicode"
 
 	"go.yaml.in/yaml/v4"
 )
@@ -104,6 +106,10 @@ func (c Config) Validate() error {
 	}
 	if c.Git.Remote == "" {
 		return fmt.Errorf("git.remote must not be empty")
+	}
+	if strings.HasPrefix(c.Git.Remote, "-") || strings.ContainsRune(c.Git.Remote, '\x00') ||
+		strings.IndexFunc(c.Git.Remote, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return fmt.Errorf("git.remote must be a Git remote name without leading dashes, whitespace, NUL bytes, or control characters")
 	}
 	if c.Capture.MaxBytes <= 0 {
 		return fmt.Errorf("capture.max_bytes must be positive")

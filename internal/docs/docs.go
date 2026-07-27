@@ -165,6 +165,9 @@ func splitFrontmatter(data []byte) (frontmatter, body []byte, bodyOffset int, er
 			break
 		}
 		if bytes.Equal(line, []byte("---")) {
+			if after == 0 || data[after-1] != '\n' {
+				return nil, nil, 0, fmt.Errorf("closing YAML frontmatter delimiter must end with a newline")
+			}
 			return data[next:pos], data[after:], after, nil
 		}
 		if after <= pos {

@@ -25,6 +25,9 @@ func (e *APIError) Error() string {
 	if e.Cause == nil {
 		return e.Message
 	}
+	if e.Cause.Error() == e.Message {
+		return e.Message
+	}
 	return fmt.Sprintf("%s: %v", e.Message, e.Cause)
 }
 

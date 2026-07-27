@@ -161,6 +161,22 @@ func TestCaptureCommitFailurePreservesSource(t *testing.T) {
 	}
 }
 
+func TestCaptureGeneratedPathConflict(t *testing.T) {
+	repo := newServiceRepository(t)
+	service := testService(repo, &fakeGit{})
+	options := core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("same generated path"), NoCommit: true,
+	}
+	if _, err := service.Capture(context.Background(), options); err != nil {
+		t.Fatalf("first Capture: %v", err)
+	}
+	_, err := service.Capture(context.Background(), options)
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "capture_conflict" || apiErr.ExitCode != core.ExitConflict {
+		t.Fatalf("second Capture error = %T %v", err, err)
+	}
+}
+
 func TestCapturePushFailurePolicy(t *testing.T) {
 	for _, requirePush := range []bool{false, true} {
 		t.Run(map[bool]string{false: "warning", true: "required"}[requirePush], func(t *testing.T) {
@@ -418,6 +434,32 @@ Other body.
 	var unsafe *core.APIError
 	if !errors.As(err, &unsafe) || unsafe.Code != "unsafe_reference" {
 		t.Fatalf("unsafe read error = %T %v", err, err)
+	}
+}
+
+func TestReadDoesNotSkipDocumentAboveSearchSizeLimit(t *testing.T) {
+	repo := newServiceRepository(t)
+	repo.Config.Capture.MaxBytes = 1
+	page := []byte(`---
+id: page_large
+title: Large
+kind: topic
+created: "2026-07-22"
+updated: "2026-07-22"
+status: active
+sensitivity: normal
+---
+Readable.
+`)
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "large.md"), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := core.NewService(repo).Read(context.Background(), "page_large", nil)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if result.Content != string(page) {
+		t.Fatalf("content = %q, want %q", result.Content, page)
 	}
 }
 

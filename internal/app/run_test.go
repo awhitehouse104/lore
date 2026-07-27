@@ -246,3 +246,50 @@ func TestLintReportsMissingAndInvalidConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
+	tests := [][]string{
+		{"version", "--bad", "--json"},
+		{"lint", "--bad", "--json"},
+		{"capture", "--bad", "--json"},
+		{"search", "--bad", "--json"},
+		{"read", "--bad", "--json"},
+		{"recent", "--bad", "--json"},
+		{"init", "--bad", "--json"},
+	}
+	for _, args := range tests {
+		t.Run(args[0], func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(context.Background(), args, strings.NewReader(""), &stdout, &stderr)
+			if code != 2 {
+				t.Fatalf("Run(%v) returned %d, stdout=%q stderr=%q", args, code, stdout.String(), stderr.String())
+			}
+			var envelope struct {
+				SchemaVersion int `json:"schema_version"`
+				Error         struct {
+					Code    string         `json:"code"`
+					Message string         `json:"message"`
+					Details map[string]any `json:"details"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode error envelope %q: %v", stdout.String(), err)
+			}
+			if envelope.SchemaVersion != 1 || envelope.Error.Code != "unknown_flag" || envelope.Error.Message == "" || envelope.Error.Details == nil {
+				t.Fatalf("error envelope: %+v", envelope)
+			}
+		})
+	}
+}
+
+func TestEveryCommandSupportsHelp(t *testing.T) {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "recent", "version"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)
+			if code != 0 || stdout.Len() == 0 {
+				t.Fatalf("%s --help returned %d, stdout=%q stderr=%q", command, code, stdout.String(), stderr.String())
+			}
+		})
+	}
+}

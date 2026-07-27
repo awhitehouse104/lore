@@ -160,3 +160,33 @@ func TestLintGitWarnings(t *testing.T) {
 		t.Fatalf("Git warning codes = %v, findings=%+v", codes, result.Findings)
 	}
 }
+
+func TestLintReportsMissingManagedDirectoryWithoutRuntimeFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, "pages", ".gitkeep")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "pages")); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.Run(context.Background(), repo, gitx.New())
+	if err != nil {
+		t.Fatalf("lint.Run: %v", err)
+	}
+	found := false
+	for _, finding := range result.Findings {
+		if finding.Code == "missing_required_directory" && finding.Path == "pages" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing pages finding absent: %+v", result.Findings)
+	}
+}

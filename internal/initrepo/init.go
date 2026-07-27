@@ -199,9 +199,11 @@ func createFile(path string, data []byte) (bool, error) {
 	}
 	if _, err := file.Write(data); err != nil {
 		_ = file.Close()
+		_ = os.Remove(path)
 		return false, fmt.Errorf("write file %s: %w", path, err)
 	}
 	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
 		return false, fmt.Errorf("close file %s: %w", path, err)
 	}
 	return true, nil

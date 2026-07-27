@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -41,8 +40,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return emitError(s, global.json, parseErr)
 	}
 	if len(remaining) == 0 {
-		printRootUsage(stderr)
-		return core.ExitUsage
+		if !global.json {
+			printRootUsage(stderr)
+		}
+		return emitError(s, global.json, core.NewError(core.ExitUsage, "command_required", "a Lore command is required"))
 	}
 
 	switch remaining[0] {
@@ -78,7 +79,7 @@ type recentFlags struct {
 func runRecent(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := recentFlags{
 		repo:  global.repo,
-		json:  global.json,
+		json:  global.json || hasFlag(args, "--json"),
 		limit: core.DefaultRecentLimit,
 	}
 	if help, apiErr := parseRecentFlags(args, &flags, s.out); help {
@@ -157,7 +158,7 @@ type searchFlags struct {
 func runSearch(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := searchFlags{
 		repo:  global.repo,
-		json:  global.json,
+		json:  global.json || hasFlag(args, "--json"),
 		scope: search.ScopeAll,
 		limit: search.DefaultLimit,
 	}
@@ -272,6 +273,7 @@ type readFlags struct {
 
 func runRead(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := readFlags{repo: global.repo, json: global.json}
+	flags.json = flags.json || hasFlag(args, "--json")
 	if help, apiErr := parseReadFlags(args, &flags, s.out); help {
 		return core.ExitOK
 	} else if apiErr != nil {
@@ -367,7 +369,7 @@ type captureFlags struct {
 func runCapture(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := captureFlags{
 		repo:        global.repo,
-		json:        global.json,
+		json:        global.json || hasFlag(args, "--json"),
 		sensitivity: "normal",
 		tags:        []string{},
 	}
@@ -545,12 +547,20 @@ Metadata and behavior:
 func flagValue(args []string, index int, name string) (string, int, *core.APIError) {
 	arg := args[index]
 	if strings.HasPrefix(arg, name+"=") {
-		return strings.TrimPrefix(arg, name+"="), index, nil
+		value := strings.TrimPrefix(arg, name+"=")
+		if value == "" && name != "--text" && name != "--origin-ref" && name != "--tag" {
+			return "", index, core.NewError(core.ExitUsage, "missing_flag_value", name+" requires a value")
+		}
+		return value, index, nil
 	}
 	if index+1 >= len(args) {
 		return "", index, core.NewError(core.ExitUsage, "missing_flag_value", name+" requires a value")
 	}
-	return args[index+1], index + 1, nil
+	value := args[index+1]
+	if value == "" && name != "--text" && name != "--origin-ref" && name != "--tag" {
+		return "", index, core.NewError(core.ExitUsage, "missing_flag_value", name+" requires a value")
+	}
+	return value, index + 1, nil
 }
 
 func readCaptureBody(flags captureFlags, stdin io.Reader, maximum int64) ([]byte, *core.APIError) {
@@ -634,7 +644,7 @@ func parseGlobals(args []string) (globalOptions, []string, *core.APIError) {
 }
 
 func runInit(ctx context.Context, args []string, global globalOptions, s streams) int {
-	jsonOutput := global.json
+	jsonOutput := global.json || hasFlag(args, "--json")
 	noGit := false
 	var path string
 	for index := 0; index < len(args); index++ {
@@ -684,23 +694,28 @@ func runInit(ctx context.Context, args []string, global globalOptions, s streams
 }
 
 func runLint(ctx context.Context, args []string, global globalOptions, s streams) int {
-	fs := flag.NewFlagSet("lint", flag.ContinueOnError)
-	fs.SetOutput(s.err)
 	repoPath := global.repo
-	jsonOutput := global.json
-	fs.StringVar(&repoPath, "repo", repoPath, "target Lore repository")
-	fs.BoolVar(&jsonOutput, "json", jsonOutput, "emit JSON")
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: lore [--repo PATH] lint [--json]")
-	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	jsonOutput := global.json || hasFlag(args, "--json")
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(s.out, "Usage: lore [--repo PATH] lint [--json]")
 			return core.ExitOK
+		case arg == "--json":
+			jsonOutput = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, apiErr := flagValue(args, index, "--repo")
+			if apiErr != nil {
+				return emitError(s, jsonOutput, apiErr)
+			}
+			repoPath, index = value, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore lint: unknown flag %q", arg)))
+			}
+			return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore lint does not accept positional arguments"))
 		}
-		return core.ExitUsage
-	}
-	if fs.NArg() != 0 {
-		return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore lint does not accept positional arguments"))
 	}
 	root, apiErr := resolveRepositoryRoot(repoPath)
 	if apiErr != nil {
@@ -731,21 +746,20 @@ func runLint(ctx context.Context, args []string, global globalOptions, s streams
 }
 
 func runVersion(args []string, global globalOptions, s streams) int {
-	fs := flag.NewFlagSet("version", flag.ContinueOnError)
-	fs.SetOutput(s.err)
-	jsonOutput := global.json
-	fs.BoolVar(&jsonOutput, "json", jsonOutput, "emit JSON")
-	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: lore version [--json]")
-	}
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
+	jsonOutput := global.json || hasFlag(args, "--json")
+	for _, arg := range args {
+		switch arg {
+		case "--help", "-h":
+			fmt.Fprintln(s.out, "Usage: lore version [--json]")
 			return core.ExitOK
+		case "--json":
+			jsonOutput = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore version: unknown flag %q", arg)))
+			}
+			return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore version does not accept positional arguments"))
 		}
-		return core.ExitUsage
-	}
-	if fs.NArg() != 0 {
-		return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore version does not accept positional arguments"))
 	}
 
 	info := version.Current()
@@ -819,6 +833,15 @@ func shortHash(value string) string {
 		return value[:12]
 	}
 	return value
+}
+
+func hasFlag(args []string, target string) bool {
+	for _, arg := range args {
+		if arg == target {
+			return true
+		}
+	}
+	return false
 }
 
 func printRootUsage(w io.Writer) {

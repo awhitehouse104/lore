@@ -13,3 +13,11 @@ func TestMarkdownDestinations(t *testing.T) {
 		t.Fatalf("destinations = %v, want %v", got, want)
 	}
 }
+
+func TestMarkdownReferenceDefinitionDestination(t *testing.T) {
+	got := markdownDestinations(`  [evidence]: ../sources/2026/07/source.md "Source"`)
+	want := []string{"../sources/2026/07/source.md"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("destinations = %v, want %v", got, want)
+	}
+}

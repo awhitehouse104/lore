@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func (e *UnsafeReferenceError) Error() string {
 	return fmt.Sprintf("unsafe reference %q: %s", e.Reference, e.Message)
 }
 
-func Scan(repo *repository.Repository) (Catalog, []Warning, error) {
+func Scan(ctx context.Context, repo *repository.Repository, skipLarge bool) (Catalog, []Warning, error) {
 	paths, _, err := repo.ManagedMarkdown()
 	if err != nil {
 		return Catalog{}, nil, err
@@ -57,6 +58,9 @@ func Scan(repo *repository.Repository) (Catalog, []Warning, error) {
 	catalog := Catalog{Documents: make([]*docs.Document, 0, len(paths))}
 	warnings := []Warning{}
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return Catalog{}, nil, err
+		}
 		absolute, err := repo.SafeContentPath(path)
 		if err != nil {
 			warnings = append(warnings, Warning{Code: "unsafe_document_skipped", Path: path, Message: err.Error()})
@@ -66,7 +70,7 @@ func Scan(repo *repository.Repository) (Catalog, []Warning, error) {
 		if err != nil {
 			return Catalog{}, nil, fmt.Errorf("inspect %s: %w", path, err)
 		}
-		if info.Size() > repo.Config.Capture.MaxBytes {
+		if skipLarge && info.Size() > repo.Config.Capture.MaxBytes {
 			warnings = append(warnings, Warning{
 				Code:    "document_too_large",
 				Path:    path,

@@ -57,11 +57,11 @@ func ParseLineRange(value string) (LineRange, error) {
 	return LineRange{Start: start, End: end}, nil
 }
 
-func (s *Service) Read(_ context.Context, reference string, requested *LineRange) (ReadResult, error) {
+func (s *Service) Read(ctx context.Context, reference string, requested *LineRange) (ReadResult, error) {
 	if s == nil || s.Repo == nil {
 		return ReadResult{}, NewError(ExitRuntime, "service_unavailable", "read service is not fully configured")
 	}
-	documentCatalog, _, err := catalog.Scan(s.Repo)
+	documentCatalog, _, err := catalog.Scan(ctx, s.Repo, false)
 	if err != nil {
 		apiErr := NewError(ExitRuntime, "catalog_scan_failed", "could not scan managed documents")
 		apiErr.Cause = err
@@ -123,9 +123,14 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 	if query.Kind != "" && !docs.ValidToken(query.Kind) {
 		return SearchResult{}, NewError(ExitValidation, "invalid_kind", "kind must match ^[a-z][a-z0-9_-]*$")
 	}
+	if err := search.ValidateQuery(query); err != nil {
+		apiErr := NewError(ExitValidation, "invalid_search", err.Error())
+		apiErr.Cause = err
+		return SearchResult{}, apiErr
+	}
 	results, warnings, err := s.Searcher.Search(ctx, s.Repo, query)
 	if err != nil {
-		apiErr := NewError(ExitValidation, "invalid_search", err.Error())
+		apiErr := NewError(ExitRuntime, "search_failed", "could not search managed documents")
 		apiErr.Cause = err
 		return SearchResult{}, apiErr
 	}

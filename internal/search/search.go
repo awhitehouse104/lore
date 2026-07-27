@@ -57,28 +57,20 @@ type Searcher interface {
 type FilesystemLexicalSearcher struct{}
 
 func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Repository, query Query) ([]Result, []catalog.Warning, error) {
+	if err := ValidateQuery(query); err != nil {
+		return nil, nil, err
+	}
 	if query.Scope == "" {
 		query.Scope = ScopeAll
 	}
 	if query.Limit == 0 {
 		query.Limit = DefaultLimit
 	}
-	if query.Limit < 1 || query.Limit > MaximumLimit {
-		return nil, nil, fmt.Errorf("search limit must be between 1 and %d", MaximumLimit)
-	}
-	switch query.Scope {
-	case ScopeAll, ScopePages, ScopeSources:
-	default:
-		return nil, nil, fmt.Errorf("search scope must be all, pages, or sources")
-	}
 	tokens := tokenize(query.Text)
-	if len(tokens) == 0 {
-		return nil, nil, fmt.Errorf("search query is empty after tokenization")
-	}
 	unique := uniqueTokens(tokens)
 	phrase := strings.ToLower(strings.TrimSpace(query.Text))
 
-	documentCatalog, warnings, err := catalog.Scan(repo)
+	documentCatalog, warnings, err := catalog.Scan(ctx, repo, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,6 +119,21 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		results[index].Rank = index + 1
 	}
 	return results, warnings, nil
+}
+
+func ValidateQuery(query Query) error {
+	if query.Limit < 0 || query.Limit > MaximumLimit {
+		return fmt.Errorf("search limit must be between 1 and %d", MaximumLimit)
+	}
+	switch query.Scope {
+	case "", ScopeAll, ScopePages, ScopeSources:
+	default:
+		return fmt.Errorf("search scope must be all, pages, or sources")
+	}
+	if len(tokenize(query.Text)) == 0 {
+		return fmt.Errorf("search query is empty after tokenization")
+	}
+	return nil
 }
 
 func scoreDocument(document *docs.Document, phrase string, queryTokens []string) int {

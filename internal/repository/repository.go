@@ -64,7 +64,7 @@ func (r *Repository) AtomicCreate(relative string, data []byte) error {
 	}
 	if _, err := os.Lstat(target); err == nil {
 		_ = os.Remove(tempPath)
-		return fmt.Errorf("capture destination already exists: %s", relative)
+		return &PathExistsError{Path: relative}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		_ = os.Remove(tempPath)
 		return fmt.Errorf("inspect capture destination: %w", err)
@@ -72,7 +72,7 @@ func (r *Repository) AtomicCreate(relative string, data []byte) error {
 	if err := os.Link(tempPath, target); err != nil {
 		_ = os.Remove(tempPath)
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("capture destination already exists: %s", relative)
+			return &PathExistsError{Path: relative}
 		}
 		return fmt.Errorf("publish capture file: %w", err)
 	}
@@ -90,6 +90,14 @@ type WalkIssue struct {
 	Path    string
 	Code    string
 	Message string
+}
+
+type PathExistsError struct {
+	Path string
+}
+
+func (e *PathExistsError) Error() string {
+	return fmt.Sprintf("managed content path already exists: %s", e.Path)
 }
 
 func Open(root string) (*Repository, error) {
@@ -232,6 +240,16 @@ func (r *Repository) safeRepositoryPath(relative string) (string, string, error)
 func (r *Repository) ManagedMarkdown() (paths []string, issues []WalkIssue, err error) {
 	for _, root := range contentRoots {
 		base := filepath.Join(r.Root, root)
+		baseInfo, statErr := os.Lstat(base)
+		if statErr != nil {
+			if errors.Is(statErr, os.ErrNotExist) {
+				continue
+			}
+			return nil, nil, fmt.Errorf("inspect %s: %w", root, statErr)
+		}
+		if baseInfo.Mode()&os.ModeSymlink != 0 || !baseInfo.IsDir() {
+			continue
+		}
 		walkErr := filepath.WalkDir(base, func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr

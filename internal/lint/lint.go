@@ -76,7 +76,7 @@ func RunRoot(ctx context.Context, root string, git gitx.Client) (Result, error) 
 func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Result, error) {
 	result := Result{SchemaVersion: 1, Valid: true, Findings: []Finding{}}
 	for _, dir := range []string{"pages", "sources", "assets", "system", ".lore"} {
-		info, err := os.Stat(filepath.Join(repo.Root, dir))
+		info, err := os.Lstat(filepath.Join(repo.Root, dir))
 		if err != nil {
 			if os.IsNotExist(err) {
 				result.Findings = append(result.Findings, Finding{
@@ -89,7 +89,7 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 			}
 			return Result{}, fmt.Errorf("inspect required directory %s: %w", dir, err)
 		}
-		if !info.IsDir() {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			result.Findings = append(result.Findings, Finding{
 				Severity: SeverityError,
 				Code:     "required_directory_not_directory",
@@ -134,6 +134,9 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 
 	documents := make([]*docs.Document, 0, len(paths))
 	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 		absolute, pathErr := repo.SafeContentPath(path)
 		if pathErr != nil {
 			result.Findings = append(result.Findings, Finding{
@@ -470,21 +473,64 @@ func markdownDestinations(line string) []string {
 		if closeIndex < 0 {
 			break
 		}
-		raw := strings.TrimSpace(line[start:closeIndex])
-		destination := raw
-		if strings.HasPrefix(raw, "<") {
-			if end := strings.Index(raw, ">"); end >= 0 {
-				destination = raw[1:end]
-			}
-		} else {
-			if end := strings.IndexAny(raw, " \t"); end >= 0 {
-				destination = raw[:end]
-			}
-		}
+		destination := extractMarkdownDestination(strings.TrimSpace(line[start:closeIndex]))
 		destinations = append(destinations, destination)
 		searchFrom = closeIndex + 1
 	}
+	if destination, ok := referenceDefinitionDestination(line); ok {
+		destinations = append(destinations, destination)
+	}
 	return destinations
+}
+
+func referenceDefinitionDestination(line string) (string, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if len(line)-len(trimmed) > 3 || !strings.HasPrefix(trimmed, "[") {
+		return "", false
+	}
+	end := strings.Index(trimmed, "]:")
+	if end <= 1 {
+		return "", false
+	}
+	raw := strings.TrimSpace(trimmed[end+2:])
+	if raw == "" {
+		return "", false
+	}
+	return extractMarkdownDestination(raw), true
+}
+
+func extractMarkdownDestination(raw string) string {
+	destination := raw
+	if strings.HasPrefix(raw, "<") {
+		if end := strings.Index(raw, ">"); end >= 0 {
+			destination = raw[1:end]
+		}
+	} else if end := strings.IndexAny(raw, " \t"); end >= 0 {
+		destination = raw[:end]
+	}
+	return unescapeMarkdownDestination(destination)
+}
+
+func unescapeMarkdownDestination(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value))
+	escaped := false
+	for _, r := range value {
+		if escaped {
+			builder.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	if escaped {
+		builder.WriteRune('\\')
+	}
+	return builder.String()
 }
 
 func finish(result *Result) {
@@ -499,7 +545,10 @@ func finish(result *Result) {
 		if a.Line != b.Line {
 			return a.Line < b.Line
 		}
-		return a.Code < b.Code
+		if a.Code != b.Code {
+			return a.Code < b.Code
+		}
+		return a.Message < b.Message
 	})
 	for _, finding := range result.Findings {
 		if finding.Severity == SeverityError {

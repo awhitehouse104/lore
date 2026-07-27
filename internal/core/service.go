@@ -180,6 +180,16 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 		"sources", now.Format("2006"), now.Format("01"), sourceID+"-"+options.Kind+".md",
 	))
 	if err := s.Repo.AtomicCreate(relative, data); err != nil {
+		var exists *repository.PathExistsError
+		if errors.As(err, &exists) {
+			return result, &APIError{
+				Code:     "capture_conflict",
+				Message:  "a captured source already exists at the generated path",
+				Details:  map[string]any{"path": relative, "id": sourceID},
+				ExitCode: ExitConflict,
+				Cause:    err,
+			}
+		}
 		apiErr := NewError(ExitRuntime, "capture_write_failed", "could not write captured source")
 		apiErr.Details = map[string]any{"path": relative, "id": sourceID}
 		apiErr.Cause = err

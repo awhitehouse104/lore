@@ -2,7 +2,14 @@ package core
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"testing"
+
+	"lore/internal/catalog"
+	"lore/internal/config"
+	"lore/internal/repository"
+	"lore/internal/search"
 )
 
 func TestParseLineRange(t *testing.T) {
@@ -32,5 +39,23 @@ func TestSliceLinesAndClamp(t *testing.T) {
 	}
 	if _, _, _, err := sliceLines(data, &LineRange{Start: 4, End: 5}); err == nil {
 		t.Fatal("out-of-bounds start unexpectedly succeeded")
+	}
+}
+
+type failingSearcher struct{}
+
+func (failingSearcher) Search(context.Context, *repository.Repository, search.Query) ([]search.Result, []catalog.Warning, error) {
+	return nil, nil, errors.New("filesystem unavailable")
+}
+
+func TestSearchMapsBackendFailureToRuntimeError(t *testing.T) {
+	service := &Service{
+		Repo:     &repository.Repository{Root: t.TempDir(), Config: config.Defaults()},
+		Searcher: failingSearcher{},
+	}
+	_, err := service.Search(context.Background(), search.Query{Text: "valid query"})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "search_failed" || apiErr.ExitCode != ExitRuntime {
+		t.Fatalf("Search error = %T %v", err, err)
 	}
 }
