@@ -13,6 +13,7 @@ import (
 	"lore/internal/core"
 	"lore/internal/gitx"
 	"lore/internal/initrepo"
+	captureinput "lore/internal/input"
 	"lore/internal/lint"
 	"lore/internal/output"
 	"lore/internal/repository"
@@ -44,6 +45,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	switch remaining[0] {
 	case "init":
 		return runInit(ctx, remaining[1:], global, s)
+	case "capture":
+		return runCapture(ctx, remaining[1:], global, s)
 	case "lint":
 		return runLint(ctx, remaining[1:], global, s)
 	case "version":
@@ -54,6 +57,264 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	default:
 		return emitError(s, global.json, core.NewError(core.ExitUsage, "unknown_command", fmt.Sprintf("unknown command %q", remaining[0])))
 	}
+}
+
+type captureFlags struct {
+	repo        string
+	json        bool
+	kind        string
+	origin      string
+	originRef   string
+	sensitivity string
+	tags        []string
+	text        string
+	textSet     bool
+	file        string
+	fileSet     bool
+	allowEmpty  bool
+	noCommit    bool
+	push        *bool
+}
+
+func runCapture(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := captureFlags{
+		repo:        global.repo,
+		json:        global.json,
+		sensitivity: "normal",
+		tags:        []string{},
+	}
+	if apiErr := parseCaptureFlags(args, &flags, s.out); apiErr != nil {
+		if apiErr.Code == "help" {
+			return core.ExitOK
+		}
+		return emitError(s, flags.json, apiErr)
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	body, apiErr := readCaptureBody(flags, s.in, repo.Config.Capture.MaxBytes)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	service := core.NewService(repo)
+	result, err := service.Capture(ctx, core.CaptureOptions{
+		Kind:        flags.kind,
+		Origin:      flags.origin,
+		OriginRef:   flags.originRef,
+		Sensitivity: flags.sensitivity,
+		Tags:        flags.tags,
+		Body:        body,
+		AllowEmpty:  flags.allowEmpty,
+		NoCommit:    flags.noCommit,
+		Push:        flags.push,
+	})
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write capture output: %w", err))
+		}
+		return core.ExitOK
+	}
+	fmt.Fprintf(s.out, "Captured %s\n", result.ID)
+	fmt.Fprintf(s.out, "%s (%d bytes, %s)\n", result.Path, result.Bytes, result.RawSHA256)
+	if result.Committed {
+		fmt.Fprintf(s.out, "Committed %s\n", shortHash(result.Commit))
+	} else {
+		fmt.Fprintln(s.out, "Not committed")
+	}
+	if result.Pushed {
+		fmt.Fprintln(s.out, "Pushed")
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(s.err, "warning: %s\n", warning)
+	}
+	return core.ExitOK
+}
+
+func parseCaptureFlags(args []string, flags *captureFlags, help io.Writer) *core.APIError {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, `Usage: lore [--repo PATH] capture --kind TOKEN --origin TOKEN [options]
+
+Input options (mutually exclusive):
+  --text STRING       capture command-line text (stdin is safer for private data)
+  --file PATH         capture exact bytes from a file
+  standard input      used when neither --text nor --file is supplied
+
+Metadata and behavior:
+  --origin-ref STRING
+  --sensitivity normal|sensitive|local-only
+  --tag STRING        repeatable
+  --allow-empty
+  --no-commit
+  --push | --no-push
+  --json`)
+			return &core.APIError{ExitCode: core.ExitOK, Code: "help", Message: "", Details: map[string]any{}}
+		case arg == "--json":
+			flags.json = true
+		case arg == "--allow-empty":
+			flags.allowEmpty = true
+		case arg == "--no-commit":
+			flags.noCommit = true
+		case arg == "--push":
+			value := true
+			if flags.push != nil && !*flags.push {
+				return core.NewError(core.ExitUsage, "conflicting_flags", "--push and --no-push are mutually exclusive")
+			}
+			flags.push = &value
+		case arg == "--no-push":
+			value := false
+			if flags.push != nil && *flags.push {
+				return core.NewError(core.ExitUsage, "conflicting_flags", "--push and --no-push are mutually exclusive")
+			}
+			flags.push = &value
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return err
+			}
+			flags.repo = value
+			index = next
+		case arg == "--kind" || strings.HasPrefix(arg, "--kind="):
+			value, next, err := flagValue(args, index, "--kind")
+			if err != nil {
+				return err
+			}
+			flags.kind = value
+			index = next
+		case arg == "--origin" || strings.HasPrefix(arg, "--origin="):
+			value, next, err := flagValue(args, index, "--origin")
+			if err != nil {
+				return err
+			}
+			flags.origin = value
+			index = next
+		case arg == "--origin-ref" || strings.HasPrefix(arg, "--origin-ref="):
+			value, next, err := flagValue(args, index, "--origin-ref")
+			if err != nil {
+				return err
+			}
+			flags.originRef = value
+			index = next
+		case arg == "--sensitivity" || strings.HasPrefix(arg, "--sensitivity="):
+			value, next, err := flagValue(args, index, "--sensitivity")
+			if err != nil {
+				return err
+			}
+			flags.sensitivity = value
+			index = next
+		case arg == "--tag" || strings.HasPrefix(arg, "--tag="):
+			value, next, err := flagValue(args, index, "--tag")
+			if err != nil {
+				return err
+			}
+			flags.tags = append(flags.tags, value)
+			index = next
+		case arg == "--text" || strings.HasPrefix(arg, "--text="):
+			value, next, err := flagValue(args, index, "--text")
+			if err != nil {
+				return err
+			}
+			if flags.textSet {
+				return core.NewError(core.ExitUsage, "duplicate_flag", "--text may be supplied only once")
+			}
+			flags.text, flags.textSet = value, true
+			index = next
+		case arg == "--file" || strings.HasPrefix(arg, "--file="):
+			value, next, err := flagValue(args, index, "--file")
+			if err != nil {
+				return err
+			}
+			if flags.fileSet {
+				return core.NewError(core.ExitUsage, "duplicate_flag", "--file may be supplied only once")
+			}
+			flags.file, flags.fileSet = value, true
+			index = next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore capture: unknown flag %q", arg))
+			}
+			return core.NewError(core.ExitUsage, "unexpected_argument", "lore capture does not accept positional arguments")
+		}
+	}
+	if flags.kind == "" {
+		return core.NewError(core.ExitUsage, "missing_required_flag", "lore capture requires --kind")
+	}
+	if flags.origin == "" {
+		return core.NewError(core.ExitUsage, "missing_required_flag", "lore capture requires --origin")
+	}
+	if flags.textSet && flags.fileSet {
+		return core.NewError(core.ExitUsage, "conflicting_input", "--text and --file are mutually exclusive")
+	}
+	return nil
+}
+
+func flagValue(args []string, index int, name string) (string, int, *core.APIError) {
+	arg := args[index]
+	if strings.HasPrefix(arg, name+"=") {
+		return strings.TrimPrefix(arg, name+"="), index, nil
+	}
+	if index+1 >= len(args) {
+		return "", index, core.NewError(core.ExitUsage, "missing_flag_value", name+" requires a value")
+	}
+	return args[index+1], index + 1, nil
+}
+
+func readCaptureBody(flags captureFlags, stdin io.Reader, maximum int64) ([]byte, *core.APIError) {
+	var reader io.Reader
+	var file *os.File
+	switch {
+	case flags.textSet:
+		reader = strings.NewReader(flags.text)
+	case flags.fileSet && flags.file == "-":
+		reader = stdin
+	case flags.fileSet:
+		opened, err := os.Open(flags.file)
+		if err != nil {
+			apiErr := core.NewError(core.ExitRuntime, "input_file_error", fmt.Sprintf("could not open capture input file %q", flags.file))
+			apiErr.Cause = err
+			return nil, apiErr
+		}
+		file = opened
+		defer file.Close()
+		reader = file
+	default:
+		if stdinIsTerminal(stdin) {
+			return nil, core.NewError(core.ExitUsage, "capture_input_required", "capture input is required; pipe stdin or use --file/--text")
+		}
+		reader = stdin
+	}
+	body, err := captureinput.ReadBounded(reader, maximum)
+	if err == nil {
+		return body, nil
+	}
+	if errors.Is(err, captureinput.ErrTooLarge) {
+		apiErr := core.NewError(core.ExitValidation, "capture_too_large", err.Error())
+		apiErr.Cause = err
+		return nil, apiErr
+	}
+	if errors.Is(err, captureinput.ErrInvalidUTF8) {
+		apiErr := core.NewError(core.ExitValidation, "invalid_utf8", err.Error())
+		apiErr.Cause = err
+		return nil, apiErr
+	}
+	apiErr := core.NewError(core.ExitRuntime, "capture_input_error", "could not read capture input")
+	apiErr.Cause = err
+	return nil, apiErr
+}
+
+func stdinIsTerminal(reader io.Reader) bool {
+	file, ok := reader.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func parseGlobals(args []string) (globalOptions, []string, *core.APIError) {
@@ -252,7 +513,7 @@ func emitError(s streams, jsonOutput bool, apiErr *core.APIError) int {
 			fmt.Fprintf(s.err, "lore: write JSON error: %v\n", err)
 		}
 	} else {
-		fmt.Fprintf(s.err, "lore: %s\n", apiErr.Message)
+		fmt.Fprintf(s.err, "lore: %s\n", apiErr.Error())
 	}
 	return apiErr.ExitCode
 }

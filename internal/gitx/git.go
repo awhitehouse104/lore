@@ -120,7 +120,11 @@ func (c Client) IsIgnored(ctx context.Context, dir, path string) (bool, error) {
 }
 
 func (c Client) PushHead(ctx context.Context, dir, remote string) error {
-	_, err := c.run(ctx, dir, "push", remote, "HEAD")
+	branch, err := c.CurrentBranch(ctx, dir)
+	if err != nil {
+		return err
+	}
+	_, err = c.run(ctx, dir, "push", remote, "HEAD:refs/heads/"+branch)
 	return err
 }
 

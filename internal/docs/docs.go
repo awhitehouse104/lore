@@ -312,6 +312,22 @@ func Revision(data []byte) string {
 	return SHA256(data)
 }
 
+func MarshalSource(source Source, body []byte) ([]byte, error) {
+	if errs := ValidateSource(&source); len(errs) > 0 {
+		return nil, errs[0]
+	}
+	frontmatter, err := yaml.Marshal(source)
+	if err != nil {
+		return nil, fmt.Errorf("marshal source frontmatter: %w", err)
+	}
+	data := make([]byte, 0, len(frontmatter)+len(body)+8)
+	data = append(data, "---\n"...)
+	data = append(data, frontmatter...)
+	data = append(data, "---\n"...)
+	data = append(data, body...)
+	return data, nil
+}
+
 func parseDate(value string) (time.Time, error) {
 	if !datePattern.MatchString(value) {
 		return time.Time{}, fmt.Errorf("invalid date")

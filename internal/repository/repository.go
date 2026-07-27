@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,6 +16,74 @@ var contentRoots = []string{"pages", "sources"}
 type Repository struct {
 	Root   string
 	Config config.Config
+}
+
+// AtomicCreate publishes data at a safe managed-content path without replacing
+// an existing file. A same-directory hard-link publication provides atomic
+// no-clobber semantics on the private Linux target.
+func (r *Repository) AtomicCreate(relative string, data []byte) error {
+	target, err := r.SafeContentPath(relative)
+	if err != nil {
+		return err
+	}
+	parent := filepath.Dir(target)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return fmt.Errorf("create content directory: %w", err)
+	}
+	relativeParent, err := filepath.Rel(r.Root, parent)
+	if err != nil {
+		return fmt.Errorf("verify content directory: %w", err)
+	}
+	if err := rejectSymlinkComponents(r.Root, relativeParent); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(parent, ".lore-capture-*")
+	if err != nil {
+		return fmt.Errorf("create capture temporary file: %w", err)
+	}
+	tempPath := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+	}
+	if err := file.Chmod(0o644); err != nil {
+		cleanup()
+		return fmt.Errorf("set capture file permissions: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		cleanup()
+		return fmt.Errorf("write capture temporary file: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		cleanup()
+		return fmt.Errorf("flush capture temporary file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("close capture temporary file: %w", err)
+	}
+	if _, err := os.Lstat(target); err == nil {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("capture destination already exists: %s", relative)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		_ = os.Remove(tempPath)
+		return fmt.Errorf("inspect capture destination: %w", err)
+	}
+	if err := os.Link(tempPath, target); err != nil {
+		_ = os.Remove(tempPath)
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("capture destination already exists: %s", relative)
+		}
+		return fmt.Errorf("publish capture file: %w", err)
+	}
+	if err := os.Remove(tempPath); err != nil {
+		return fmt.Errorf("remove capture temporary link: %w", err)
+	}
+	if directory, err := os.Open(parent); err == nil {
+		_ = directory.Sync()
+		_ = directory.Close()
+	}
+	return nil
 }
 
 type WalkIssue struct {
