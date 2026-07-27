@@ -1,0 +1,10 @@
+version: 1
+
+git:
+  auto_commit_captures: true
+  auto_push_captures: false
+  remote: origin
+  require_push: false
+
+capture:
+  max_bytes: 4194304

@@ -26,3 +26,28 @@ func TestVersionJSON(t *testing.T) {
 		t.Fatalf("unexpected version response: %+v", result)
 	}
 }
+
+func TestInitAndLintJSON(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"init", root, "--no-git", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("init returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"--repo", root, "lint", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("lint returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var result struct {
+		SchemaVersion int  `json:"schema_version"`
+		Valid         bool `json:"valid"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatalf("decode lint JSON: %v", err)
+	}
+	if result.SchemaVersion != 1 || !result.Valid {
+		t.Fatalf("unexpected lint response: %+v", result)
+	}
+}

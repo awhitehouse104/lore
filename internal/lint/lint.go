@@ -1,0 +1,349 @@
+package lint
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"lore/internal/docs"
+	"lore/internal/gitx"
+	"lore/internal/repository"
+)
+
+type Severity string
+
+const (
+	SeverityError   Severity = "error"
+	SeverityWarning Severity = "warning"
+)
+
+type Finding struct {
+	Severity     Severity `json:"severity"`
+	Code         string   `json:"code"`
+	Path         string   `json:"path"`
+	Line         int      `json:"line"`
+	Message      string   `json:"message"`
+	RelatedPaths []string `json:"related_paths,omitempty"`
+}
+
+type Result struct {
+	SchemaVersion int       `json:"schema_version"`
+	Valid         bool      `json:"valid"`
+	Errors        int       `json:"errors"`
+	Warnings      int       `json:"warnings"`
+	Findings      []Finding `json:"findings"`
+}
+
+var sourceFilenamePattern = regexp.MustCompile(`^(src_[0-9A-Z]{26})-([a-z][a-z0-9_-]*)\.md$`)
+
+func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Result, error) {
+	result := Result{SchemaVersion: 1, Valid: true, Findings: []Finding{}}
+	for _, dir := range []string{"pages", "sources", "assets", "system", ".lore"} {
+		info, err := os.Stat(filepath.Join(repo.Root, dir))
+		if err != nil {
+			if os.IsNotExist(err) {
+				result.Findings = append(result.Findings, Finding{
+					Severity: SeverityError,
+					Code:     "missing_required_directory",
+					Path:     dir,
+					Message:  "required directory is missing",
+				})
+				continue
+			}
+			return Result{}, fmt.Errorf("inspect required directory %s: %w", dir, err)
+		}
+		if !info.IsDir() {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "required_directory_not_directory",
+				Path:     dir,
+				Message:  "required repository path is not a directory",
+			})
+		}
+	}
+
+	isGit, err := git.IsRepository(ctx, repo.Root)
+	if err != nil {
+		return Result{}, err
+	}
+	if isGit {
+		ignored, ignoreErr := git.IsIgnored(ctx, repo.Root, ".lore/")
+		if ignoreErr != nil {
+			return Result{}, ignoreErr
+		}
+		if !ignored {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "runtime_state_not_ignored",
+				Path:     ".gitignore",
+				Message:  ".lore/ must be ignored by Git",
+			})
+		}
+	}
+
+	paths, walkIssues, err := repo.ManagedMarkdown()
+	if err != nil {
+		return Result{}, err
+	}
+	for _, issue := range walkIssues {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     issue.Code,
+			Path:     issue.Path,
+			Message:  issue.Message,
+		})
+	}
+	sort.Strings(paths)
+
+	documents := make([]*docs.Document, 0, len(paths))
+	for _, path := range paths {
+		absolute, pathErr := repo.SafeContentPath(path)
+		if pathErr != nil {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "unsafe_managed_path",
+				Path:     path,
+				Message:  pathErr.Error(),
+			})
+			continue
+		}
+		info, statErr := os.Stat(absolute)
+		if statErr != nil {
+			return Result{}, fmt.Errorf("inspect %s: %w", path, statErr)
+		}
+		if info.Size() > repo.Config.Capture.MaxBytes {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "managed_file_too_large",
+				Path:     path,
+				Message:  fmt.Sprintf("managed file is %d bytes; configured maximum is %d", info.Size(), repo.Config.Capture.MaxBytes),
+			})
+			continue
+		}
+		data, readErr := os.ReadFile(absolute)
+		if readErr != nil {
+			return Result{}, fmt.Errorf("read %s: %w", path, readErr)
+		}
+		if !utf8.Valid(data) {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "invalid_utf8",
+				Path:     path,
+				Message:  "managed Markdown is not valid UTF-8",
+			})
+			continue
+		}
+		document, parseErr := docs.Parse(path, data)
+		if parseErr != nil {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "invalid_frontmatter",
+				Path:     path,
+				Line:     1,
+				Message:  parseErr.Error(),
+			})
+			continue
+		}
+		documents = append(documents, document)
+		for _, validationErr := range docs.Validate(document) {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "invalid_metadata",
+				Path:     path,
+				Line:     2,
+				Message:  validationErr.Error(),
+			})
+		}
+		if document.Source != nil {
+			checkSource(&result, document)
+		}
+	}
+
+	checkDuplicateIDs(&result, documents)
+	checkAliasCollisions(&result, documents)
+	finish(&result)
+	return result, nil
+}
+
+func checkSource(result *Result, document *docs.Document) {
+	source := document.Source
+	if docs.SHA256(document.Body) != source.RawSHA256 {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "source_body_modified",
+			Path:     document.Path,
+			Line:     bodyLine(document.Data, document.BodyOffset),
+			Message:  "source body SHA-256 does not match raw_sha256",
+		})
+	}
+
+	parts := strings.Split(filepath.ToSlash(document.Path), "/")
+	if len(parts) < 4 {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "invalid_source_path",
+			Path:     document.Path,
+			Message:  "source path must be sources/YYYY/MM/<filename>.md",
+		})
+		return
+	}
+	captured, timeErr := time.Parse(time.RFC3339, string(source.CapturedAt))
+	if timeErr == nil {
+		utc := captured.UTC()
+		if parts[1] != utc.Format("2006") || parts[2] != utc.Format("01") {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityError,
+				Code:     "source_date_path_mismatch",
+				Path:     document.Path,
+				Message:  "source path year/month does not match captured_at in UTC",
+			})
+		}
+	}
+	filenameMatch := sourceFilenamePattern.FindStringSubmatch(filepath.Base(document.Path))
+	if len(filenameMatch) != 3 {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "invalid_source_filename",
+			Path:     document.Path,
+			Message:  "source filename must contain its source ID and kind",
+		})
+		return
+	}
+	if filenameMatch[1] != source.ID || filenameMatch[2] != source.Kind {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "source_filename_metadata_mismatch",
+			Path:     document.Path,
+			Message:  "source filename ID and kind must match frontmatter",
+		})
+	}
+}
+
+func checkDuplicateIDs(result *Result, documents []*docs.Document) {
+	byID := map[string][]string{}
+	for _, document := range documents {
+		if document.ID() != "" {
+			byID[document.ID()] = append(byID[document.ID()], document.Path)
+		}
+	}
+	for id, paths := range byID {
+		if len(paths) < 2 {
+			continue
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			related := except(paths, path)
+			result.Findings = append(result.Findings, Finding{
+				Severity:     SeverityError,
+				Code:         "duplicate_id",
+				Path:         path,
+				Line:         2,
+				Message:      fmt.Sprintf("document ID %s is also used by %s", id, strings.Join(related, ", ")),
+				RelatedPaths: related,
+			})
+		}
+	}
+}
+
+func checkAliasCollisions(result *Result, documents []*docs.Document) {
+	claims := map[string]map[string]struct{}{}
+	for _, document := range documents {
+		if document.Page == nil {
+			continue
+		}
+		values := append([]string{document.Page.Title}, document.Page.Aliases...)
+		for _, value := range values {
+			key := strings.ToLower(strings.TrimSpace(value))
+			if key == "" {
+				continue
+			}
+			if claims[key] == nil {
+				claims[key] = map[string]struct{}{}
+			}
+			claims[key][document.Path] = struct{}{}
+		}
+	}
+	for value, pathSet := range claims {
+		if len(pathSet) < 2 {
+			continue
+		}
+		paths := keys(pathSet)
+		for _, path := range paths {
+			related := except(paths, path)
+			result.Findings = append(result.Findings, Finding{
+				Severity:     SeverityError,
+				Code:         "ambiguous_page_name",
+				Path:         path,
+				Line:         2,
+				Message:      fmt.Sprintf("page title or alias %q also identifies %s", value, strings.Join(related, ", ")),
+				RelatedPaths: related,
+			})
+		}
+	}
+}
+
+func finish(result *Result) {
+	sort.Slice(result.Findings, func(i, j int) bool {
+		a, b := result.Findings[i], result.Findings[j]
+		if severityRank(a.Severity) != severityRank(b.Severity) {
+			return severityRank(a.Severity) < severityRank(b.Severity)
+		}
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Code < b.Code
+	})
+	for _, finding := range result.Findings {
+		if finding.Severity == SeverityError {
+			result.Errors++
+		} else {
+			result.Warnings++
+		}
+	}
+	result.Valid = result.Errors == 0
+}
+
+func severityRank(severity Severity) int {
+	if severity == SeverityError {
+		return 0
+	}
+	return 1
+}
+
+func bodyLine(data []byte, offset int) int {
+	line := 1
+	for _, value := range data[:offset] {
+		if value == '\n' {
+			line++
+		}
+	}
+	return line
+}
+
+func except(values []string, excluded string) []string {
+	out := make([]string, 0, len(values)-1)
+	for _, value := range values {
+		if value != excluded {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func keys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
