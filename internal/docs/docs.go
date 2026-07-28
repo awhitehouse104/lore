@@ -433,6 +433,47 @@ func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, page
 	return result, nil
 }
 
+// PageChangedExceptUpdated reports whether a proposed page changes anything
+// other than the top-level updated field. It compares exact body bytes and
+// frontmatter lines after replacing the updated line with a fixed marker.
+func PageChangedExceptUpdated(current, proposed *Document) bool {
+	if current == nil || proposed == nil || current.Page == nil || proposed.Page == nil {
+		return true
+	}
+	if !bytes.Equal(current.Body, proposed.Body) {
+		return true
+	}
+	currentFrontmatter, _, _, currentErr := splitFrontmatter(current.Data)
+	proposedFrontmatter, _, _, proposedErr := splitFrontmatter(proposed.Data)
+	if currentErr != nil || proposedErr != nil {
+		return true
+	}
+	currentNormalized, currentOK := normalizeUpdatedLine(currentFrontmatter)
+	proposedNormalized, proposedOK := normalizeUpdatedLine(proposedFrontmatter)
+	return !currentOK || !proposedOK || !bytes.Equal(currentNormalized, proposedNormalized)
+}
+
+func normalizeUpdatedLine(frontmatter []byte) ([]byte, bool) {
+	lines := bytes.SplitAfter(frontmatter, []byte{'\n'})
+	found := false
+	for index, line := range lines {
+		trimmed := bytes.TrimSuffix(line, []byte{'\n'})
+		trimmed = bytes.TrimSuffix(trimmed, []byte{'\r'})
+		if bytes.HasPrefix(trimmed, []byte("updated:")) {
+			if found {
+				return nil, false
+			}
+			ending := ""
+			if len(line) > 0 && line[len(line)-1] == '\n' {
+				ending = "\n"
+			}
+			lines[index] = []byte("updated: <lore-comparison>" + ending)
+			found = true
+		}
+	}
+	return bytes.Join(lines, nil), found
+}
+
 func setMappingValue(mapping *yaml.Node, key string, value *yaml.Node) {
 	for index := 0; index+1 < len(mapping.Content); index += 2 {
 		if mapping.Content[index].Value == key {

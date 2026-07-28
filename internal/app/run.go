@@ -59,6 +59,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runRecent(ctx, remaining[1:], global, s)
 	case "lint":
 		return runLint(ctx, remaining[1:], global, s)
+	case "preview":
+		return runPreview(ctx, remaining[1:], global, s)
+	case "transaction":
+		return runTransaction(ctx, remaining[1:], global, s)
 	case "version":
 		return runVersion(remaining[1:], global, s)
 	case "help", "--help", "-h":
@@ -856,6 +860,9 @@ Commands:
   search    find lexical evidence
   read      read a managed document
   lint      validate repository integrity
+  preview   validate and persist an exact transaction proposal
+  transaction
+            inspect or discard transaction proposals
   recent    inspect recent knowledge commits
   version   print build version
 

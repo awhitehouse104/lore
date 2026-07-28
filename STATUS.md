@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.2 — Milestone 2: preview and inspection.
+Lore v0.2 — Milestone 3: transactional commit and Git isolation.
 
 ## Verified baseline
 
@@ -41,15 +41,17 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 
 - v0.1 baseline checks listed above
 - v0.2 M1 `make check`
+- v0.2 M2 `make check`
 
 ## v0.2 completed milestones
 
 - M1: strict bounded transaction requests, operation/message/path validation, deterministic proposal and state contracts, private atomic artifact storage with tamper detection, source integration metadata merging with exact body preservation, optional `integrated_into` linting, and real/overlay repository views for prospective full-tree lint.
+- M2: `preview` with exact snapshot/revision/dirty-target checks, immutable page rules, in-memory prospective lint, Git no-index unified diffs, atomic proposal persistence, and verified `transaction list`, `show`, and idempotent `discard` commands.
 
 ## Known issues
 
 - No known v0.1 correctness issues.
-- v0.2 transaction CLI commands are not implemented yet.
+- `commit` and `recover` are not implemented yet.
 
 ## Material deviations and compatibility notes
 
@@ -58,4 +60,4 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 
 ## Next checkpoint
 
-Implement and commit v0.2 Milestone 2 preview and inspection commands.
+Implement and commit v0.2 Milestone 3 transactional apply and exact-path Git commit behavior.

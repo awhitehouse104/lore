@@ -14,6 +14,16 @@ import (
 
 const DefaultActor = "local-cli"
 
+type IDGenerator interface {
+	New(time.Time) (string, error)
+}
+
+type CryptoIDGenerator struct{}
+
+func (CryptoIDGenerator) New(now time.Time) (string, error) {
+	return NewID(now)
+}
+
 type Proposal struct {
 	SchemaVersion int                  `json:"schema_version"`
 	TransactionID string               `json:"transaction_id"`

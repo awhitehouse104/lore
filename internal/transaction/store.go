@@ -132,10 +132,10 @@ func (s *Store) Save(artifacts Artifacts) (string, error) {
 }
 
 func (s *Store) Load(transactionID string) (Artifacts, error) {
-	if err := ValidateTransactionID(transactionID); err != nil {
+	dir, err := s.transactionDir(transactionID)
+	if err != nil {
 		return Artifacts{}, err
 	}
-	dir := filepath.Join(s.root, transactionID)
 	proposalBytes, err := readBounded(filepath.Join(dir, "proposal.json"), maxArtifactBytes)
 	if err != nil {
 		return Artifacts{}, fmt.Errorf("read proposal: %w", err)
@@ -193,6 +193,14 @@ func (s *Store) Load(transactionID string) (Artifacts, error) {
 	}
 	artifacts.Diff = diffBytes
 	artifacts.Contents = make([][]byte, len(proposal.Operations))
+	contentDir := filepath.Join(dir, "content")
+	contentInfo, err := os.Lstat(contentDir)
+	if err != nil {
+		return Artifacts{}, fmt.Errorf("inspect content artifact directory: %w", err)
+	}
+	if contentInfo.Mode()&os.ModeSymlink != 0 || !contentInfo.IsDir() {
+		return Artifacts{}, fmt.Errorf("content artifact path is not a regular directory")
+	}
 	for index, operation := range proposal.Operations {
 		content, readErr := readBounded(filepath.Join(dir, filepath.FromSlash(operation.ContentFile)), maxArtifactBytes)
 		if readErr != nil {
@@ -230,6 +238,9 @@ func (s *Store) Discard(transactionID string, updatedAt string) (State, error) {
 		return State{}, err
 	}
 	if artifacts.State.Status == StatusDiscarded {
+		if err := s.removeDiscardedArtifacts(transactionID); err != nil {
+			return State{}, err
+		}
 		return artifacts.State, nil
 	}
 	if artifacts.State.Status != StatusPreviewed && artifacts.State.Status != StatusFailed {
@@ -241,14 +252,7 @@ func (s *Store) Discard(transactionID string, updatedAt string) (State, error) {
 	if err := s.UpdateState(transactionID, next); err != nil {
 		return State{}, err
 	}
-	dir := filepath.Join(s.root, transactionID)
-	if err := os.RemoveAll(filepath.Join(dir, "content")); err != nil {
-		return State{}, fmt.Errorf("remove discarded transaction content: %w", err)
-	}
-	if err := os.Remove(filepath.Join(dir, "diff.patch")); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return State{}, fmt.Errorf("remove discarded transaction diff: %w", err)
-	}
-	if err := syncDirectory(dir); err != nil {
+	if err := s.removeDiscardedArtifacts(transactionID); err != nil {
 		return State{}, err
 	}
 	return next, nil
@@ -276,10 +280,11 @@ func (s *Store) ListIDs() ([]string, error) {
 }
 
 func (s *Store) loadState(transactionID string) (State, error) {
-	if err := ValidateTransactionID(transactionID); err != nil {
+	dir, err := s.transactionDir(transactionID)
+	if err != nil {
 		return State{}, err
 	}
-	data, err := readBounded(filepath.Join(s.root, transactionID, "state.json"), maxArtifactBytes)
+	data, err := readBounded(filepath.Join(dir, "state.json"), maxArtifactBytes)
 	if err != nil {
 		return State{}, fmt.Errorf("read transaction state: %w", err)
 	}
@@ -291,6 +296,43 @@ func (s *Store) loadState(transactionID string) (State, error) {
 		return State{}, err
 	}
 	return state, nil
+}
+
+func (s *Store) transactionDir(transactionID string) (string, error) {
+	if err := ValidateTransactionID(transactionID); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(s.root, transactionID)
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("transaction path is not a regular directory")
+	}
+	return dir, nil
+}
+
+func (s *Store) removeDiscardedArtifacts(transactionID string) error {
+	dir, err := s.transactionDir(transactionID)
+	if err != nil {
+		return err
+	}
+	contentDir := filepath.Join(dir, "content")
+	if info, statErr := os.Lstat(contentDir); statErr == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return fmt.Errorf("transaction content path is not a regular directory")
+		}
+		if err := os.RemoveAll(contentDir); err != nil {
+			return fmt.Errorf("remove discarded transaction content: %w", err)
+		}
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("inspect discarded transaction content: %w", statErr)
+	}
+	if err := os.Remove(filepath.Join(dir, "diff.patch")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove discarded transaction diff: %w", err)
+	}
+	return syncDirectory(dir)
 }
 
 func writeFileSync(path string, data []byte) error {
@@ -347,6 +389,13 @@ func replaceFile(path string, data []byte) error {
 }
 
 func readBounded(path string, limit int64) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("artifact is not a regular non-symlink file")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err

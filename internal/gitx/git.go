@@ -137,7 +137,13 @@ func (c Client) BranchState(ctx context.Context, dir string) (string, bool, erro
 }
 
 func (c Client) SourceChanges(ctx context.Context, dir string) ([]Change, error) {
-	stdout, err := c.run(ctx, dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "sources")
+	return c.Changes(ctx, dir, []string{"sources"})
+}
+
+func (c Client) Changes(ctx context.Context, dir string, paths []string) ([]Change, error) {
+	args := []string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}
+	args = append(args, paths...)
+	stdout, err := c.run(ctx, dir, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +162,24 @@ func (c Client) SourceChanges(ctx context.Context, dir string) ([]Change, error)
 		}
 	}
 	return changes, nil
+}
+
+// NoIndexDiff returns the unified diff between two filesystem paths. Git uses
+// exit status 1 to report that the paths differ; that is a successful result.
+func (c Client) NoIndexDiff(ctx context.Context, dir, oldPath, newPath string) ([]byte, error) {
+	args := []string{
+		"diff", "--no-index", "--no-color", "--no-ext-diff", "--no-textconv",
+		"--", oldPath, newPath,
+	}
+	stdout, err := c.runCaptureOnExit(ctx, dir, args...)
+	if err == nil {
+		return stdout, nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) && commandErr.ExitCode == 1 {
+		return stdout, nil
+	}
+	return nil, err
 }
 
 func (c Client) Recent(ctx context.Context, dir string, limit int, contentOnly bool) ([]Commit, error) {
@@ -223,6 +247,14 @@ func (c Client) PushHead(ctx context.Context, dir, remote string) error {
 }
 
 func (c Client) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	stdout, err := c.runCaptureOnExit(ctx, dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	return stdout, nil
+}
+
+func (c Client) runCaptureOnExit(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	executable := c.Executable
 	if executable == "" {
 		executable = "git"
@@ -245,7 +277,7 @@ func (c Client) run(ctx context.Context, dir string, args ...string) ([]byte, er
 	if len(args) > 0 {
 		name = args[0]
 	}
-	return nil, &CommandError{
+	return stdout.Bytes(), &CommandError{
 		Command:  name,
 		ExitCode: exitCode,
 		Stderr:   sanitize(stderr.String()),

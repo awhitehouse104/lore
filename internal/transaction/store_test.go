@@ -1,25 +1,17 @@
 package transaction
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"lore/internal/gitx"
-	"lore/internal/initrepo"
+	"lore/internal/config"
 	"lore/internal/repository"
 )
 
 func TestStoreRoundTripPermissionsAndTamperDetection(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
-	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
-		t.Fatal(err)
-	}
-	repo, err := repository.Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := testRepository(t, root)
 	store, err := NewStore(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -73,13 +65,7 @@ func TestStoreRoundTripPermissionsAndTamperDetection(t *testing.T) {
 
 func TestStoreDiscardIsIdempotentAndRetainsReceipt(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
-	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
-		t.Fatal(err)
-	}
-	repo, err := repository.Open(root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	repo := testRepository(t, root)
 	store, err := NewStore(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -120,4 +106,12 @@ func TestStoreDiscardIsIdempotentAndRetainsReceipt(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".lore", "transactions", transactionID, "proposal.json")); err != nil {
 		t.Fatalf("receipt proposal missing: %v", err)
 	}
+}
+
+func testRepository(t *testing.T, root string) *repository.Repository {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, ".lore"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return &repository.Repository{Root: root, Config: config.Defaults()}
 }

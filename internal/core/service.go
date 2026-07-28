@@ -15,6 +15,7 @@ import (
 	"lore/internal/lock"
 	"lore/internal/repository"
 	"lore/internal/search"
+	"lore/internal/transaction"
 )
 
 type Clock interface {
@@ -44,6 +45,9 @@ type Service struct {
 	IDs      id.Generator
 	Searcher search.Searcher
 	History  HistoryGit
+	TxGit    gitx.Client
+	TxIDs    transaction.IDGenerator
+	Actor    string
 }
 
 func NewService(repo *repository.Repository) *Service {
@@ -54,6 +58,9 @@ func NewService(repo *repository.Repository) *Service {
 		IDs:      id.CryptoGenerator{},
 		Searcher: search.FilesystemLexicalSearcher{},
 		History:  gitx.New(),
+		TxGit:    gitx.New(),
+		TxIDs:    transaction.CryptoIDGenerator{},
+		Actor:    transaction.DefaultActor,
 	}
 }
 

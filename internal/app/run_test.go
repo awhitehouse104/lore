@@ -247,6 +247,123 @@ func TestLintReportsMissingAndInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestPreviewAndTransactionInspectionJSON(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	page := `---
+id: page_cli_preview
+title: CLI Preview
+kind: topic
+created: "2026-07-28"
+updated: "2026-07-28"
+status: active
+sensitivity: normal
+---
+Previewed from the CLI.
+`
+	requestBytes, err := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"message":        "create: CLI preview",
+		"operations": []map[string]any{{
+			"op": "create_page", "path": "pages/cli-preview.md", "content": page,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(
+		context.Background(),
+		[]string{"--repo", root, "preview", "--json"},
+		bytes.NewReader(requestBytes),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("preview returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var preview struct {
+		TransactionID string `json:"transaction_id"`
+		PreviewDigest string `json:"preview_digest"`
+		Status        string `json:"status"`
+		Diff          string `json:"diff"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.TransactionID == "" || preview.PreviewDigest == "" || preview.Status != "previewed" ||
+		!strings.Contains(preview.Diff, "+++ b/pages/cli-preview.md") {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pages", "cli-preview.md")); !os.IsNotExist(err) {
+		t.Fatalf("preview modified working tree: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"transaction", "list", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("list returned %d: %s", code, stderr.String())
+	}
+	var listed struct {
+		Transactions []struct {
+			TransactionID string `json:"transaction_id"`
+		} `json:"transactions"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Transactions) != 1 || listed.Transactions[0].TransactionID != preview.TransactionID {
+		t.Fatalf("list = %+v", listed)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"transaction", "show", preview.TransactionID, "--repo", root, "--diff", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("show returned %d: %s", code, stderr.String())
+	}
+	var shown struct {
+		PreviewDigest string `json:"preview_digest"`
+		Diff          string `json:"diff"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &shown); err != nil {
+		t.Fatal(err)
+	}
+	if shown.PreviewDigest != preview.PreviewDigest || shown.Diff != preview.Diff {
+		t.Fatalf("show = %+v", shown)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"transaction", "discard", preview.TransactionID, "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("discard returned %d: %s", code, stderr.String())
+	}
+	var discarded struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &discarded); err != nil {
+		t.Fatal(err)
+	}
+	if discarded.Status != "discarded" {
+		t.Fatalf("discard = %+v", discarded)
+	}
+}
+
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},
@@ -255,6 +372,8 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 		{"search", "--bad", "--json"},
 		{"read", "--bad", "--json"},
 		{"recent", "--bad", "--json"},
+		{"preview", "--bad", "--json"},
+		{"transaction", "list", "--bad", "--json"},
 		{"init", "--bad", "--json"},
 	}
 	for _, args := range tests {
@@ -283,7 +402,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 }
 
 func TestEveryCommandSupportsHelp(t *testing.T) {
-	for _, command := range []string{"init", "capture", "search", "read", "lint", "recent", "version"} {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "transaction", "recent", "version"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)

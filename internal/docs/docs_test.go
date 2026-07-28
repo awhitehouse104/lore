@@ -202,3 +202,37 @@ func TestValidateSourceIntegratedInto(t *testing.T) {
 		t.Fatal("invalid integrated_into value accepted")
 	}
 }
+
+func TestPageChangedExceptUpdated(t *testing.T) {
+	currentData := []byte(`---
+id: page_example
+title: Example
+kind: topic
+created: "2026-07-27"
+updated: "2026-07-27"
+status: active
+sensitivity: normal
+---
+Body.
+`)
+	updatedOnly := bytes.Replace(currentData, []byte(`updated: "2026-07-27"`), []byte(`updated: "2026-07-28"`), 1)
+	changedBody := bytes.Replace(updatedOnly, []byte("Body."), []byte("Changed."), 1)
+	current, err := Parse("pages/example.md", currentData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposed, err := Parse("pages/example.md", updatedOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if PageChangedExceptUpdated(current, proposed) {
+		t.Fatal("updated-only change reported as another change")
+	}
+	proposed, err = Parse("pages/example.md", changedBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !PageChangedExceptUpdated(current, proposed) {
+		t.Fatal("body change was not detected")
+	}
+}
