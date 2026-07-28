@@ -1,58 +1,61 @@
 # Lore implementation status
 
-## Current milestone
+## Current release and milestone
 
-Milestone 5 — hardening and v0.1 release readiness (complete).
+Lore v0.2 — Milestone 2: preview and inspection.
 
-## Completed work
+## Verified baseline
 
-- Initialized the application repository and Go module.
-- Added project development instructions and the initial package boundaries.
-- Added shared API error/result types, version metadata, command dispatch, and build targets.
-- Added strict v0.1 configuration parsing with defaults and unknown-key rejection.
-- Added centralized safe-path/root resolution and symlink-escape rejection.
-- Added byte-preserving Markdown frontmatter parsing, document validation, and SHA-256 helpers.
-- Added embedded knowledge-repository templates and idempotent Git-aware initialization.
-- Added structural, metadata, duplicate-ID, alias-collision, and source-integrity lint checks.
-- Added bounded UTF-8 input, cryptographic source ULIDs, deterministic source serialization, and exact-body hashing.
-- Added inspectable advisory write locking and atomic no-clobber source publication.
-- Added path-limited capture commits, explicit branch pushes, push policy handling, and partial-failure recovery details.
-- Added a shared managed-document catalog with priority-based reference resolution and ambiguity diagnostics.
-- Added exact, one-indexed line reads with clamping, Lore URIs, and whole-file revision hashes.
-- Added deterministic Unicode-aware lexical search with explainable scoring, bounded snippets, scopes, kind filters, and stable tie-breaking.
-- Completed lint with configuration, relative-link, repository-escape, Git dirty-source, and detached-HEAD checks.
-- Added deterministic NUL-delimited Git history parsing with content-only and all-commit modes.
-- Hardened JSON error handling, option/path safety, cancellation, deterministic output ordering, and runtime symlink checks.
-- Completed the README, CLI/data-model/security guides, build metadata injection, and v0.1.0 release notes.
+- v0.1 final commit: `69e250698694c8489ffd4b967fe98839dbf81ecb`
+- v0.1 release tag: `v0.1.0`
+- Baseline date: 2026-07-28
+- `make check`: passed
+- `make test-race`: passed
+- `go mod verify`: passed (`all modules verified`)
+- Working tree before v0.2 changes: clean
 
-## Commands implemented
+The first baseline attempt ran with a fresh empty `/tmp` module cache and failed only because sandboxed network access could not download the two versions already locked in `go.mod`. After downloading those exact modules through the approved network path, the complete baseline rerun passed.
 
-- `lore version`
-- `lore init`
-- `lore lint`
-- `lore capture`
-- `lore read`
-- `lore search`
-- `lore recent`
+## v0.2 milestone plan
+
+1. **Transaction contracts and overlay view**
+   - Strict request/domain validation, actor seam, safe page paths, overlay repository reads, prospective lint, deterministic proposal persistence.
+2. **Preview and inspection**
+   - Effective operations, source integration metadata, unified diffs and artifact hashes, `preview`, and transaction list/show/discard commands.
+3. **Commit and Git isolation**
+   - Base/revision/dirty-path preconditions, durable apply journal, multi-path commit verification, push policy, and commit idempotency.
+4. **Recovery and fault injection**
+   - Recovery status, rollback/finalize, phase reconciliation, no-clobber behavior, and injected crash-boundary integration coverage.
+5. **Documentation and v0.2 release**
+   - Generated agent rules, README/CLI/data/security/recovery docs, config migration notes, release notes, dependency/license/security audit, complete checks, and `v0.2.0` tag.
+
+## v0.1 completed capabilities
+
+- `lore init`, `capture`, `search`, `read`, `lint`, `recent`, and `version`
+- Strict v1 configuration and embedded knowledge-repository templates
+- Exact-byte source capture, SHA-256 integrity, advisory locking, isolated Git commits, and explicit push policy
+- Priority-based reads, deterministic lexical evidence search, repository/link/source-integrity lint, and Git history
+- Stable CLI JSON schema version 1 and transport-independent core operations
 
 ## Checks passing
 
-- `go test ./...`
-- `go vet ./...`
-- `go build ./cmd/lore`
-- `go test -race ./...`
-- `make check`
-- `make test-race`
-- End-to-end CLI session covering init, capture, search, read, lint, recent, and version
+- v0.1 baseline checks listed above
+- v0.2 M1 `make check`
+
+## v0.2 completed milestones
+
+- M1: strict bounded transaction requests, operation/message/path validation, deterministic proposal and state contracts, private atomic artifact storage with tamper detection, source integration metadata merging with exact body preservation, optional `integrated_into` linting, and real/overlay repository views for prospective full-tree lint.
 
 ## Known issues
 
-- No known v0.1 correctness issues. Deliberate product limitations are documented in `README.md` and the release notes.
+- No known v0.1 correctness issues.
+- v0.2 transaction CLI commands are not implemented yet.
 
-## Material deviations from spec
+## Material deviations and compatibility notes
 
-- Atomic source publication uses a same-directory hard-link/no-clobber publish followed by temporary-link removal instead of `rename`. This preserves atomic visibility and guarantees that an existing destination cannot be overwritten using the Go standard library on the primary Linux target.
+- v0.1 atomic source publication uses a same-directory hard-link/no-clobber publish followed by temporary-link removal instead of `rename`. This preserves atomic visibility and guarantees that an existing destination cannot be overwritten on the primary Linux target.
+- Knowledge-repository `lore.yaml` remains at `version: 1`. v0.2 will add optional configuration fields; older strict v0.1 binaries may reject repositories that use them.
 
-## Next milestone
+## Next checkpoint
 
-The v0.1 definition of done is complete. Planned v0.2 safe synthesized-write transactions have not been started.
+Implement and commit v0.2 Milestone 2 preview and inspection commands.

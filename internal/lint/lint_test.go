@@ -190,3 +190,63 @@ func TestLintReportsMissingManagedDirectoryWithoutRuntimeFailure(t *testing.T) {
 		t.Fatalf("missing pages finding absent: %+v", result.Findings)
 	}
 }
+
+func TestLintOverlaySeesCreatedPageAndDoesNotTouchDisk(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	sourceBody := []byte("source body")
+	source := docs.Source{
+		ID:             sourceID,
+		Kind:           "user_statement",
+		CapturedAt:     "2026-07-22T00:00:00Z",
+		Origin:         "test",
+		RawSHA256:      docs.SHA256(sourceBody),
+		Sensitivity:    "normal",
+		IntegratedAt:   "2026-07-22T01:00:00Z",
+		IntegratedInto: []string{"page_new"},
+	}
+	sourceData, err := docs.MarshalSource(source, sourceBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDir := filepath.Join(root, "sources", "2026", "07")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, sourceID+"-user_statement.md"), sourceData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	page := []byte(`---
+id: page_new
+title: New
+kind: topic
+created: "2026-07-22"
+updated: "2026-07-22"
+status: active
+sensitivity: normal
+---
+New page.
+`)
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := repository.NewOverlayView(repo, nil, map[string][]byte{"pages/new.md": page})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.RunView(context.Background(), repo, view, gitx.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, finding := range result.Findings {
+		if finding.Code == "integrated_page_missing" {
+			t.Fatalf("overlay page reported missing: %+v", result.Findings)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "pages", "new.md")); !os.IsNotExist(err) {
+		t.Fatalf("prospective page touched disk: %v", err)
+	}
+}

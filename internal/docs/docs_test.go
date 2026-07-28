@@ -1,8 +1,10 @@
 package docs
 
 import (
+	"bytes"
 	"strings"
 	"testing"
+	"time"
 )
 
 const validSourceID = "src_01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -140,5 +142,63 @@ func TestParseRequiresFrontmatter(t *testing.T) {
 		if _, err := Parse("pages/test.md", data); err == nil {
 			t.Fatalf("Parse(%q) unexpectedly succeeded", data)
 		}
+	}
+}
+
+func TestMarkSourceIntegratedPreservesBodyAndUnknownFrontmatter(t *testing.T) {
+	body := []byte("first\r\nsecond\nno final newline")
+	data := []byte(`---
+id: ` + validSourceID + `
+kind: user_statement
+captured_at: 2026-07-22T16:30:21Z
+origin: codex
+raw_sha256: ` + SHA256(body) + `
+sensitivity: normal
+integrated_into: [page_existing]
+custom_extension:
+  enabled: true
+---
+`)
+	data = append(data, body...)
+	updated, err := MarkSourceIntegrated(
+		"sources/2026/07/test.md",
+		data,
+		time.Date(2026, 7, 28, 20, 10, 0, 123, time.UTC),
+		[]string{"page_new", "page_existing"},
+	)
+	if err != nil {
+		t.Fatalf("MarkSourceIntegrated: %v", err)
+	}
+	document, err := Parse("sources/2026/07/test.md", updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(document.Body, body) {
+		t.Fatalf("body changed:\n%q\n%q", document.Body, body)
+	}
+	if got := document.Source.IntegratedInto; len(got) != 2 || got[0] != "page_existing" || got[1] != "page_new" {
+		t.Fatalf("integrated_into = %v", got)
+	}
+	if !bytes.Contains(updated[:document.BodyOffset], []byte("custom_extension:")) ||
+		!bytes.Contains(updated[:document.BodyOffset], []byte("enabled: true")) {
+		t.Fatalf("unknown frontmatter was lost:\n%s", updated[:document.BodyOffset])
+	}
+	if SHA256(document.Body) != document.Source.RawSHA256 {
+		t.Fatal("source body integrity changed")
+	}
+}
+
+func TestValidateSourceIntegratedInto(t *testing.T) {
+	document, err := Parse("sources/2026/07/test.md", sourceFile("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.Source.IntegratedInto = []string{"page_valid", "page_valid"}
+	if errs := Validate(document); len(errs) == 0 {
+		t.Fatal("duplicate integrated_into value accepted")
+	}
+	document.Source.IntegratedInto = []string{"invalid"}
+	if errs := Validate(document); len(errs) == 0 {
+		t.Fatal("invalid integrated_into value accepted")
 	}
 }

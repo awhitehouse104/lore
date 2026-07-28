@@ -23,10 +23,11 @@ type Config struct {
 }
 
 type GitConfig struct {
-	AutoCommitCaptures bool   `yaml:"auto_commit_captures"`
-	AutoPushCaptures   bool   `yaml:"auto_push_captures"`
-	Remote             string `yaml:"remote"`
-	RequirePush        bool   `yaml:"require_push"`
+	AutoCommitCaptures   bool   `yaml:"auto_commit_captures"`
+	AutoPushCaptures     bool   `yaml:"auto_push_captures"`
+	AutoPushTransactions bool   `yaml:"auto_push_transactions"`
+	Remote               string `yaml:"remote"`
+	RequirePush          bool   `yaml:"require_push"`
 }
 
 type CaptureConfig struct {
@@ -37,10 +38,11 @@ func Defaults() Config {
 	return Config{
 		Version: 1,
 		Git: GitConfig{
-			AutoCommitCaptures: true,
-			AutoPushCaptures:   false,
-			Remote:             "origin",
-			RequirePush:        false,
+			AutoCommitCaptures:   true,
+			AutoPushCaptures:     false,
+			AutoPushTransactions: false,
+			Remote:               "origin",
+			RequirePush:          false,
 		},
 		Capture: CaptureConfig{
 			MaxBytes: DefaultMaxBytes,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -30,15 +31,16 @@ var (
 )
 
 type Source struct {
-	ID           string          `yaml:"id"`
-	Kind         string          `yaml:"kind"`
-	CapturedAt   TimestampString `yaml:"captured_at"`
-	Origin       string          `yaml:"origin"`
-	OriginRef    string          `yaml:"origin_ref,omitempty"`
-	RawSHA256    string          `yaml:"raw_sha256"`
-	Sensitivity  string          `yaml:"sensitivity"`
-	Tags         []string        `yaml:"tags,omitempty"`
-	IntegratedAt TimestampString `yaml:"integrated_at,omitempty"`
+	ID             string          `yaml:"id"`
+	Kind           string          `yaml:"kind"`
+	CapturedAt     TimestampString `yaml:"captured_at"`
+	Origin         string          `yaml:"origin"`
+	OriginRef      string          `yaml:"origin_ref,omitempty"`
+	RawSHA256      string          `yaml:"raw_sha256"`
+	Sensitivity    string          `yaml:"sensitivity"`
+	Tags           []string        `yaml:"tags,omitempty"`
+	IntegratedAt   TimestampString `yaml:"integrated_at,omitempty"`
+	IntegratedInto []string        `yaml:"integrated_into,omitempty"`
 }
 
 type Page struct {
@@ -238,9 +240,22 @@ func ValidateSource(source *Source) []error {
 	}
 	errs = append(errs, validateStrings("tags", source.Tags)...)
 	if source.IntegratedAt != "" {
-		if _, err := time.Parse(time.RFC3339, string(source.IntegratedAt)); err != nil {
+		if integrated, err := time.Parse(time.RFC3339, string(source.IntegratedAt)); err != nil {
 			errs = append(errs, fmt.Errorf("integrated_at must be RFC 3339"))
+		} else if _, offset := integrated.Zone(); offset != 0 {
+			errs = append(errs, fmt.Errorf("integrated_at must use UTC"))
 		}
+	}
+	seenPageIDs := make(map[string]struct{}, len(source.IntegratedInto))
+	for _, pageID := range source.IntegratedInto {
+		if err := ValidatePageID(pageID); err != nil {
+			errs = append(errs, fmt.Errorf("integrated_into contains invalid page ID %q", pageID))
+		}
+		if _, exists := seenPageIDs[pageID]; exists {
+			errs = append(errs, fmt.Errorf("integrated_into must contain unique page IDs"))
+			break
+		}
+		seenPageIDs[pageID] = struct{}{}
 	}
 	return errs
 }
@@ -250,8 +265,8 @@ func ValidatePage(page *Page) []error {
 	if page == nil {
 		return []error{fmt.Errorf("page metadata is missing")}
 	}
-	if !pageIDPattern.MatchString(page.ID) {
-		errs = append(errs, fmt.Errorf("id must match %s", pageIDPattern))
+	if err := ValidatePageID(page.ID); err != nil {
+		errs = append(errs, err)
 	}
 	if strings.TrimSpace(page.Title) == "" {
 		errs = append(errs, fmt.Errorf("title must not be empty"))
@@ -295,6 +310,13 @@ func ValidateSourceID(value string) error {
 	return nil
 }
 
+func ValidatePageID(value string) error {
+	if !pageIDPattern.MatchString(value) {
+		return fmt.Errorf("id must match %s", pageIDPattern)
+	}
+	return nil
+}
+
 func ValidToken(value string) bool {
 	return tokenPattern.MatchString(value)
 }
@@ -331,6 +353,97 @@ func MarshalSource(source Source, body []byte) ([]byte, error) {
 	data = append(data, "---\n"...)
 	data = append(data, body...)
 	return data, nil
+}
+
+// MarkSourceIntegrated updates only the integration fields in source
+// frontmatter. Unknown frontmatter fields survive YAML re-serialization and
+// the source body bytes are appended without modification.
+func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, pageIDs []string) ([]byte, error) {
+	document, err := Parse(path, data)
+	if err != nil {
+		return nil, err
+	}
+	if document.Source == nil {
+		return nil, fmt.Errorf("document is not a source")
+	}
+	if errs := ValidateSource(document.Source); len(errs) > 0 {
+		return nil, errs[0]
+	}
+	if SHA256(document.Body) != document.Source.RawSHA256 {
+		return nil, fmt.Errorf("source body SHA-256 does not match raw_sha256")
+	}
+	union := make(map[string]struct{}, len(document.Source.IntegratedInto)+len(pageIDs))
+	for _, pageID := range document.Source.IntegratedInto {
+		union[pageID] = struct{}{}
+	}
+	for _, pageID := range pageIDs {
+		if err := ValidatePageID(pageID); err != nil {
+			return nil, fmt.Errorf("invalid integrated page ID %q", pageID)
+		}
+		union[pageID] = struct{}{}
+	}
+	integratedInto := make([]string, 0, len(union))
+	for pageID := range union {
+		integratedInto = append(integratedInto, pageID)
+	}
+	sort.Strings(integratedInto)
+
+	frontmatter, _, _, err := splitFrontmatter(data)
+	if err != nil {
+		return nil, err
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(frontmatter, &root); err != nil {
+		return nil, fmt.Errorf("parse source frontmatter: %w", err)
+	}
+	if len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("source frontmatter must be a YAML mapping")
+	}
+	mapping := root.Content[0]
+	setMappingValue(mapping, "integrated_at", &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!str",
+		Value: integratedAt.UTC().Format(time.RFC3339Nano),
+	})
+	sequence := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, pageID := range integratedInto {
+		sequence.Content = append(sequence.Content, &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: pageID,
+		})
+	}
+	setMappingValue(mapping, "integrated_into", sequence)
+	encoded, err := yaml.Marshal(&root)
+	if err != nil {
+		return nil, fmt.Errorf("marshal source frontmatter: %w", err)
+	}
+	result := make([]byte, 0, len(encoded)+len(document.Body)+8)
+	result = append(result, "---\n"...)
+	result = append(result, encoded...)
+	result = append(result, "---\n"...)
+	result = append(result, document.Body...)
+	updated, err := Parse(path, result)
+	if err != nil {
+		return nil, fmt.Errorf("validate updated source: %w", err)
+	}
+	if SHA256(updated.Body) != updated.Source.RawSHA256 || !bytes.Equal(updated.Body, document.Body) {
+		return nil, fmt.Errorf("source body changed while updating integration metadata")
+	}
+	return result, nil
+}
+
+func setMappingValue(mapping *yaml.Node, key string, value *yaml.Node) {
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		if mapping.Content[index].Value == key {
+			mapping.Content[index+1] = value
+			return
+		}
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+		value,
+	)
 }
 
 func parseDate(value string) (time.Time, error) {

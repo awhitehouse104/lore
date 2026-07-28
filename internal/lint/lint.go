@@ -74,6 +74,12 @@ func RunRoot(ctx context.Context, root string, git gitx.Client) (Result, error) 
 }
 
 func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Result, error) {
+	return RunView(ctx, repo, repository.FilesystemView{Repository: repo}, git)
+}
+
+// RunView evaluates the complete repository lint contract through a read-only
+// view. Repository structure and Git state remain tied to the real tree.
+func RunView(ctx context.Context, repo *repository.Repository, view repository.View, git gitx.Client) (Result, error) {
 	result := Result{SchemaVersion: 1, Valid: true, Findings: []Finding{}}
 	for _, dir := range []string{"pages", "sources", "assets", "system", ".lore"} {
 		info, err := os.Lstat(filepath.Join(repo.Root, dir))
@@ -118,7 +124,7 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 		}
 	}
 
-	paths, walkIssues, err := repo.ManagedMarkdown()
+	paths, walkIssues, err := view.ManagedMarkdown()
 	if err != nil {
 		return Result{}, err
 	}
@@ -137,7 +143,7 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
-		absolute, pathErr := repo.SafeContentPath(path)
+		_, pathErr := repo.SafeContentPath(path)
 		if pathErr != nil {
 			result.Findings = append(result.Findings, Finding{
 				Severity: SeverityError,
@@ -147,7 +153,7 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 			})
 			continue
 		}
-		info, statErr := os.Stat(absolute)
+		info, statErr := view.Stat(path)
 		if statErr != nil {
 			return Result{}, fmt.Errorf("inspect %s: %w", path, statErr)
 		}
@@ -160,7 +166,7 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 			})
 			continue
 		}
-		data, readErr := os.ReadFile(absolute)
+		data, readErr := view.ReadFile(path)
 		if readErr != nil {
 			return Result{}, fmt.Errorf("read %s: %w", path, readErr)
 		}
@@ -201,7 +207,8 @@ func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Res
 
 	checkDuplicateIDs(&result, documents)
 	checkAliasCollisions(&result, documents)
-	checkLinks(&result, repo, documents)
+	checkIntegratedPages(&result, documents)
+	checkLinks(&result, repo, view, documents)
 	if isGit {
 		changes, changesErr := git.SourceChanges(ctx, repo.Root)
 		if changesErr != nil {
@@ -349,18 +356,44 @@ func checkAliasCollisions(result *Result, documents []*docs.Document) {
 	}
 }
 
-func checkLinks(result *Result, repo *repository.Repository, documents []*docs.Document) {
+func checkIntegratedPages(result *Result, documents []*docs.Document) {
+	pageIDs := make(map[string]struct{})
+	for _, document := range documents {
+		if document.Page != nil {
+			pageIDs[document.Page.ID] = struct{}{}
+		}
+	}
+	for _, document := range documents {
+		if document.Source == nil {
+			continue
+		}
+		for _, pageID := range document.Source.IntegratedInto {
+			if _, exists := pageIDs[pageID]; exists {
+				continue
+			}
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "integrated_page_missing",
+				Path:     document.Path,
+				Line:     2,
+				Message:  fmt.Sprintf("integrated_into references missing page ID %s", pageID),
+			})
+		}
+	}
+}
+
+func checkLinks(result *Result, repo *repository.Repository, view repository.View, documents []*docs.Document) {
 	for _, document := range documents {
 		bodyStart := bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1
 		for index, line := range strings.Split(string(document.Body), "\n") {
 			for _, destination := range markdownDestinations(line) {
-				checkLink(result, repo, document.Path, bodyStart+index, destination)
+				checkLink(result, repo, view, document.Path, bodyStart+index, destination)
 			}
 		}
 	}
 }
 
-func checkLink(result *Result, repo *repository.Repository, documentPath string, line int, destination string) {
+func checkLink(result *Result, repo *repository.Repository, view repository.View, documentPath string, line int, destination string) {
 	if destination == "" || strings.HasPrefix(destination, "#") {
 		return
 	}
@@ -403,7 +436,7 @@ func checkLink(result *Result, repo *repository.Repository, documentPath string,
 		return
 	}
 	relative := filepath.Clean(filepath.Join(filepath.Dir(filepath.FromSlash(documentPath)), filepath.FromSlash(targetPath)))
-	absolute, safeErr := repo.SafeRepositoryPath(relative)
+	_, safeErr := repo.SafeRepositoryPath(relative)
 	if safeErr != nil {
 		result.Findings = append(result.Findings, Finding{
 			Severity: SeverityError,
@@ -414,7 +447,7 @@ func checkLink(result *Result, repo *repository.Repository, documentPath string,
 		})
 		return
 	}
-	if _, statErr := os.Stat(absolute); statErr != nil {
+	if _, statErr := view.Stat(filepath.ToSlash(relative)); statErr != nil {
 		if os.IsNotExist(statErr) {
 			result.Findings = append(result.Findings, Finding{
 				Severity: SeverityError,

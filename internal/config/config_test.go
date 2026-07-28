@@ -18,6 +18,7 @@ func TestParseOverrides(t *testing.T) {
 git:
   auto_commit_captures: false
   auto_push_captures: true
+  auto_push_transactions: true
   remote: backup
   require_push: true
 capture:
@@ -27,7 +28,7 @@ capture:
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if cfg.Git.AutoCommitCaptures || !cfg.Git.AutoPushCaptures || cfg.Git.Remote != "backup" || !cfg.Git.RequirePush || cfg.Capture.MaxBytes != 1234 {
+	if cfg.Git.AutoCommitCaptures || !cfg.Git.AutoPushCaptures || !cfg.Git.AutoPushTransactions || cfg.Git.Remote != "backup" || !cfg.Git.RequirePush || cfg.Capture.MaxBytes != 1234 {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }

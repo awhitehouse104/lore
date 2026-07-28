@@ -3,6 +3,7 @@ version: 1
 git:
   auto_commit_captures: true
   auto_push_captures: false
+  auto_push_transactions: false
   remote: origin
   require_push: false
 
