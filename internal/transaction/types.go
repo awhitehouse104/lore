@@ -147,6 +147,9 @@ func ValidateProposal(proposal Proposal) error {
 	}
 	seen := make(map[string]struct{}, len(proposal.Operations))
 	for index, operation := range proposal.Operations {
+		if index > 0 && proposal.ChangedPaths[index-1] >= proposal.ChangedPaths[index] {
+			return fmt.Errorf("proposal changed_paths must be unique and sorted")
+		}
 		if _, exists := seen[operation.Path]; exists {
 			return fmt.Errorf("proposal contains duplicate path %q", operation.Path)
 		}
@@ -230,9 +233,10 @@ func ValidateTransition(from, to Status) error {
 	}
 	allowed := map[Status]map[Status]bool{
 		StatusPreviewed: {
-			StatusApplying:  true,
-			StatusDiscarded: true,
-			StatusFailed:    true,
+			StatusApplying:         true,
+			StatusDiscarded:        true,
+			StatusFailed:           true,
+			StatusRecoveryRequired: true,
 		},
 		StatusApplying: {
 			StatusCommitted:        true,
@@ -244,7 +248,8 @@ func ValidateTransition(from, to Status) error {
 			StatusFailed:    true,
 		},
 		StatusFailed: {
-			StatusDiscarded: true,
+			StatusDiscarded:        true,
+			StatusRecoveryRequired: true,
 		},
 	}
 	if !allowed[from][to] {

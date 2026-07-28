@@ -317,6 +317,11 @@ func Validate(journal Journal) error {
 	if len(journal.Files) == 0 || len(journal.Files) != len(journal.ChangedPaths) {
 		return fmt.Errorf("recovery files must correspond to changed paths")
 	}
+	for index, path := range journal.ChangedPaths {
+		if index > 0 && journal.ChangedPaths[index-1] >= path {
+			return fmt.Errorf("recovery changed paths must be unique and sorted")
+		}
+	}
 	for index, file := range journal.Files {
 		if file.Path != journal.ChangedPaths[index] {
 			return fmt.Errorf("recovery file order does not match changed paths")

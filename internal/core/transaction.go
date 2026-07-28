@@ -170,7 +170,7 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 	if apiErr := validateIntegratedPageReferences(view, effective); apiErr != nil {
 		return result, apiErr
 	}
-	lintResult, err := lint.RunView(ctx, s.Repo, view, s.TxGit)
+	lintResult, err := lint.RunViewAt(ctx, s.Repo, view, s.TxGit, now)
 	if err != nil {
 		return result, transactionRuntimeError("prospective_lint_failed", "could not lint the prospective repository", err)
 	}
@@ -579,9 +579,20 @@ func marshalJSONLine(value any) ([]byte, error) {
 }
 
 func lintWarnings(result lint.Result) []string {
+	return lintWarningsWithout(result)
+}
+
+func lintWarningsWithout(result lint.Result, excludedCodes ...string) []string {
+	excluded := make(map[string]struct{}, len(excludedCodes))
+	for _, code := range excludedCodes {
+		excluded[code] = struct{}{}
+	}
 	warnings := []string{}
 	for _, finding := range result.Findings {
 		if finding.Severity == lint.SeverityWarning {
+			if _, skip := excluded[finding.Code]; skip {
+				continue
+			}
 			warnings = append(warnings, fmt.Sprintf("%s: %s: %s", finding.Code, finding.Path, finding.Message))
 		}
 	}

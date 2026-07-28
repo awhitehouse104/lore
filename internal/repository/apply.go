@@ -87,6 +87,35 @@ func (r *Repository) AtomicApply(relative string, data, expected []byte, expecte
 	return nil
 }
 
+func (r *Repository) RemoveExpected(relative string, expected []byte) error {
+	target, err := r.SafeContentPath(relative)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		return fmt.Errorf("inspect removal destination: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("removal destination is not a regular non-symlink file")
+	}
+	current, err := os.ReadFile(target)
+	if err != nil {
+		return fmt.Errorf("read removal destination: %w", err)
+	}
+	if !bytes.Equal(current, expected) {
+		return fmt.Errorf("removal destination no longer matches the expected bytes")
+	}
+	if err := os.Remove(target); err != nil {
+		return fmt.Errorf("remove destination: %w", err)
+	}
+	if directory, err := os.Open(filepath.Dir(target)); err == nil {
+		_ = directory.Sync()
+		_ = directory.Close()
+	}
+	return nil
+}
+
 func verifyExpectedFile(path string, expected []byte, expectedExists bool) error {
 	info, err := os.Lstat(path)
 	if !expectedExists {

@@ -141,6 +141,46 @@ func (c Client) BlobAtCommit(ctx context.Context, dir, commit, path string) ([]b
 	return c.run(ctx, dir, "show", commit+":"+path)
 }
 
+func (c Client) DirectChildren(ctx context.Context, dir, parent string) ([]string, error) {
+	stdout, err := c.run(ctx, dir, "rev-list", "--all", "--parents")
+	if err != nil {
+		return nil, err
+	}
+	var children []string
+	for _, line := range strings.Split(strings.TrimSpace(string(stdout)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == parent {
+			children = append(children, fields[0])
+		}
+	}
+	sort.Strings(children)
+	return children, nil
+}
+
+func (c Client) IsAncestor(ctx context.Context, dir, ancestor, descendant string) (bool, error) {
+	_, err := c.run(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err == nil {
+		return true, nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) && commandErr.ExitCode == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+func (c Client) CommitTime(ctx context.Context, dir, commit string) (time.Time, error) {
+	stdout, err := c.run(ctx, dir, "show", "-s", "--format=%cI", commit)
+	if err != nil {
+		return time.Time{}, err
+	}
+	value, err := time.Parse(time.RFC3339, strings.TrimSpace(string(stdout)))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse Git commit time: %w", err)
+	}
+	return value.UTC(), nil
+}
+
 func (c Client) Head(ctx context.Context, dir string) (string, error) {
 	stdout, err := c.run(ctx, dir, "rev-parse", "HEAD")
 	if err != nil {

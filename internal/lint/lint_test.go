@@ -12,7 +12,9 @@ import (
 	"lore/internal/gitx"
 	"lore/internal/initrepo"
 	"lore/internal/lint"
+	"lore/internal/recovery"
 	"lore/internal/repository"
+	"lore/internal/transaction"
 )
 
 const sourceID = "src_01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -248,5 +250,120 @@ New page.
 	}
 	if _, err := os.Stat(filepath.Join(root, "pages", "new.md")); !os.IsNotExist(err) {
 		t.Fatalf("prospective page touched disk: %v", err)
+	}
+}
+
+func TestLintRuntimeRecoveryAndStalePreviewFindings(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdAt := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	content := []byte(`---
+id: page_stale
+title: Stale
+kind: topic
+created: "2026-06-01"
+updated: "2026-06-01"
+status: active
+sensitivity: normal
+---
+Stale.
+`)
+	diffBytes := []byte("diff")
+	lintBytes := []byte("{}\n")
+	proposal := transaction.Proposal{
+		SchemaVersion: transaction.SchemaVersion,
+		TransactionID: "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		CreatedAt:     createdAt.Format(time.RFC3339Nano),
+		BaseCommit:    "base",
+		BaseBranch:    "main",
+		Actor:         transaction.DefaultActor,
+		Message:       "create: stale",
+		Operations: []transaction.EffectiveOperation{{
+			Op:                     transaction.OperationCreatePage,
+			Path:                   "pages/stale.md",
+			ResultingContentSHA256: transaction.Digest(content),
+			ContentFile:            "content/000.md",
+		}},
+		ChangedPaths: []string{"pages/stale.md"},
+		DiffSHA256:   transaction.Digest(diffBytes),
+		LintSHA256:   transaction.Digest(lintBytes),
+	}
+	transactionStore, err := transaction.NewStore(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := transactionStore.Save(transaction.Artifacts{
+		Proposal: proposal,
+		State: transaction.State{
+			SchemaVersion: transaction.SchemaVersion,
+			TransactionID: proposal.TransactionID,
+			Status:        transaction.StatusPreviewed,
+			UpdatedAt:     proposal.CreatedAt,
+		},
+		Diff: diffBytes, Lint: lintBytes, Contents: [][]byte{content},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveryStore, err := recovery.NewStore(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := recovery.NewJournal(
+		proposal, digest, [][]byte{nil}, []bool{false}, createdAt, "commit",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recoveryStore.Create(journal, [][]byte{nil}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.RunAt(context.Background(), repo, gitx.New(), createdAt.Add(31*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := map[string]bool{}
+	for _, finding := range result.Findings {
+		codes[finding.Code] = true
+	}
+	if !codes["stale_transaction_preview"] || !codes["recovery_active"] || !result.Valid {
+		t.Fatalf("runtime findings = %+v", result.Findings)
+	}
+}
+
+func TestLintMalformedRecoveryJournalIsError(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	active := filepath.Join(root, ".lore", "recovery", "active")
+	if err := os.MkdirAll(filepath.Join(active, "originals"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(active, "journal.json"), []byte("{bad"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.RunAt(context.Background(), repo, gitx.New(), time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, finding := range result.Findings {
+		if finding.Code == "malformed_recovery_journal" && finding.Severity == lint.SeverityError {
+			found = true
+		}
+	}
+	if !found || result.Valid {
+		t.Fatalf("malformed recovery findings = %+v", result.Findings)
 	}
 }

@@ -124,7 +124,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	if err != nil {
 		return result, transactionRuntimeError("overlay_failed", "could not rebuild the prospective repository", err)
 	}
-	lintResult, err := lint.RunView(ctx, s.Repo, view, s.TxGit)
+	lintResult, err := lint.RunViewAt(ctx, s.Repo, view, s.TxGit, now)
 	if err != nil {
 		return result, transactionRuntimeError("prospective_lint_failed", "could not re-run prospective lint", err)
 	}
@@ -176,6 +176,11 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 		); err != nil {
 			return s.rollbackCommitFailure(ctx, store, recoveryStore, artifacts, journal, originals, "file_apply_failed", "could not apply all transaction files", err)
 		}
+		if s.TxHooks != nil {
+			if err := s.TxHooks.AfterFileRename(index, operation.Path); err != nil {
+				return CommitResult{}, transactionRuntimeError("injected_interruption", "transaction interrupted after a file rename; run lore recover", err)
+			}
+		}
 		journal.Files[index].Applied = true
 		if err := recoveryStore.Update(journal); err != nil {
 			return s.markRecoveryRequired(store, artifacts, "recovery_journal_failed", "a file was applied but its recovery journal could not be updated", err)
@@ -185,7 +190,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	if err := recoveryStore.Update(journal); err != nil {
 		return s.markRecoveryRequired(store, artifacts, "recovery_journal_failed", "transaction files were applied but the recovery journal could not be updated", err)
 	}
-	realLint, err := lint.Run(ctx, s.Repo, s.TxGit)
+	realLint, err := lint.RunAt(ctx, s.Repo, s.TxGit, s.Clock.Now().UTC())
 	if err != nil {
 		return s.rollbackCommitFailure(ctx, store, recoveryStore, artifacts, journal, originals, "lint_failed", "could not lint the applied repository", err)
 	}
@@ -197,6 +202,11 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	if err != nil {
 		_ = s.TxGit.ResetPaths(ctx, s.Repo.Root, artifacts.Proposal.ChangedPaths)
 		return s.rollbackCommitFailure(ctx, store, recoveryStore, artifacts, journal, originals, "git_commit_failed", "could not create the transaction Git commit", err)
+	}
+	if s.TxHooks != nil {
+		if err := s.TxHooks.AfterGitCommit(commitHash); err != nil {
+			return CommitResult{}, transactionRuntimeError("injected_interruption", "transaction interrupted after the Git commit; run lore recover --finalize", err)
+		}
 	}
 	journal.Commit = commitHash
 	journal.Phase = recovery.PhaseGitCommitted
@@ -218,7 +228,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	}
 	artifacts.State = committedState
 	result = committedResult(artifacts, false)
-	result.Warnings = append(result.Warnings, lintWarnings(realLint)...)
+	result.Warnings = append(result.Warnings, lintWarningsWithout(realLint, "recovery_active")...)
 
 	journal.Phase = recovery.PhaseFinalized
 	if err := recoveryStore.Update(journal); err != nil {
@@ -357,7 +367,7 @@ func (s *Service) rollbackCommitFailure(
 	if err := s.restoreJournalFiles(journal, originals); err != nil {
 		return s.markRecoveryRequired(store, artifacts, "rollback_conflict", "automatic rollback could not safely restore every target; run lore recover", err)
 	}
-	if _, err := lint.Run(ctx, s.Repo, s.TxGit); err != nil {
+	if _, err := lint.RunAt(ctx, s.Repo, s.TxGit, s.Clock.Now().UTC()); err != nil {
 		return s.markRecoveryRequired(store, artifacts, "rollback_lint_failed", "files were restored but rollback lint could not run; run lore recover", err)
 	}
 	failed := artifacts.State
@@ -405,7 +415,7 @@ func (s *Service) restoreJournalFiles(journal recovery.Journal, originals [][]by
 			if docs.Revision(current) != file.ResultingRevision {
 				return fmt.Errorf("created path %s contains an unexpected external edit", file.Path)
 			}
-			if err := os.Remove(absolute); err != nil {
+			if err := s.Repo.RemoveExpected(file.Path, current); err != nil {
 				return fmt.Errorf("remove created path %s: %w", file.Path, err)
 			}
 			continue

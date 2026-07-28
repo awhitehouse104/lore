@@ -417,6 +417,30 @@ func TestCommitTransactionJSON(t *testing.T) {
 	}
 }
 
+func TestRecoveryStatusJSONWithoutActiveJournal(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{"recover", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("recover returned %d: %s", code, stderr.String())
+	}
+	var result struct {
+		Active            bool   `json:"active"`
+		RecommendedAction string `json:"recommended_action"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Active || result.RecommendedAction != "none" {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},
@@ -428,6 +452,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 		{"preview", "--bad", "--json"},
 		{"commit", "--bad", "--json"},
 		{"transaction", "list", "--bad", "--json"},
+		{"recover", "--bad", "--json"},
 		{"init", "--bad", "--json"},
 	}
 	for _, args := range tests {
@@ -456,7 +481,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 }
 
 func TestEveryCommandSupportsHelp(t *testing.T) {
-	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recent", "version"} {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recover", "recent", "version"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)

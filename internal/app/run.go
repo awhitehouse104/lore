@@ -65,6 +65,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runCommit(ctx, remaining[1:], global, s)
 	case "transaction":
 		return runTransaction(ctx, remaining[1:], global, s)
+	case "recover":
+		return runRecover(ctx, remaining[1:], global, s)
 	case "version":
 		return runVersion(remaining[1:], global, s)
 	case "help", "--help", "-h":
@@ -866,6 +868,7 @@ Commands:
   commit    apply and Git-commit a previewed transaction
   transaction
             inspect or discard transaction proposals
+  recover   inspect, roll back, or finalize interrupted transactions
   recent    inspect recent knowledge commits
   version   print build version
 

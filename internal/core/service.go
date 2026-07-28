@@ -38,6 +38,11 @@ type HistoryGit interface {
 	Recent(context.Context, string, int, bool) ([]gitx.Commit, error)
 }
 
+type TransactionHooks interface {
+	AfterFileRename(index int, path string) error
+	AfterGitCommit(commit string) error
+}
+
 type Service struct {
 	Repo     *repository.Repository
 	Git      CaptureGit
@@ -48,6 +53,7 @@ type Service struct {
 	TxGit    gitx.Client
 	TxIDs    transaction.IDGenerator
 	Actor    string
+	TxHooks  TransactionHooks
 }
 
 func NewService(repo *repository.Repository) *Service {
@@ -154,6 +160,9 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 			returnErr = apiErr
 		}
 	}()
+	if apiErr := s.requireNoRecovery(); apiErr != nil {
+		return result, apiErr
+	}
 
 	sourceID, err := s.IDs.New(now)
 	if err != nil {

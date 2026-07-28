@@ -298,6 +298,10 @@ func (s *Store) loadState(transactionID string) (State, error) {
 	return state, nil
 }
 
+func (s *Store) LoadState(transactionID string) (State, error) {
+	return s.loadState(transactionID)
+}
+
 func (s *Store) transactionDir(transactionID string) (string, error) {
 	if err := ValidateTransactionID(transactionID); err != nil {
 		return "", err

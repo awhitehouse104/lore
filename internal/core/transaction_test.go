@@ -16,6 +16,7 @@ import (
 	"lore/internal/docs"
 	"lore/internal/gitx"
 	"lore/internal/initrepo"
+	"lore/internal/lock"
 	"lore/internal/repository"
 )
 
@@ -27,6 +28,25 @@ type fixedTransactionIDs struct {
 
 func (g fixedTransactionIDs) New(time.Time) (string, error) {
 	return g.value, nil
+}
+
+type transactionFailHooks struct {
+	fileIndex int
+	afterGit  bool
+}
+
+func (h transactionFailHooks) AfterFileRename(index int, _ string) error {
+	if index == h.fileIndex {
+		return errors.New("injected after file rename")
+	}
+	return nil
+}
+
+func (h transactionFailHooks) AfterGitCommit(string) error {
+	if h.afterGit {
+		return errors.New("injected after Git commit")
+	}
+	return nil
 }
 
 func TestPreviewCreateInspectAndDiscard(t *testing.T) {
@@ -557,6 +577,237 @@ func TestCommitRequiredPushFailureReportsSafeLocalCommit(t *testing.T) {
 	}
 	if result.Commit == "" || strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD")) != result.Commit {
 		t.Fatalf("local commit was not retained: %+v", result)
+	}
+}
+
+func TestRecoveryRollbackAfterInjectedFileRename(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	service.TxHooks = transactionFailHooks{fileIndex: 0}
+	page := validTransactionPage("page_interrupted", "Interrupted", "2026-07-28", "Interrupted.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: interrupted", []map[string]any{{
+		"op": "create_page", "path": "pages/interrupted.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "injected_interruption" {
+		t.Fatalf("error = %#v", err)
+	}
+	if got := mustRead(t, filepath.Join(repo.Root, "pages", "interrupted.md")); !bytes.Equal(got, page) {
+		t.Fatal("interrupted apply did not leave exact proposed bytes")
+	}
+	status, err := service.RecoveryStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Active || status.RecommendedAction != "lore recover --rollback" {
+		t.Fatalf("status = %+v", status)
+	}
+	if _, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "test", Body: []byte("blocked capture"), NoCommit: true,
+	}); !errors.As(err, &apiErr) || apiErr.Code != "recovery_required" {
+		t.Fatalf("capture was not blocked by recovery: %#v", err)
+	}
+	service.TxHooks = nil
+	result, err := service.RollbackRecovery(context.Background())
+	if err != nil {
+		t.Fatalf("RollbackRecovery: %v", err)
+	}
+	if result.Status != "failed" || !result.Lint.Valid {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "interrupted.md")); !os.IsNotExist(err) {
+		t.Fatalf("rollback did not remove created page: %v", err)
+	}
+	status, err = service.RecoveryStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Active || status.RecommendedAction != "none" {
+		t.Fatalf("status after rollback = %+v", status)
+	}
+}
+
+func TestRecoveryFinalizeAfterInjectedGitCommit(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	service.TxHooks = transactionFailHooks{fileIndex: -1, afterGit: true}
+	page := validTransactionPage("page_finalize", "Finalize", "2026-07-28", "Finalize.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: finalize", []map[string]any{{
+		"op": "create_page", "path": "pages/finalize.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD"))
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "injected_interruption" {
+		t.Fatalf("error = %#v", err)
+	}
+	commitHash := strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD"))
+	if commitHash == base {
+		t.Fatal("injected interruption occurred before Git commit")
+	}
+	status, err := service.RecoveryStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Active || status.RecommendedAction != "lore recover --finalize" || status.Commit != commitHash {
+		t.Fatalf("status = %+v", status)
+	}
+	service.TxHooks = nil
+	if _, err := service.RollbackRecovery(context.Background()); err == nil {
+		t.Fatal("rollback was allowed after the exact Git commit existed")
+	} else if !errors.As(err, &apiErr) || apiErr.Code != "recovery_finalize_required" {
+		t.Fatalf("rollback error = %#v", err)
+	}
+	if head := strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD")); head != commitHash {
+		t.Fatal("refused rollback changed the canonical Git commit")
+	}
+	result, err := service.FinalizeRecovery(context.Background())
+	if err != nil {
+		t.Fatalf("FinalizeRecovery: %v", err)
+	}
+	if result.Status != "committed" || result.Commit != commitHash {
+		t.Fatalf("result = %+v", result)
+	}
+	if head := strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD")); head != commitHash {
+		t.Fatal("finalize changed the canonical Git commit")
+	}
+	repeated, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	if err != nil || !repeated.AlreadyCommitted || repeated.Commit != commitHash {
+		t.Fatalf("idempotent commit after finalize = %+v, %v", repeated, err)
+	}
+}
+
+func TestRecoveryRollbackRefusesUnexpectedExternalEdit(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	service.TxHooks = transactionFailHooks{fileIndex: 0}
+	page := validTransactionPage("page_external", "External", "2026-07-28", "Proposed.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: external", []map[string]any{{
+		"op": "create_page", "path": "pages/external.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	if err == nil {
+		t.Fatal("injected interruption did not fire")
+	}
+	external := []byte("third-party edit")
+	path := filepath.Join(repo.Root, "pages", "external.md")
+	if err := os.WriteFile(path, external, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service.TxHooks = nil
+	_, err = service.RollbackRecovery(context.Background())
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "rollback_conflict" || apiErr.ExitCode != core.ExitConflict {
+		t.Fatalf("error = %#v", err)
+	}
+	if got := mustRead(t, path); !bytes.Equal(got, external) {
+		t.Fatalf("external edit was overwritten: %q", got)
+	}
+	shown, err := service.TransactionShow(preview.TransactionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shown.State.Status != "recovery_required" {
+		t.Fatalf("state = %+v", shown.State)
+	}
+}
+
+func TestTransactionWritersRespectRepositoryLock(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	now := time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)
+	service.Clock = fixedClock{value: now}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	page := validTransactionPage("page_locked", "Locked", "2026-07-28", "Locked.\n")
+	request := transactionRequest(t, "create: locked", []map[string]any{{
+		"op": "create_page", "path": "pages/locked.md", "content": string(page),
+	}})
+	handle, err := lock.Acquire(repo.Root, "test holder", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Preview(context.Background(), request)
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "repository_locked" {
+		t.Fatalf("preview lock error = %#v", err)
+	}
+	if err := handle.Release(); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := service.Preview(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handle, err = lock.Acquire(repo.Root, "test holder", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Release()
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	if !errors.As(err, &apiErr) || apiErr.Code != "repository_locked" {
+		t.Fatalf("commit lock error = %#v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "locked.md")); !os.IsNotExist(err) {
+		t.Fatalf("locked commit touched target: %v", err)
+	}
+}
+
+func TestCommitRequiresMatchingDigestAndLocalActor(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	page := validTransactionPage("page_identity", "Identity", "2026-07-28", "Identity.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: identity", []map[string]any{{
+		"op": "create_page", "path": "pages/identity.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID,
+		PreviewDigest: docs.SHA256([]byte("wrong")),
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "preview_digest_mismatch" {
+		t.Fatalf("digest error = %#v", err)
+	}
+	service.Actor = "other-actor"
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID,
+		PreviewDigest: preview.PreviewDigest,
+	})
+	if !errors.As(err, &apiErr) || apiErr.Code != "actor_mismatch" {
+		t.Fatalf("actor error = %#v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "identity.md")); !os.IsNotExist(err) {
+		t.Fatalf("identity conflict touched target: %v", err)
 	}
 }
 

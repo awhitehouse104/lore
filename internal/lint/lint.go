@@ -3,6 +3,7 @@ package lint
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -15,7 +16,9 @@ import (
 
 	"lore/internal/docs"
 	"lore/internal/gitx"
+	"lore/internal/recovery"
 	"lore/internal/repository"
+	"lore/internal/transaction"
 )
 
 type Severity string
@@ -74,12 +77,20 @@ func RunRoot(ctx context.Context, root string, git gitx.Client) (Result, error) 
 }
 
 func Run(ctx context.Context, repo *repository.Repository, git gitx.Client) (Result, error) {
-	return RunView(ctx, repo, repository.FilesystemView{Repository: repo}, git)
+	return RunAt(ctx, repo, git, time.Now().UTC())
+}
+
+func RunAt(ctx context.Context, repo *repository.Repository, git gitx.Client, now time.Time) (Result, error) {
+	return RunViewAt(ctx, repo, repository.FilesystemView{Repository: repo}, git, now)
 }
 
 // RunView evaluates the complete repository lint contract through a read-only
 // view. Repository structure and Git state remain tied to the real tree.
 func RunView(ctx context.Context, repo *repository.Repository, view repository.View, git gitx.Client) (Result, error) {
+	return RunViewAt(ctx, repo, view, git, time.Now().UTC())
+}
+
+func RunViewAt(ctx context.Context, repo *repository.Repository, view repository.View, git gitx.Client, now time.Time) (Result, error) {
 	result := Result{SchemaVersion: 1, Valid: true, Findings: []Finding{}}
 	for _, dir := range []string{"pages", "sources", "assets", "system", ".lore"} {
 		info, err := os.Lstat(filepath.Join(repo.Root, dir))
@@ -235,8 +246,93 @@ func RunView(ctx context.Context, repo *repository.Repository, view repository.V
 			})
 		}
 	}
+	checkRuntimeState(&result, repo, now.UTC())
 	finish(&result)
 	return result, nil
+}
+
+func checkRuntimeState(result *Result, repo *repository.Repository, now time.Time) {
+	recoveryStore, err := recovery.NewStore(repo)
+	if err != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "malformed_recovery_journal",
+			Path:     ".lore/recovery/active",
+			Message:  "recovery store path is unsafe or malformed",
+		})
+		return
+	}
+	journal, _, err := recoveryStore.Load()
+	if err == nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     "recovery_active",
+			Path:     ".lore/recovery/active",
+			Message:  fmt.Sprintf("recovery journal for %s is active; repository writes are blocked", journal.TransactionID),
+		})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityError,
+			Code:     "malformed_recovery_journal",
+			Path:     ".lore/recovery/active/journal.json",
+			Message:  "active recovery journal is malformed",
+		})
+	}
+
+	transactionStore, err := transaction.NewStore(repo)
+	if err != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     "transaction_store_unreadable",
+			Path:     ".lore/transactions",
+			Message:  "transaction store path is unsafe or unreadable",
+		})
+		return
+	}
+	ids, err := transactionStore.ListIDs()
+	if err != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     "transaction_store_unreadable",
+			Path:     ".lore/transactions",
+			Message:  "transaction store could not be inspected",
+		})
+		return
+	}
+	for _, transactionID := range ids {
+		state, err := transactionStore.LoadState(transactionID)
+		if err != nil {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "transaction_artifact_invalid",
+				Path:     ".lore/transactions/" + transactionID,
+				Message:  "transaction state failed integrity validation",
+			})
+			continue
+		}
+		if state.Status != transaction.StatusPreviewed {
+			continue
+		}
+		artifacts, err := transactionStore.Load(transactionID)
+		if err != nil {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "transaction_artifact_invalid",
+				Path:     ".lore/transactions/" + transactionID,
+				Message:  "previewed transaction failed integrity validation",
+			})
+			continue
+		}
+		createdAt, err := time.Parse(time.RFC3339Nano, artifacts.Proposal.CreatedAt)
+		if err == nil && now.Sub(createdAt) > 30*24*time.Hour {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "stale_transaction_preview",
+				Path:     ".lore/transactions/" + transactionID,
+				Message:  "previewed transaction is older than 30 days",
+			})
+		}
+	}
 }
 
 func checkSource(result *Result, document *docs.Document) {
