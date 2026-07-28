@@ -364,6 +364,59 @@ Previewed from the CLI.
 	}
 }
 
+func TestCommitTransactionJSON(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	request := `{"schema_version":1,"message":"create: CLI commit","operations":[{"op":"create_page","path":"pages/cli-commit.md","content":"---\nid: page_cli_commit\ntitle: CLI Commit\nkind: topic\ncreated: \"2026-07-28\"\nupdated: \"2026-07-28\"\nstatus: active\nsensitivity: normal\n---\nCommitted.\n"}]}`
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(context.Background(), []string{"preview", "--repo", root, "--json"}, strings.NewReader(request), &stdout, &stderr); code != 0 {
+		t.Fatalf("preview returned %d: %s", code, stderr.String())
+	}
+	var preview struct {
+		TransactionID string `json:"transaction_id"`
+		PreviewDigest string `json:"preview_digest"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{
+		"commit", preview.TransactionID, "--preview-digest", preview.PreviewDigest,
+		"--repo", root, "--no-push", "--json",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("commit returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var result struct {
+		Status           string `json:"status"`
+		Commit           string `json:"commit"`
+		AlreadyCommitted bool   `json:"already_committed"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "committed" || len(result.Commit) != 40 || result.AlreadyCommitted {
+		t.Fatalf("commit = %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(root, "pages", "cli-commit.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},
@@ -373,6 +426,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 		{"read", "--bad", "--json"},
 		{"recent", "--bad", "--json"},
 		{"preview", "--bad", "--json"},
+		{"commit", "--bad", "--json"},
 		{"transaction", "list", "--bad", "--json"},
 		{"init", "--bad", "--json"},
 	}
@@ -402,7 +456,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 }
 
 func TestEveryCommandSupportsHelp(t *testing.T) {
-	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "transaction", "recent", "version"} {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recent", "version"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)

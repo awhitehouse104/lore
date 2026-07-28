@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.2 — Milestone 3: transactional commit and Git isolation.
+Lore v0.2 — Milestone 4: recovery and deterministic fault injection.
 
 ## Verified baseline
 
@@ -42,16 +42,19 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.1 baseline checks listed above
 - v0.2 M1 `make check`
 - v0.2 M2 `make check`
+- v0.2 M3 `make check`
+- v0.2 M3 `make test-race`
 
 ## v0.2 completed milestones
 
 - M1: strict bounded transaction requests, operation/message/path validation, deterministic proposal and state contracts, private atomic artifact storage with tamper detection, source integration metadata merging with exact body preservation, optional `integrated_into` linting, and real/overlay repository views for prospective full-tree lint.
 - M2: `preview` with exact snapshot/revision/dirty-target checks, immutable page rules, in-memory prospective lint, Git no-index unified diffs, atomic proposal persistence, and verified `transaction list`, `show`, and idempotent `discard` commands.
+- M3: digest-bound `commit`, durable exact-original recovery journals, verified atomic file application, full real-tree lint, exact-path Git commits, commit-tree verification, rollback on pre-commit failure, idempotent success, push policy, and preservation of unrelated staged and unstaged changes.
 
 ## Known issues
 
 - No known v0.1 correctness issues.
-- `commit` and `recover` are not implemented yet.
+- `recover` is not implemented yet; the durable journal and automatic pre-commit rollback foundation are in place.
 
 ## Material deviations and compatibility notes
 
@@ -60,4 +63,4 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 
 ## Next checkpoint
 
-Implement and commit v0.2 Milestone 3 transactional apply and exact-path Git commit behavior.
+Implement and commit v0.2 Milestone 4 recovery status/rollback/finalize and injected crash-boundary coverage.

@@ -66,6 +66,7 @@ type State struct {
 	UpdatedAt      string `json:"updated_at"`
 	PreviewDigest  string `json:"preview_digest"`
 	Commit         string `json:"commit,omitempty"`
+	CommittedAt    string `json:"committed_at,omitempty"`
 	FailureCode    string `json:"failure_code,omitempty"`
 	FailureMessage string `json:"failure_message,omitempty"`
 	Pushed         bool   `json:"pushed,omitempty"`
@@ -214,6 +215,11 @@ func ValidateState(state State) error {
 	}
 	if state.Status == StatusCommitted && state.Commit == "" {
 		return fmt.Errorf("committed transaction state requires a commit hash")
+	}
+	if state.Status == StatusCommitted {
+		if _, err := time.Parse(time.RFC3339Nano, state.CommittedAt); err != nil {
+			return fmt.Errorf("committed transaction state requires an RFC 3339 committed_at")
+		}
 	}
 	return nil
 }

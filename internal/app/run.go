@@ -61,6 +61,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runLint(ctx, remaining[1:], global, s)
 	case "preview":
 		return runPreview(ctx, remaining[1:], global, s)
+	case "commit":
+		return runCommit(ctx, remaining[1:], global, s)
 	case "transaction":
 		return runTransaction(ctx, remaining[1:], global, s)
 	case "version":
@@ -861,6 +863,7 @@ Commands:
   read      read a managed document
   lint      validate repository integrity
   preview   validate and persist an exact transaction proposal
+  commit    apply and Git-commit a previewed transaction
   transaction
             inspect or discard transaction proposals
   recent    inspect recent knowledge commits

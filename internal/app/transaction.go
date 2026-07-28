@@ -21,6 +21,109 @@ type previewFlags struct {
 	inputSet bool
 }
 
+type commitFlags struct {
+	repo          string
+	json          bool
+	transactionID string
+	previewDigest string
+	push          *bool
+}
+
+func runCommit(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := commitFlags{repo: global.repo, json: global.json || hasFlag(args, "--json")}
+	if help, apiErr := parseCommitFlags(args, &flags, s.out); help {
+		return core.ExitOK
+	} else if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	result, err := core.NewService(repo).Commit(ctx, core.CommitOptions{
+		TransactionID: flags.transactionID,
+		PreviewDigest: flags.previewDigest,
+		Push:          flags.push,
+	})
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write commit output: %w", err))
+		}
+		return core.ExitOK
+	}
+	if result.AlreadyCommitted {
+		fmt.Fprintf(s.out, "Transaction %s was already committed as %s\n", result.TransactionID, result.Commit)
+	} else {
+		fmt.Fprintf(s.out, "Committed transaction %s as %s\n", result.TransactionID, result.Commit)
+	}
+	fmt.Fprintf(s.out, "Changed paths: %s\n", strings.Join(result.ChangedPaths, ", "))
+	if result.Pushed {
+		fmt.Fprintln(s.out, "Pushed")
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(s.err, "warning: %s\n", warning)
+	}
+	return core.ExitOK
+}
+
+func parseCommitFlags(args []string, flags *commitFlags, help io.Writer) (bool, *core.APIError) {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, "Usage: lore [--repo PATH] commit TRANSACTION_ID --preview-digest sha256:... [--push | --no-push] [--json]")
+			return true, nil
+		case arg == "--json":
+			flags.json = true
+		case arg == "--push":
+			value := true
+			if flags.push != nil && !*flags.push {
+				return false, core.NewError(core.ExitUsage, "conflicting_flags", "--push and --no-push are mutually exclusive")
+			}
+			flags.push = &value
+		case arg == "--no-push":
+			value := false
+			if flags.push != nil && *flags.push {
+				return false, core.NewError(core.ExitUsage, "conflicting_flags", "--push and --no-push are mutually exclusive")
+			}
+			flags.push = &value
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return false, err
+			}
+			flags.repo, index = value, next
+		case arg == "--preview-digest" || strings.HasPrefix(arg, "--preview-digest="):
+			value, next, err := flagValue(args, index, "--preview-digest")
+			if err != nil {
+				return false, err
+			}
+			if flags.previewDigest != "" {
+				return false, core.NewError(core.ExitUsage, "duplicate_flag", "--preview-digest may be supplied only once")
+			}
+			flags.previewDigest, index = value, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return false, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore commit: unknown flag %q", arg))
+			}
+			if flags.transactionID != "" {
+				return false, core.NewError(core.ExitUsage, "unexpected_argument", "lore commit accepts exactly one transaction ID")
+			}
+			flags.transactionID = arg
+		}
+	}
+	if flags.transactionID == "" {
+		return false, core.NewError(core.ExitUsage, "transaction_id_required", "lore commit requires a transaction ID")
+	}
+	if flags.previewDigest == "" {
+		return false, core.NewError(core.ExitUsage, "preview_digest_required", "lore commit requires --preview-digest")
+	}
+	return false, nil
+}
+
 func runPreview(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := previewFlags{repo: global.repo, json: global.json || hasFlag(args, "--json")}
 	if help, apiErr := parsePreviewFlags(args, &flags, s.out); help {

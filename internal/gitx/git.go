@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -96,13 +97,48 @@ func (c Client) CommitAll(ctx context.Context, dir, subject string) (string, err
 }
 
 func (c Client) CommitPath(ctx context.Context, dir, path, subject string) (string, error) {
-	if _, err := c.run(ctx, dir, "add", "--", path); err != nil {
+	return c.CommitPaths(ctx, dir, []string{path}, subject)
+}
+
+func (c Client) CommitPaths(ctx context.Context, dir string, paths []string, subject string) (string, error) {
+	addArgs := []string{"add", "--"}
+	addArgs = append(addArgs, paths...)
+	if _, err := c.run(ctx, dir, addArgs...); err != nil {
 		return "", err
 	}
-	if _, err := c.run(ctx, dir, "commit", "--only", "-m", subject, "--", path); err != nil {
+	commitArgs := []string{"commit", "--only", "-m", subject, "--"}
+	commitArgs = append(commitArgs, paths...)
+	if _, err := c.run(ctx, dir, commitArgs...); err != nil {
 		return "", err
 	}
 	return c.Head(ctx, dir)
+}
+
+func (c Client) ResetPaths(ctx context.Context, dir string, paths []string) error {
+	args := []string{"reset", "-q", "HEAD", "--"}
+	args = append(args, paths...)
+	_, err := c.run(ctx, dir, args...)
+	return err
+}
+
+func (c Client) ChangedPathsInCommit(ctx context.Context, dir, commit string) ([]string, error) {
+	stdout, err := c.run(ctx, dir, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", commit)
+	if err != nil {
+		return nil, err
+	}
+	fields := bytes.Split(stdout, []byte{0})
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) > 0 {
+			paths = append(paths, filepathSlash(string(field)))
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func (c Client) BlobAtCommit(ctx context.Context, dir, commit, path string) ([]byte, error) {
+	return c.run(ctx, dir, "show", commit+":"+path)
 }
 
 func (c Client) Head(ctx context.Context, dir string) (string, error) {
