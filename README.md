@@ -1,6 +1,6 @@
 # Lore
 
-Lore is a private, deterministic personal-knowledge layer backed by Markdown and Git. It preserves exact raw source material, finds and reads evidence, validates repository integrity, and exposes recent knowledge history to humans and agent clients.
+Lore is a private, deterministic personal-knowledge layer backed by Markdown and Git. It preserves exact raw source material, finds and reads evidence, validates repository integrity, and applies reviewed synthesized-page transactions as recoverable, exact-path Git commits.
 
 The Markdown knowledge repository is authoritative. Search results, runtime state, agent sessions, and future adapters are replaceable.
 
@@ -22,10 +22,10 @@ sudo install -m 0755 lore /usr/local/bin/lore
 `make build` injects the current commit and UTC build time. Override its defaults for a release build:
 
 ```bash
-make build VERSION=0.1.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-27T00:00:00Z
+make build VERSION=0.2.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-28T00:00:00Z
 ```
 
-Development builds made with `go build ./cmd/lore` safely report `0.1.0-dev`, `unknown`, and `unknown`.
+Development builds made with `go build ./cmd/lore` safely report `0.2.0-dev`, `unknown`, and `unknown`.
 
 ## Five-minute quickstart
 
@@ -54,7 +54,15 @@ lore --repo "$HOME/lore-home" lint
 lore --repo "$HOME/lore-home" recent --limit 20
 ```
 
-Lore v0.1 never creates or rewrites synthesized pages. A human or agent creates a page under `pages/` using `system/PAGE_TEMPLATE.md`, cites its source files, runs `lore lint`, and commits the coherent page update.
+For normal page maintenance, prepare a strict transaction request, preview its complete diff and prospective lint result, then commit the exact preview using its returned digest:
+
+```bash
+lore --repo "$HOME/lore-home" preview --input request.json --json
+lore --repo "$HOME/lore-home" commit tx_01ARZ3NDEKTSV4RRFFQ69G5FAV \
+  --preview-digest sha256:0123456789abcdef... --json
+```
+
+The request can create or update direct children of `pages/` and can mark existing sources as integrated. Preview never changes canonical files or Git. A changed branch, HEAD, target revision, target Git status, artifact, or digest is a conflict; re-read the current documents and make a new preview rather than forcing it.
 
 ## Commands
 
@@ -107,6 +115,40 @@ lore --repo PATH lint --json
 
 Lint validates configuration, structure, UTF-8, frontmatter, global IDs, page-name ambiguity, source hashes and paths, relative Markdown links, and selected Git state. Findings are deterministic. Errors return exit code 1; warnings do not.
 
+### Preview and commit
+
+```bash
+lore --repo PATH preview [--input PATH|-] [--json]
+lore --repo PATH commit TRANSACTION_ID \
+  --preview-digest sha256:... [--push | --no-push] [--json]
+```
+
+`preview` accepts a bounded schema-version-1 JSON request from a file or non-terminal stdin. It validates exact target revisions, constructs resulting bytes in memory, runs full lint over that prospective view, generates a full unified diff, and stores a private proposal under `.lore/transactions/`. A lint-invalid preview returns exit code 1 and is not persisted as committable.
+
+`commit` revalidates every artifact and precondition, writes a durable recovery journal, applies exact bytes, lints the real tree, and creates one Git commit containing every and only the transaction paths. Unrelated staged and unstaged changes remain untouched. Repeating a successful commit is idempotent.
+
+Commit subjects are retained in Git. Keep transaction `message` values short and descriptive; never put private source text, medical details, credentials, or other unnecessary sensitive content in them.
+
+### Transaction inspection
+
+```bash
+lore --repo PATH transaction list [--status STATUS] [--limit N] [--json]
+lore --repo PATH transaction show TRANSACTION_ID [--diff] [--json]
+lore --repo PATH transaction discard TRANSACTION_ID [--json]
+```
+
+Inspection verifies stored hashes before returning metadata. Discard is allowed only for previewed or failed transactions; it removes content, diff, and full lint artifacts while retaining a metadata receipt and lint summary.
+
+### Recovery
+
+```bash
+lore --repo PATH recover [--json]
+lore --repo PATH recover --rollback [--json]
+lore --repo PATH recover --finalize [--json]
+```
+
+An active recovery journal blocks all content writers. Plain `recover` reports its durable phase and exact recommended action. Rollback first proves that every target is either original or Lore-applied and never overwrites an unexpected edit. Finalize changes no canonical files: it proves the exact direct-child Git commit and its blob hashes, reconciles transaction state, and removes the journal. See [the recovery guide](docs/recovery.md).
+
 ### Recent
 
 ```bash
@@ -140,7 +182,7 @@ Commands resolve the knowledge repository in this order:
 
 `lore init` instead uses its positional path, or the current directory.
 
-The v0.1 configuration is intentionally fixed and strict:
+The v0.2 configuration remains schema version 1 and strict:
 
 ```yaml
 version: 1
@@ -148,6 +190,7 @@ version: 1
 git:
   auto_commit_captures: true
   auto_push_captures: false
+  auto_push_transactions: false
   remote: origin
   require_push: false
 
@@ -155,7 +198,9 @@ capture:
   max_bytes: 4194304
 ```
 
-Unknown configuration keys are rejected. Capture commits include only the new source path and preserve unrelated staged or working-tree changes. A commit or push failure never removes the captured source. Optional push failure is a warning; when `require_push` is true, it returns exit code 3 while reporting that the source remains committed locally.
+Unknown configuration keys are rejected. Capture and transaction commits preserve unrelated staged or working-tree changes. A transaction push failure never rolls back its local commit. Optional push failure is a warning; when `require_push` is true, it returns exit code 3 while reporting that the canonical update is safely committed locally.
+
+`auto_push_transactions` is optional and defaults to `false`. Adding it to an existing repository is understood by v0.2, but strict v0.1 binaries reject that new key. Leave it absent until every client is upgraded if temporary mixed-version operation is required.
 
 ## Backup and security
 
@@ -163,8 +208,8 @@ Back up both the current knowledge repository and its Git history. A remote can 
 
 Lore does not encrypt data. Filesystem permissions and the Unix account are the primary access boundary. Git can retain deleted content indefinitely. Read [the security guide](docs/security.md) before storing sensitive material.
 
-## v0.1 limitations
+## v0.2 limitations
 
-Lore v0.1 intentionally has no semantic/vector search, database, arbitrary page-write command, transaction system, URL fetching, import pipeline, MCP/HTTP server, web interface, secret storage, encryption, multi-user permissions, or background process. `local-only` is metadata and is not enforced against clients or remotes.
+Lore v0.2 intentionally has no semantic/vector search, database, arbitrary file-write command, page delete/rename, source-body edit, automatic synthesis, URL fetching, import pipeline, MCP/HTTP server, web interface, secret storage, encryption, multi-user permissions, background process, or transaction pruning. `local-only` is metadata and is not enforced against clients or remotes.
 
-Planned seams allow later safe page transactions, a rebuildable FTS index, and thin protocol adapters without changing Markdown as the authoritative store.
+Transaction artifacts are derived state and may contain synthesized page bytes and diffs until discarded; committed transaction artifacts have no automatic retention policy in v0.2. Markdown and Git remain authoritative.

@@ -280,7 +280,7 @@ Stale.
 		SchemaVersion: transaction.SchemaVersion,
 		TransactionID: "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV",
 		CreatedAt:     createdAt.Format(time.RFC3339Nano),
-		BaseCommit:    "base",
+		BaseCommit:    "0123456789012345678901234567890123456789",
 		BaseBranch:    "main",
 		Actor:         transaction.DefaultActor,
 		Message:       "create: stale",

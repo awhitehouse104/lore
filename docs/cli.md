@@ -122,9 +122,128 @@ Lint checks:
 - globally duplicate IDs and ambiguous page titles/aliases;
 - exact source body hashes, source filename metadata, and UTC date partitions;
 - inline and reference-style relative Markdown link existence and repository containment;
-- uncommitted source changes and detached Git HEAD warnings.
+- optional source `integrated_into` page references;
+- uncommitted source changes and detached Git HEAD warnings;
+- stale preview warnings and active or malformed recovery-journal state.
 
 Errors return 1. Warnings return 0 when no errors exist. Git checks never contact a remote.
+
+## `preview`
+
+```text
+lore preview [--input PATH|-] [--json]
+```
+
+Input defaults to non-terminal stdin. The strict request object requires
+`schema_version`, `message`, and `operations`; unknown fields fail. Requests
+are limited to 16 MiB and 50 unique-path operations.
+
+Supported operations are:
+
+- `create_page`: `op`, direct `pages/*.md` path, and complete `content`;
+- `update_page`: the same plus the current whole-file `expected_revision`;
+- `mark_source_integrated`: source `path`, `expected_revision`, and 1–50 unique
+  `page_ids`.
+
+Messages are one line, 1–160 UTF-8 bytes, contain no ASCII controls, and begin
+with `integrate:`, `create:`, `update:`, `correct:`, `archive:`, or
+`maintenance:`. Git retains the message permanently; do not include raw private
+text, medical detail, credentials, or unnecessary sensitive information.
+
+Preview requires a named Git branch and an existing commit. It rejects dirty
+target paths, stale revisions, unsafe paths, an active recovery journal, and
+page metadata violations. It never mutates the working tree, index, refs, or
+history. Instead it overlays the exact effective bytes in memory, runs full
+lint, and generates an uncolored unified diff with `a/` and `b/` paths.
+
+Successful previews persist private mode-`0700`/`0600` artifacts beneath
+`.lore/transactions/tx_<ULID>/` and return a digest of immutable
+`proposal.json`. Lint errors return exit code 1 with the prospective diff and
+findings but no committable transaction ID/digest pair.
+
+## `commit`
+
+```text
+lore commit TRANSACTION_ID \
+  --preview-digest sha256:... \
+  [--push | --no-push] \
+  [--json]
+```
+
+The digest is mandatory and compared in constant time. Commit re-reads and
+hash-verifies the proposal, diff, lint, and every resulting-content artifact,
+then requires the exact preview branch, HEAD, target existence/revisions, and
+clean target status. It reruns prospective lint and regenerates the exact diff
+before any write.
+
+Lore flushes an exact-original recovery journal before file application. After
+verified atomic publication, it lints the real tree, commits only transaction
+paths, and proves that the commit contains every and only those paths with the
+proposed bytes. Unrelated staged and unstaged state remains unchanged.
+
+Changed preconditions return exit code 4; there is no force, merge,
+ignore-revision, or skip-lint option. Read current state and preview again.
+A repeated successful commit returns the original hash with
+`already_committed: true`.
+
+`--push`/`--no-push` override `git.auto_push_transactions`. Optional push
+failure is a success warning. With `git.require_push: true`, failure returns 3
+and states that the canonical commit is safe locally. A successful local commit
+is never reset because push or derived-state maintenance fails.
+
+## `transaction list`
+
+```text
+lore transaction list \
+  [--status previewed|committed|discarded|failed|recovery_required] \
+  [--limit N] \
+  [--json]
+```
+
+The default limit is 20 and maximum is 200. Results are newest transaction ID
+first and contain metadata only.
+
+## `transaction show`
+
+```text
+lore transaction show TRANSACTION_ID [--diff] [--json]
+```
+
+Show verifies available artifacts and returns proposal metadata, lifecycle
+state, hashes, and lint summary. `--diff` includes the full exact diff when it
+still exists.
+
+## `transaction discard`
+
+```text
+lore transaction discard TRANSACTION_ID [--json]
+```
+
+Only previewed or failed transactions may be discarded. The operation is
+idempotent and blocked by active recovery. It deletes resulting content, diff,
+and full lint payloads while retaining proposal/state receipt metadata and a
+lint summary. Committed transactions cannot be discarded. v0.2 has no
+automatic pruning.
+
+## `recover`
+
+```text
+lore recover [--json]
+lore recover --rollback [--json]
+lore recover --finalize [--json]
+```
+
+Without an action, reports the active journal phase and exact recommended
+command. `--rollback` is available before a transaction commit: it preflights
+all target revisions, restores exact originals or removes Lore-created files,
+reruns lint, marks the transaction failed, and removes the journal. It refuses
+without changing files when an unexpected edit exists.
+
+`--finalize` modifies no canonical content. It verifies an exact direct child
+of the preview base commit on the preview branch, the complete changed-path
+set, and every resulting blob SHA-256 before recording the committed state.
+Lore never automatically resumes an interrupted apply. See
+[recovery.md](recovery.md).
 
 ## `recent`
 
@@ -150,8 +269,8 @@ Build variables are injectable:
 
 ```bash
 go build -ldflags \
-  "-X lore/internal/version.Version=0.1.0 \
+  "-X lore/internal/version.Version=0.2.0 \
    -X lore/internal/version.Commit=$(git rev-parse HEAD) \
-   -X lore/internal/version.BuildDate=2026-07-27T00:00:00Z" \
+   -X lore/internal/version.BuildDate=2026-07-28T00:00:00Z" \
   ./cmd/lore
 ```

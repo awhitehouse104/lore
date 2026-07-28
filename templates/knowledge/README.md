@@ -8,3 +8,6 @@ This repository is the authoritative Markdown-and-Git store for personal knowled
 - Runtime state under `.lore/` is derived and ignored by Git.
 
 Read `AGENTS.md` and `system/OPERATING_RULES.md` before maintaining knowledge.
+Capture raw material first, then use `lore preview` and digest-bound `lore commit`
+for ordinary synthesized-page changes. If Lore reports an interrupted write, run
+`lore recover` and follow its exact rollback or finalize recommendation.

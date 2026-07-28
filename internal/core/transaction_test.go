@@ -245,6 +245,106 @@ func TestPreviewRejectsRevisionMismatchAndDirtyTarget(t *testing.T) {
 	}
 }
 
+func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
+	tests := []struct {
+		name      string
+		transform func([]byte) []byte
+		wantCode  string
+	}{
+		{
+			name: "no_effect",
+			transform: func(data []byte) []byte {
+				return data
+			},
+			wantCode: "operation_has_no_effect",
+		},
+		{
+			name: "id",
+			transform: func(data []byte) []byte {
+				return bytes.Replace(data, []byte("id: page_existing"), []byte("id: page_changed"), 1)
+			},
+			wantCode: "immutable_page_id",
+		},
+		{
+			name: "created",
+			transform: func(data []byte) []byte {
+				return bytes.Replace(data, []byte(`created: "2026-07-27"`), []byte(`created: "2026-07-26"`), 1)
+			},
+			wantCode: "immutable_page_created",
+		},
+		{
+			name: "old_updated_for_body_change",
+			transform: func(data []byte) []byte {
+				return bytes.Replace(data, []byte("Original."), []byte("Changed."), 1)
+			},
+			wantCode: "updated_too_old",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := transactionTestRepository(t)
+			current := validTransactionPage("page_existing", "Existing", "2026-07-27", "Original.\n")
+			path := filepath.Join(repo.Root, "pages", "existing.md")
+			if err := os.WriteFile(path, current, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, repo.Root, "add", "--", "pages/existing.md")
+			runGit(t, repo.Root, "commit", "-m", "maintenance: fixture")
+			service := core.NewService(repo)
+			service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+			service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+			proposed := tt.transform(append([]byte(nil), current...))
+			_, err := service.Preview(context.Background(), transactionRequest(t, "update: immutable check", []map[string]any{{
+				"op": "update_page", "path": "pages/existing.md",
+				"expected_revision": docs.Revision(current), "content": string(proposed),
+			}}))
+			var apiErr *core.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != tt.wantCode {
+				t.Fatalf("error = %#v, want %s", err, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestCommitRefusesStaleTargetWithoutOverwritingIt(t *testing.T) {
+	repo := transactionTestRepository(t)
+	current := validTransactionPage("page_stale_target", "Stale target", "2026-07-27", "Original.\n")
+	path := filepath.Join(repo.Root, "pages", "stale-target.md")
+	if err := os.WriteFile(path, current, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/stale-target.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: fixture")
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	proposed := validTransactionPage("page_stale_target", "Stale target", "2026-07-28", "Proposed.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "update: stale target", []map[string]any{{
+		"op": "update_page", "path": "pages/stale-target.md",
+		"expected_revision": docs.Revision(current), "content": string(proposed),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := bytes.Replace(current, []byte("Original."), []byte("External."), 1)
+	if err := os.WriteFile(path, external, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.ExitCode != core.ExitConflict {
+		t.Fatalf("error = %#v", err)
+	}
+	if got := mustRead(t, path); !bytes.Equal(got, external) {
+		t.Fatalf("stale target was overwritten: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, ".lore", "recovery", "active")); !os.IsNotExist(err) {
+		t.Fatalf("stale conflict created recovery journal: %v", err)
+	}
+}
+
 func TestCommitCreateIsExactAndIdempotent(t *testing.T) {
 	repo := transactionTestRepository(t)
 	service := core.NewService(repo)

@@ -21,9 +21,14 @@ lore-home/
 └── .lore/
 ```
 
-`pages/**` and `sources/**` are managed content roots. Normal v0.1 content operations can write only new files beneath `sources/`. `system/**`, repository instructions, configuration, Git metadata, and `.lore/**` are protected from normal content writes.
+`pages/**` and `sources/**` are managed content roots. Capture can create only
+date-partitioned source files. v0.2 transactions can create or update only
+direct `pages/*.md` children and can update only `integrated_at` and
+`integrated_into` in an existing source. `system/**`, repository instructions,
+configuration, Git metadata, and `.lore/**` are protected from normal content
+writes.
 
-Pages remain flat in v0.1. Sources are partitioned by their UTC capture date:
+Pages remain flat in v0.2. Sources are partitioned by their UTC capture date:
 
 ```text
 sources/YYYY/MM/src_<26-character-uppercase-ULID>-<kind>.md
@@ -35,7 +40,7 @@ Managed Markdown starts with a line containing exactly `---`, ends frontmatter a
 
 Lore does not trim or normalize body bytes while parsing. A body's trailing-newline state, CRLF bytes, Unicode encoding, and empty/non-empty state are significant.
 
-Unknown frontmatter fields are permitted by lint for forward compatibility. Required v0.1 fields and their types remain enforced.
+Unknown frontmatter fields are permitted by lint for forward compatibility. Required schema-version-1 fields and their types remain enforced.
 
 ## Source documents
 
@@ -50,6 +55,9 @@ raw_sha256: sha256:4d7a0f...
 sensitivity: normal
 tags:
   - project-foo
+integrated_at: "2026-07-28T20:10:00Z"
+integrated_into:
+  - page_project_foo
 ---
 Exact captured bytes begin here.
 ```
@@ -63,7 +71,11 @@ Required fields:
 - `raw_sha256`: lowercase SHA-256 of the exact body, prefixed by `sha256:`
 - `sensitivity`: `normal`, `sensitive`, or `local-only`
 
-Optional fields are `origin_ref`, `tags`, and `integrated_at`. Tags must be non-empty strings. `integrated_at`, when present, is RFC 3339.
+Optional fields are `origin_ref`, `tags`, `integrated_at`, and
+`integrated_into`. Tags must be non-empty strings. `integrated_at`, when
+present, is RFC 3339 UTC. `integrated_into` contains unique valid page IDs.
+Lore writes it as a sorted union and lint warns, rather than errors, when a
+referenced page no longer exists.
 
 The source filename ID and kind must equal its frontmatter, and its path year/month must equal `captured_at` in UTC. Source bodies are append-oriented and immutable by policy. Lore does not deduplicate identical captures.
 
@@ -96,18 +108,21 @@ Required fields:
 
 - `id`: stable identifier matching `^page_[a-z0-9][a-z0-9_]*$`
 - `title`: non-empty title
-- `kind`: v0.1 token
+- `kind`: token matching `^[a-z][a-z0-9_-]*$`
 - `created` and `updated`: ISO `YYYY-MM-DD`, with `updated` not before `created`
 - `status`: `active`, `inactive`, `archived`, or `superseded`
 - `sensitivity`: source sensitivity enum
 
 Optional `aliases` and `tags` are lists of non-empty strings. Page titles and aliases may not identify more than one page case-insensitively.
 
-Lore v0.1 reads, searches, and lints pages but never creates or updates them.
+Transaction page creation and update always use a complete proposed document;
+Lore does not merge. Page `id` and `created` are immutable during update.
+`updated` cannot regress, and a change outside that field requires an
+`updated` date at least as recent as the current UTC calendar date.
 
 ## Links, references, and revisions
 
-Relative inline Markdown links and reference definitions are checked from the containing document. Repository escapes and missing targets are lint errors. External schemes and pure anchors are not resolved; anchors within local files are not validated in v0.1.
+Relative inline Markdown links and reference definitions are checked from the containing document. Repository escapes and missing targets are lint errors. External schemes and pure anchors are not resolved; anchors within local files are not validated in v0.2.
 
 Read references resolve in this priority:
 
@@ -127,4 +142,44 @@ lore://pages/project-foo.md#L12-L14
 
 `lore.yaml` schema version 1 has fixed content paths and strict known fields. The capture maximum defaults to 4 MiB and cannot exceed 64 MiB.
 
-`.lore/` contains replaceable runtime state such as the advisory write lock. It must be ignored by Git and is never canonical knowledge.
+Optional Git configuration fields are:
+
+- `auto_commit_captures` (default `true`);
+- `auto_push_captures` (default `false`);
+- `auto_push_transactions` (default `false`);
+- `remote` (default `origin`);
+- `require_push` (default `false`).
+
+`.lore/` contains replaceable runtime state. It must be ignored by Git and is
+never canonical knowledge:
+
+```text
+.lore/
+├── write.lock/
+├── transactions/
+│   └── tx_<ULID>/
+│       ├── proposal.json
+│       ├── state.json
+│       ├── diff.patch
+│       ├── lint.json
+│       └── content/
+└── recovery/
+    └── active/
+        ├── journal.json
+        └── originals/
+```
+
+Transaction proposals are immutable typed JSON with a trailing newline. The
+preview digest is SHA-256 over those exact bytes. The proposal records hashes
+for the diff, lint report, and each exact resulting document. Lifecycle states
+are `previewed`, `applying`, `committed`, `discarded`, `failed`, and
+`recovery_required`; invalid transitions are integrity errors.
+
+An active recovery journal contains exact originals or explicit absence
+markers and advances through `prepared`, `applying_files`, `files_applied`,
+`git_committed`, and `finalized`. It is flushed before canonical mutation and
+blocks all other writers. See [recovery.md](recovery.md).
+
+Derived transaction artifacts can contain synthesized page bytes and diffs.
+They use private permissions where supported, but v0.2 has no automatic
+retention or pruning.

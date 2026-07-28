@@ -56,7 +56,7 @@ type Page struct {
 }
 
 // TimestampString accepts both YAML string and timestamp scalars while
-// retaining their exact textual value for the v0.1 metadata validators.
+// retaining their exact textual value for the schema-version-1 validators.
 type TimestampString string
 
 func (s *TimestampString) UnmarshalYAML(node *yaml.Node) error {
@@ -457,9 +457,9 @@ func normalizeUpdatedLine(frontmatter []byte) ([]byte, bool) {
 	lines := bytes.SplitAfter(frontmatter, []byte{'\n'})
 	found := false
 	for index, line := range lines {
-		trimmed := bytes.TrimSuffix(line, []byte{'\n'})
-		trimmed = bytes.TrimSuffix(trimmed, []byte{'\r'})
-		if bytes.HasPrefix(trimmed, []byte("updated:")) {
+		lineWithoutEnding := bytes.TrimSuffix(line, []byte{'\n'})
+		lineWithoutEnding = bytes.TrimSuffix(lineWithoutEnding, []byte{'\r'})
+		if bytes.HasPrefix(lineWithoutEnding, []byte("updated:")) {
 			if found {
 				return nil, false
 			}
@@ -467,11 +467,45 @@ func normalizeUpdatedLine(frontmatter []byte) ([]byte, bool) {
 			if len(line) > 0 && line[len(line)-1] == '\n' {
 				ending = "\n"
 			}
-			lines[index] = []byte("updated: <lore-comparison>" + ending)
+			comment := yamlInlineComment(lineWithoutEnding[len("updated:"):])
+			lines[index] = []byte("updated: <lore-comparison>" + comment + ending)
 			found = true
 		}
 	}
 	return bytes.Join(lines, nil), found
+}
+
+func yamlInlineComment(value []byte) string {
+	var quote byte
+	escaped := false
+	for index, current := range value {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote == '"' && current == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if current == quote {
+				quote = 0
+			}
+			continue
+		}
+		if current == '\'' || current == '"' {
+			quote = current
+			continue
+		}
+		if current == '#' && (index == 0 || value[index-1] == ' ' || value[index-1] == '\t') {
+			start := index
+			for start > 0 && (value[start-1] == ' ' || value[start-1] == '\t') {
+				start--
+			}
+			return string(value[start:])
+		}
+	}
+	return ""
 }
 
 func setMappingValue(mapping *yaml.Node, key string, value *yaml.Node) {

@@ -8,11 +8,11 @@ Local filesystem permissions and the Unix account running Lore are the primary a
 
 Lore does not encrypt repository files, runtime state, Git objects, or network transport. Use operating-system or storage-level encryption when required.
 
-The `sensitive` and `local-only` values are metadata. In v0.1, `local-only` is not enforced against a particular client, Git commit, backup, or remote.
+The `sensitive` and `local-only` values are metadata. In v0.2, `local-only` is not enforced against a particular client, Git commit, backup, or remote.
 
 ## Git retention and purge
 
-Git history can retain changed or deleted content. Ordinary file deletion or a later commit is not a purge. Removing sensitive material requires coordinated Git-history rewriting, remote cleanup, reflog/object expiration where applicable, and backup handling. Lore v0.1 does not automate that process.
+Git history can retain changed or deleted content. Ordinary file deletion or a later commit is not a purge. Removing sensitive material requires coordinated Git-history rewriting, remote cleanup, reflog/object expiration where applicable, and backup handling. Lore v0.2 does not automate that process.
 
 Backups are another retention and disclosure boundary. Define their encryption, access, geographic, and expiration policies independently.
 
@@ -36,19 +36,72 @@ printf '%s' "$PRIVATE_TEXT" | lore capture --kind note --origin terminal
 
 The advisory lock records only PID, hostname, command name, and start time. It does not contain source text.
 
+## Transaction privacy and integrity
+
+Transaction requests can contain complete synthesized page bytes. Preview
+persists resulting content, a full diff, and lint output under `.lore/` with
+private `0700` directories and `0600` files where supported. Recovery journals
+also retain exact originals until rollback or finalize completes. Protect
+`.lore/` as carefully as canonical Markdown.
+
+Discard removes a preview's content, diff, and full lint payload while retaining
+a proposal/state receipt and lint summary. Committed transactions are not
+automatically pruned in v0.2. Deleting derived artifacts does not delete
+canonical Markdown or Git history.
+
+The transaction message becomes the Git commit subject. Never put raw private
+source text, medical detail, secrets, credentials, or other unnecessary
+sensitive content in it. Lore validates length, prefixes, newlines, and control
+characters, but it cannot judge disclosure sensitivity.
+
+Proposal, diff, lint, resulting-content, and recovery-original hashes are
+verified before use. Commit also revalidates the exact branch, HEAD, target
+revisions, Git status, prospective lint, regenerated diff, created commit path
+set, and committed blobs. SHA-256 protects integrity; it is not encryption.
+
 ## Git remotes and network behavior
 
-Lore never contacts a network service except when capture is explicitly configured or overridden to push. A Git remote is a separate disclosure boundary with its own authentication, server-side retention, replication, and access policy.
+Lore never contacts a network service except when capture or transaction commit is explicitly configured or overridden to push. A Git remote is a separate disclosure boundary with its own authentication, server-side retention, replication, and access policy.
 
 `lore lint`, `search`, `read`, and `recent` do not contact remotes. `lore init` does not configure one.
 
-Before enabling automatic push, verify that the destination is appropriate for all sensitivity values stored in the repository. v0.1 does not filter pushed commits by source sensitivity.
+Before enabling automatic push, verify that the destination is appropriate for all sensitivity values stored in the repository. v0.2 does not filter pushed commits by source sensitivity.
 
 ## Protected paths and symlinks
 
-Capture can write only a new path under `sources/YYYY/MM/`. It rejects traversal, absolute paths, symlink traversal, and destination overwrite. Normal content operations cannot write `system/`, repository instructions, configuration, `.git/`, or `.lore/`.
+Capture can write only a new path under `sources/YYYY/MM/`. Transactions can
+create or update only direct page children and the two source-integration
+frontmatter fields. Lore rejects traversal, absolute paths, symlink traversal,
+unexpected file types, stale bytes, and create overwrite. Normal content
+operations cannot write `system/`, repository instructions, configuration,
+`.git/`, or `.lore/`.
 
-Lint rejects managed Markdown symlinks and relative links that escape the repository. These checks reduce accidents; they do not protect against another process with the same Unix-account privileges changing files concurrently.
+Lint rejects managed Markdown symlinks and relative links that escape the
+repository. Recovery refuses to overwrite a target whose bytes are neither the
+recorded original nor Lore's recorded result. These checks reduce accidents;
+they do not protect against another process with the same Unix-account
+privileges changing files concurrently.
+
+## Tool enforcement and shell bypass
+
+Lore's protected-path, revision, preview, and recovery rules are enforced when
+a client uses the Lore CLI. They are not an operating-system sandbox. A general
+shell agent or process running as the repository owner can bypass Lore and edit
+Markdown, `.lore/`, or Git directly.
+
+Generated `AGENTS.md` and `system/OPERATING_RULES.md` tell cooperative agents to
+use `preview`/`commit` and avoid protected files, but those instructions are
+policy, not access control. Use filesystem permissions, a sandbox, a dedicated
+account, or another OS-level control when prevention rather than guidance is
+required.
+
+## Recovery boundary
+
+An active recovery journal blocks Lore content writers. Use `lore recover` to
+inspect it. Rollback preflights all targets before restoration and refuses an
+unexpected edit. Finalize modifies no canonical files and succeeds only after
+Git proves an exact direct child of the recorded base with the recorded paths
+and blob hashes. Lore does not automatically resume an interrupted apply.
 
 ## Operational recommendations
 

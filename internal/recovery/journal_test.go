@@ -30,7 +30,7 @@ func TestJournalRoundTripAndPhaseValidation(t *testing.T) {
 		SchemaVersion: transaction.SchemaVersion,
 		TransactionID: recoveryTransactionID,
 		CreatedAt:     "2026-07-28T20:10:00Z",
-		BaseCommit:    "base",
+		BaseCommit:    "0123456789012345678901234567890123456789",
 		BaseBranch:    "main",
 		Actor:         transaction.DefaultActor,
 		Message:       "update: journal",
@@ -91,7 +91,7 @@ func TestJournalRoundTripAndPhaseValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	loaded.Phase = recovery.PhaseGitCommitted
-	loaded.Commit = "commit"
+	loaded.Commit = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
 	if err := store.Update(loaded); err != nil {
 		t.Fatal(err)
 	}

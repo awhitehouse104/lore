@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -151,6 +152,9 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 		if operationErr != nil {
 			return result, operationErr
 		}
+		if !created && bytes.Equal(original, resulting) {
+			return result, NewError(ExitValidation, "operation_has_no_effect", fmt.Sprintf("transaction operation does not change %s", operation.Path))
+		}
 		effectiveOperation.ContentFile = fmt.Sprintf("content/%03d.md", index)
 		totalResultingContent += len(resulting)
 		if totalResultingContent > transaction.MaxTotalNewContent {
@@ -231,6 +235,9 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 		TransactionID: transactionID,
 		Status:        transaction.StatusPreviewed,
 		UpdatedAt:     now.Format(time.RFC3339Nano),
+		Lint: transaction.LintSummary{
+			Valid: lintResult.Valid, Errors: lintResult.Errors, Warnings: lintResult.Warnings,
+		},
 	}
 	contents := make([][]byte, len(effective))
 	for index, operation := range effective {
@@ -464,8 +471,18 @@ func (s *Service) TransactionShow(transactionID string, includeDiff bool) (Trans
 		return result, transactionRuntimeError("transaction_integrity_failed", fmt.Sprintf("transaction %s failed integrity verification", transactionID), err)
 	}
 	var lintResult lint.Result
-	if err := json.Unmarshal(artifacts.Lint, &lintResult); err != nil {
-		return result, transactionRuntimeError("transaction_integrity_failed", "stored lint artifact is invalid", err)
+	if artifacts.State.Status == transaction.StatusDiscarded {
+		lintResult = lint.Result{
+			SchemaVersion: SchemaVersion,
+			Valid:         artifacts.State.Lint.Valid,
+			Errors:        artifacts.State.Lint.Errors,
+			Warnings:      artifacts.State.Lint.Warnings,
+			Findings:      []lint.Finding{},
+		}
+	} else {
+		if err := json.Unmarshal(artifacts.Lint, &lintResult); err != nil {
+			return result, transactionRuntimeError("transaction_integrity_failed", "stored lint artifact is invalid", err)
+		}
 	}
 	result = TransactionShowResult{
 		SchemaVersion: SchemaVersion,

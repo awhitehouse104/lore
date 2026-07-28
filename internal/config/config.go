@@ -50,7 +50,7 @@ func Defaults() Config {
 	}
 }
 
-// Parse applies v0.1 defaults and rejects unknown YAML fields.
+// Parse applies schema-version-1 defaults and rejects unknown YAML fields.
 func Parse(data []byte) (Config, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {

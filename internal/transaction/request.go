@@ -73,6 +73,7 @@ type markSourceWire struct {
 var (
 	pageFilenamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.md$`)
 	revisionPattern     = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	gitHashPattern      = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 	messagePrefixes     = []string{
 		"integrate:",
 		"create:",
@@ -174,6 +175,13 @@ func ValidateSourcePath(path string) error {
 func ValidateRevision(revision string) error {
 	if !revisionPattern.MatchString(revision) {
 		return fmt.Errorf("expected_revision must be a lowercase SHA-256 value")
+	}
+	return nil
+}
+
+func ValidateGitHash(hash string) error {
+	if !gitHashPattern.MatchString(hash) {
+		return fmt.Errorf("Git hash must be a full lowercase 40- or 64-character hexadecimal object ID")
 	}
 	return nil
 }

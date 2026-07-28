@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.2 — Milestone 5: documentation, audits, and release.
+Lore v0.2.0 — implementation complete and release-verified.
 
 ## Verified baseline
 
@@ -46,6 +46,12 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.2 M3 `make test-race`
 - v0.2 M4 `make check`
 - v0.2 M4 `make test-race`
+- v0.2 M5 `make check`
+- v0.2 M5 `make test-race`
+- v0.2 M5 `go mod tidy -diff`: clean
+- v0.2 M5 `go mod verify`: passed (`all modules verified`)
+- v0.2 M5 `govulncheck ./...`: passed (`No vulnerabilities found`)
+- Release build/version injection and generated-template initialization/lint smoke: passed
 
 ## v0.2 completed milestones
 
@@ -53,17 +59,31 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - M2: `preview` with exact snapshot/revision/dirty-target checks, immutable page rules, in-memory prospective lint, Git no-index unified diffs, atomic proposal persistence, and verified `transaction list`, `show`, and idempotent `discard` commands.
 - M3: digest-bound `commit`, durable exact-original recovery journals, verified atomic file application, full real-tree lint, exact-path Git commits, commit-tree verification, rollback on pre-commit failure, idempotent success, push policy, and preservation of unrelated staged and unstaged changes.
 - M4: `recover` status/rollback/finalize, exact-revision rollback preflight, direct-child Git/blob proof for finalize, write blocking while recovery is active, deterministic injected interruption hooks, no-clobber external-edit handling, and lint findings for active/malformed recovery and stale previews.
+- M5: v0.2 versioning, generated agent rules, README/CLI/data/security/recovery documentation, upgrade and release notes, dependency/license inventory, path/argument/error-leak hardening, discard receipt cleanup, and the complete release audit.
+
+Milestone commits:
+
+- M1: `b8f1965`
+- M2: `cb8f5c3`
+- M3: `6854787`
+- M4: `708bc23`
+- M5: the release commit tagged `v0.2.0`
 
 ## Known issues
 
-- No known v0.1 correctness issues.
-- Documentation and the final compatibility/security/release audit remain.
+- No known v0.2 correctness issues.
+- v0.2 has no automatic transaction-artifact retention or pruning.
+- The supported and fully tested target is Linux with Git available.
 
 ## Material deviations and compatibility notes
 
-- v0.1 atomic source publication uses a same-directory hard-link/no-clobber publish followed by temporary-link removal instead of `rename`. This preserves atomic visibility and guarantees that an existing destination cannot be overwritten on the primary Linux target.
-- Knowledge-repository `lore.yaml` remains at `version: 1`. v0.2 will add optional configuration fields; older strict v0.1 binaries may reject repositories that use them.
+- New-file publication uses a same-directory hard-link/no-clobber publish followed by temporary-link removal instead of a replacing rename. Updates use flushed same-directory temporary files and rename.
+- Unified diffs use a narrowly wrapped `git diff --no-index` operation rather than a new Go dependency.
+- Discarded transactions retain proposal/state receipt metadata and a lint summary; full content, diff, and lint payload artifacts are removed.
+- Knowledge-repository `lore.yaml` remains at `version: 1`. `git.auto_push_transactions` is optional and defaults to `false`; strict v0.1 binaries reject a configuration that includes the new key.
 
 ## Next checkpoint
 
-Complete v0.2 Milestone 5 documentation, compatibility/security audits, release verification, report, commit, and tag.
+Publish the verified `v0.2.0` commit and annotated tag when desired, then scope
+the next release without changing the v0.2 transaction and compatibility
+contracts.

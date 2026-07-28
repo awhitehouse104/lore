@@ -60,17 +60,24 @@ const (
 )
 
 type State struct {
-	SchemaVersion  int    `json:"schema_version"`
-	TransactionID  string `json:"transaction_id"`
-	Status         Status `json:"status"`
-	UpdatedAt      string `json:"updated_at"`
-	PreviewDigest  string `json:"preview_digest"`
-	Commit         string `json:"commit,omitempty"`
-	CommittedAt    string `json:"committed_at,omitempty"`
-	FailureCode    string `json:"failure_code,omitempty"`
-	FailureMessage string `json:"failure_message,omitempty"`
-	Pushed         bool   `json:"pushed,omitempty"`
-	PushError      string `json:"push_error,omitempty"`
+	SchemaVersion  int         `json:"schema_version"`
+	TransactionID  string      `json:"transaction_id"`
+	Status         Status      `json:"status"`
+	UpdatedAt      string      `json:"updated_at"`
+	PreviewDigest  string      `json:"preview_digest"`
+	Commit         string      `json:"commit,omitempty"`
+	CommittedAt    string      `json:"committed_at,omitempty"`
+	FailureCode    string      `json:"failure_code,omitempty"`
+	FailureMessage string      `json:"failure_message,omitempty"`
+	Pushed         bool        `json:"pushed,omitempty"`
+	PushError      string      `json:"push_error,omitempty"`
+	Lint           LintSummary `json:"lint"`
+}
+
+type LintSummary struct {
+	Valid    bool `json:"valid"`
+	Errors   int  `json:"errors"`
+	Warnings int  `json:"warnings"`
 }
 
 func NewID(now time.Time) (string, error) {
@@ -124,8 +131,11 @@ func ValidateProposal(proposal Proposal) error {
 	if _, err := time.Parse(time.RFC3339Nano, proposal.CreatedAt); err != nil {
 		return fmt.Errorf("proposal created_at must be RFC 3339")
 	}
-	if proposal.BaseCommit == "" || proposal.BaseBranch == "" {
-		return fmt.Errorf("proposal base commit and branch are required")
+	if err := ValidateGitHash(proposal.BaseCommit); err != nil {
+		return fmt.Errorf("proposal base commit is invalid")
+	}
+	if proposal.BaseBranch == "" {
+		return fmt.Errorf("proposal base branch is required")
 	}
 	if proposal.Actor == "" {
 		return fmt.Errorf("proposal actor is required")
@@ -220,6 +230,9 @@ func ValidateState(state State) error {
 		return fmt.Errorf("committed transaction state requires a commit hash")
 	}
 	if state.Status == StatusCommitted {
+		if err := ValidateGitHash(state.Commit); err != nil {
+			return fmt.Errorf("committed transaction state has an invalid commit hash")
+		}
 		if _, err := time.Parse(time.RFC3339Nano, state.CommittedAt); err != nil {
 			return fmt.Errorf("committed transaction state requires an RFC 3339 committed_at")
 		}

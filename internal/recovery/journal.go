@@ -305,8 +305,11 @@ func Validate(journal Journal) error {
 	default:
 		return fmt.Errorf("invalid recovery phase %q", journal.Phase)
 	}
-	if journal.BaseCommit == "" || journal.BaseBranch == "" {
-		return fmt.Errorf("recovery base state is required")
+	if err := transaction.ValidateGitHash(journal.BaseCommit); err != nil {
+		return fmt.Errorf("recovery base commit is invalid")
+	}
+	if journal.BaseBranch == "" {
+		return fmt.Errorf("recovery base branch is required")
 	}
 	if _, err := time.Parse(time.RFC3339Nano, journal.StartedAt); err != nil {
 		return fmt.Errorf("recovery started_at must be RFC 3339")
@@ -345,6 +348,11 @@ func Validate(journal Journal) error {
 	}
 	if (journal.Phase == PhaseGitCommitted || journal.Phase == PhaseFinalized) && journal.Commit == "" {
 		return fmt.Errorf("recovery phase %s requires a commit hash", journal.Phase)
+	}
+	if journal.Commit != "" {
+		if err := transaction.ValidateGitHash(journal.Commit); err != nil {
+			return fmt.Errorf("recovery commit hash is invalid")
+		}
 	}
 	return nil
 }

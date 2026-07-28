@@ -13,16 +13,13 @@ import (
 )
 
 type CommandError struct {
-	Command  string
-	ExitCode int
-	Stderr   string
-	Cause    error
+	Command       string
+	ExitCode      int
+	NotRepository bool
+	Cause         error
 }
 
 func (e *CommandError) Error() string {
-	if e.Stderr != "" {
-		return fmt.Sprintf("git %s failed (exit %d): %s", e.Command, e.ExitCode, e.Stderr)
-	}
 	return fmt.Sprintf("git %s failed (exit %d)", e.Command, e.ExitCode)
 }
 
@@ -55,7 +52,7 @@ func (c Client) IsRepository(ctx context.Context, dir string) (bool, error) {
 	stdout, err := c.run(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
 		var commandErr *CommandError
-		if errors.As(err, &commandErr) && strings.Contains(strings.ToLower(commandErr.Stderr), "not a git repository") {
+		if errors.As(err, &commandErr) && commandErr.NotRepository {
 			return false, nil
 		}
 		return false, err
@@ -354,25 +351,16 @@ func (c Client) runCaptureOnExit(ctx context.Context, dir string, args ...string
 		name = args[0]
 	}
 	return stdout.Bytes(), &CommandError{
-		Command:  name,
-		ExitCode: exitCode,
-		Stderr:   sanitize(stderr.String()),
-		Cause:    err,
+		Command:       name,
+		ExitCode:      exitCode,
+		NotRepository: strings.Contains(strings.ToLower(stderr.String()), "not a git repository"),
+		Cause:         err,
 	}
 }
 
 func configMissing(err error) bool {
 	var commandErr *CommandError
 	return errors.As(err, &commandErr) && commandErr.ExitCode == 1
-}
-
-func sanitize(value string) string {
-	value = strings.TrimSpace(value)
-	const max = 2048
-	if len(value) > max {
-		value = value[:max] + "... (" + strconv.Itoa(len(value)-max) + " bytes omitted)"
-	}
-	return value
 }
 
 func filepathSlash(value string) string {

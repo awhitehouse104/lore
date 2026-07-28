@@ -235,4 +235,12 @@ Body.
 	if !PageChangedExceptUpdated(current, proposed) {
 		t.Fatal("body change was not detected")
 	}
+	commentChanged := bytes.Replace(updatedOnly, []byte(`updated: "2026-07-28"`), []byte(`updated: "2026-07-28" # corrected`), 1)
+	proposed, err = Parse("pages/example.md", commentChanged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !PageChangedExceptUpdated(current, proposed) {
+		t.Fatal("updated-line comment change was not detected")
+	}
 }

@@ -173,6 +173,9 @@ func (s *Store) Load(transactionID string) (Artifacts, error) {
 		State:         state,
 		PreviewDigest: digest,
 	}
+	if state.Status == StatusDiscarded {
+		return artifacts, nil
+	}
 	lintBytes, err := readBounded(filepath.Join(dir, "lint.json"), maxArtifactBytes)
 	if err != nil {
 		return Artifacts{}, fmt.Errorf("read lint artifact: %w", err)
@@ -181,9 +184,6 @@ func (s *Store) Load(transactionID string) (Artifacts, error) {
 		return Artifacts{}, fmt.Errorf("lint artifact hash does not match proposal")
 	}
 	artifacts.Lint = lintBytes
-	if state.Status == StatusDiscarded {
-		return artifacts, nil
-	}
 	diffBytes, err := readBounded(filepath.Join(dir, "diff.patch"), maxArtifactBytes)
 	if err != nil {
 		return Artifacts{}, fmt.Errorf("read diff artifact: %w", err)
@@ -335,6 +335,9 @@ func (s *Store) removeDiscardedArtifacts(transactionID string) error {
 	}
 	if err := os.Remove(filepath.Join(dir, "diff.patch")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove discarded transaction diff: %w", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "lint.json")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove discarded transaction lint: %w", err)
 	}
 	return syncDirectory(dir)
 }

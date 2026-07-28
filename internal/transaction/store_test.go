@@ -106,6 +106,9 @@ func TestStoreDiscardIsIdempotentAndRetainsReceipt(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".lore", "transactions", transactionID, "proposal.json")); err != nil {
 		t.Fatalf("receipt proposal missing: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(root, ".lore", "transactions", transactionID, "lint.json")); !os.IsNotExist(err) {
+		t.Fatalf("discarded lint artifact remains: %v", err)
+	}
 }
 
 func testRepository(t *testing.T, root string) *repository.Repository {

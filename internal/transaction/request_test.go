@@ -109,3 +109,19 @@ func TestValidateOperationPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateGitHashRejectsRevisionOptionInjection(t *testing.T) {
+	for _, value := range []string{
+		"0123456789012345678901234567890123456789",
+		strings.Repeat("a", 64),
+	} {
+		if err := ValidateGitHash(value); err != nil {
+			t.Errorf("ValidateGitHash(%q): %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "HEAD", "--all", strings.Repeat("A", 40), strings.Repeat("a", 39)} {
+		if err := ValidateGitHash(value); err == nil {
+			t.Errorf("ValidateGitHash accepted %q", value)
+		}
+	}
+}

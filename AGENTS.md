@@ -15,7 +15,7 @@ Before finishing a code change, run:
 ## Engineering rules
 
 - Keep the Markdown repository authoritative.
-- Do not add an LLM call, database, daemon, MCP server, or HTTP API in v0.1.
+- Do not add an LLM call, database, daemon, MCP server, or HTTP API in v0.2.
 - Keep the CLI adapter thin; core operations return typed values and errors.
 - Never invoke a shell; pass argument arrays to external commands.
 - Centralize repository path validation and reject traversal or symlink escape.
