@@ -3,6 +3,7 @@ package index
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -22,6 +23,8 @@ type indexedDocument struct {
 	Sensitivity   string
 	AliasesText   string
 	TagsText      string
+	AliasesJSON   string
+	TagsJSON      string
 	Body          string
 	BodyLineStart int
 	Revision      string
@@ -74,6 +77,14 @@ func (m *Manager) scanDocuments(ctx context.Context, indexedAt string) ([]indexe
 			seenIDs[document.ID()] = path
 		}
 		createdAt, updatedAt := documentTimes(document)
+		aliasesJSON, err := encodeValues(document.Aliases())
+		if err != nil {
+			return nil, fmt.Errorf("encode aliases for %s: %w", path, err)
+		}
+		tagsJSON, err := encodeValues(document.Tags())
+		if err != nil {
+			return nil, fmt.Errorf("encode tags for %s: %w", path, err)
+		}
 		documents = append(documents, indexedDocument{
 			Path:          path,
 			DocumentID:    document.ID(),
@@ -83,6 +94,8 @@ func (m *Manager) scanDocuments(ctx context.Context, indexedAt string) ([]indexe
 			Sensitivity:   document.Sensitivity(),
 			AliasesText:   flattenValues(document.Aliases()),
 			TagsText:      flattenValues(document.Tags()),
+			AliasesJSON:   aliasesJSON,
+			TagsJSON:      tagsJSON,
 			Body:          string(document.Body),
 			BodyLineStart: bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1,
 			Revision:      docs.Revision(document.Data),
@@ -108,6 +121,17 @@ func appendDiagnostic(values []string, value string) []string {
 
 func flattenValues(values []string) string {
 	return strings.Join(values, "\n")
+}
+
+func encodeValues(values []string) (string, error) {
+	if values == nil {
+		values = []string{}
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
 }
 
 func documentTimes(document *docs.Document) (string, string) {

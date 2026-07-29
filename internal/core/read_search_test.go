@@ -53,7 +53,7 @@ func TestSearchMapsBackendFailureToRuntimeError(t *testing.T) {
 		Repo:     &repository.Repository{Root: t.TempDir(), Config: config.Defaults()},
 		Searcher: failingSearcher{},
 	}
-	_, err := service.Search(context.Background(), search.Query{Text: "valid query"})
+	_, err := service.Search(context.Background(), search.Query{Text: "valid query", Access: search.AllAccessPolicy()})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != "search_failed" || apiErr.ExitCode != ExitRuntime {
 		t.Fatalf("Search error = %T %v", err, err)

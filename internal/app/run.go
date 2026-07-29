@@ -157,12 +157,14 @@ func parseRecentFlags(args []string, flags *recentFlags, help io.Writer) (bool, 
 }
 
 type searchFlags struct {
-	repo       string
-	json       bool
-	scope      search.Scope
-	kind       string
-	limit      int
-	queryParts []string
+	repo                 string
+	json                 bool
+	scope                search.Scope
+	kind                 string
+	limit                int
+	backend              search.Backend
+	includeSensitivities []string
+	queryParts           []string
 }
 
 func runSearch(ctx context.Context, args []string, global globalOptions, s streams) int {
@@ -182,9 +184,26 @@ func runSearch(ctx context.Context, args []string, global globalOptions, s strea
 		return emitError(s, flags.json, apiErr)
 	}
 	service := core.NewService(repo)
+	backend := flags.backend
+	if backend == "" {
+		backend = search.Backend(repo.Config.Index.Backend)
+	}
+	access := search.AllAccessPolicy()
+	if len(flags.includeSensitivities) > 0 {
+		var err error
+		access, err = search.NewAccessPolicy(flags.includeSensitivities)
+		if err != nil {
+			return emitError(s, flags.json, core.NewError(core.ExitUsage, "invalid_sensitivity", err.Error()))
+		}
+	}
 	queryText := strings.Join(flags.queryParts, " ")
 	result, err := service.Search(ctx, search.Query{
-		Text: queryText, Scope: flags.scope, Kind: flags.kind, Limit: flags.limit,
+		Text:    queryText,
+		Scope:   flags.scope,
+		Kind:    flags.kind,
+		Limit:   flags.limit,
+		Backend: backend,
+		Access:  access,
 	})
 	if err != nil {
 		return emitOperationError(s, flags.json, err)
@@ -222,6 +241,9 @@ func parseSearchFlags(args []string, flags *searchFlags, help io.Writer) (bool, 
 Options:
   --scope all|pages|sources
   --kind TOKEN
+  --backend auto|index|filesystem
+  --include-sensitivity normal|sensitive|local-only
+                        repeatable; defaults to all local sensitivities
   --limit N             default 10, maximum 100
   --json`)
 			return true, nil
@@ -245,6 +267,19 @@ Options:
 				return false, err
 			}
 			flags.kind, index = value, next
+		case arg == "--backend" || strings.HasPrefix(arg, "--backend="):
+			value, next, err := flagValue(args, index, "--backend")
+			if err != nil {
+				return false, err
+			}
+			flags.backend, index = search.Backend(value), next
+		case arg == "--include-sensitivity" || strings.HasPrefix(arg, "--include-sensitivity="):
+			value, next, err := flagValue(args, index, "--include-sensitivity")
+			if err != nil {
+				return false, err
+			}
+			flags.includeSensitivities = append(flags.includeSensitivities, value)
+			index = next
 		case arg == "--limit" || strings.HasPrefix(arg, "--limit="):
 			value, next, err := flagValue(args, index, "--limit")
 			if err != nil {
@@ -269,6 +304,16 @@ Options:
 	case search.ScopeAll, search.ScopePages, search.ScopeSources:
 	default:
 		return false, core.NewError(core.ExitUsage, "invalid_scope", "--scope must be all, pages, or sources")
+	}
+	switch flags.backend {
+	case "", search.BackendAuto, search.BackendIndex, search.BackendFilesystem:
+	default:
+		return false, core.NewError(core.ExitUsage, "invalid_backend", "--backend must be auto, index, or filesystem")
+	}
+	for _, sensitivity := range flags.includeSensitivities {
+		if sensitivity != "normal" && sensitivity != "sensitive" && sensitivity != "local-only" {
+			return false, core.NewError(core.ExitUsage, "invalid_sensitivity", "--include-sensitivity must be normal, sensitive, or local-only")
+		}
 	}
 	return false, nil
 }

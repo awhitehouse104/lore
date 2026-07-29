@@ -528,6 +528,109 @@ Indexed through the CLI.
 	}
 }
 
+func TestSearchBackendSelectionAndStaleExplicitRefusal(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	page := []byte(`---
+id: page_indexed_search
+title: Indexed Search
+kind: note
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: normal
+---
+Indexed evidence is deterministic.
+`)
+	pagePath := filepath.Join(root, "pages", "indexed-search.md")
+	if err := os.WriteFile(pagePath, page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "-C", root, "add", "--", "pages/indexed-search.md")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", root, "commit", "-m", "test: add search fixture")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, output)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(context.Background(), []string{"index", "build", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("index build returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{
+		"search", "indexed", "--backend", "index", "--include-sensitivity", "normal",
+		"--repo", root, "--json",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("indexed search returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var indexed struct {
+		Backend    string `json:"backend"`
+		IndexState string `json:"index_state"`
+		Results    []any  `json:"results"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &indexed); err != nil {
+		t.Fatal(err)
+	}
+	if indexed.Backend != "index" || indexed.IndexState != "fresh" || len(indexed.Results) != 1 {
+		t.Fatalf("indexed response = %+v", indexed)
+	}
+
+	if err := os.WriteFile(pagePath, append(page, []byte("External edit.\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"search", "indexed", "--backend", "auto", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("auto stale search returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var fallback struct {
+		Backend    string `json:"backend"`
+		IndexState string `json:"index_state"`
+		Warnings   []any  `json:"warnings"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &fallback); err != nil {
+		t.Fatal(err)
+	}
+	if fallback.Backend != "filesystem" || fallback.IndexState != "stale" || len(fallback.Warnings) == 0 {
+		t.Fatalf("fallback response = %+v", fallback)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"search", "indexed", "--backend", "index", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 4 {
+		t.Fatalf("explicit stale search returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Error.Code != "index_not_fresh" {
+		t.Fatalf("stale error = %+v", envelope)
+	}
+}
+
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},

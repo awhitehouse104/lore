@@ -185,7 +185,7 @@ type storedDocument struct {
 func loadStoredDocuments(ctx context.Context, transaction *sql.Tx) (map[string]storedDocument, error) {
 	rows, err := transaction.QueryContext(ctx, `
 SELECT rowid, path, document_id, document_type, title, kind, sensitivity,
-       aliases_text, tags_text, body, body_line_start, revision,
+       aliases_text, tags_text, aliases_json, tags_json, body, body_line_start, revision,
        content_sha256, COALESCE(created_at, ''), COALESCE(updated_at, ''), indexed_at
 FROM documents
 ORDER BY path
@@ -207,6 +207,8 @@ ORDER BY path
 			&document.Sensitivity,
 			&document.AliasesText,
 			&document.TagsText,
+			&document.AliasesJSON,
+			&document.TagsJSON,
 			&document.Body,
 			&document.BodyLineStart,
 			&document.Revision,
@@ -237,12 +239,12 @@ func prepareUpdateStatements(ctx context.Context, transaction *sql.Tx) (*updateS
 	queries := []string{
 		`INSERT INTO documents(
 		    path, document_id, document_type, title, kind, sensitivity,
-		    aliases_text, tags_text, body, body_line_start, revision,
+		    aliases_text, tags_text, aliases_json, tags_json, body, body_line_start, revision,
 		    content_sha256, created_at, updated_at, indexed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)`,
 		`UPDATE documents SET
 		    document_id=?, document_type=?, title=?, kind=?, sensitivity=?,
-		    aliases_text=?, tags_text=?, body=?, body_line_start=?, revision=?,
+		    aliases_text=?, tags_text=?, aliases_json=?, tags_json=?, body=?, body_line_start=?, revision=?,
 		    content_sha256=?, created_at=NULLIF(?, ''), updated_at=NULLIF(?, ''), indexed_at=?
 		WHERE rowid=?`,
 		"DELETE FROM documents WHERE rowid=?",
@@ -296,6 +298,8 @@ func (s *updateStatements) replace(ctx context.Context, old storedDocument, docu
 		document.Sensitivity,
 		document.AliasesText,
 		document.TagsText,
+		document.AliasesJSON,
+		document.TagsJSON,
 		document.Body,
 		document.BodyLineStart,
 		document.Revision,
@@ -338,6 +342,8 @@ func documentValues(document indexedDocument) []any {
 		document.Sensitivity,
 		document.AliasesText,
 		document.TagsText,
+		document.AliasesJSON,
+		document.TagsJSON,
 		document.Body,
 		document.BodyLineStart,
 		document.Revision,

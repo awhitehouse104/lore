@@ -57,17 +57,24 @@ type Service struct {
 }
 
 func NewService(repo *repository.Repository) *Service {
-	return &Service{
-		Repo:     repo,
-		Git:      gitx.New(),
-		Clock:    RealClock{},
-		IDs:      id.CryptoGenerator{},
-		Searcher: search.FilesystemLexicalSearcher{},
-		History:  gitx.New(),
-		TxGit:    gitx.New(),
-		TxIDs:    transaction.CryptoIDGenerator{},
-		Actor:    transaction.DefaultActor,
+	service := &Service{
+		Repo:    repo,
+		Git:     gitx.New(),
+		Clock:   RealClock{},
+		IDs:     id.CryptoGenerator{},
+		History: gitx.New(),
+		TxGit:   gitx.New(),
+		TxIDs:   transaction.CryptoIDGenerator{},
+		Actor:   transaction.DefaultActor,
 	}
+	service.Searcher = search.HybridSearcher{
+		Filesystem:          search.FilesystemLexicalSearcher{},
+		Index:               service.indexManager(),
+		CandidateMultiplier: repo.Config.Index.CandidateMultiplier,
+		MinimumCandidates:   repo.Config.Index.MinimumCandidates,
+		MaximumCandidates:   repo.Config.Index.MaximumCandidates,
+	}
+	return service
 }
 
 type CaptureOptions struct {

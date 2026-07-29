@@ -23,6 +23,8 @@ CREATE TABLE documents (
     sensitivity     TEXT NOT NULL,
     aliases_text    TEXT NOT NULL,
     tags_text       TEXT NOT NULL,
+    aliases_json    TEXT NOT NULL,
+    tags_json       TEXT NOT NULL,
     body            TEXT NOT NULL,
     body_line_start INTEGER NOT NULL CHECK (body_line_start > 0),
     revision        TEXT NOT NULL,

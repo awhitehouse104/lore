@@ -230,9 +230,9 @@ func insertDocuments(ctx context.Context, transaction *sql.Tx, documents []index
 	documentStatement, err := transaction.PrepareContext(ctx, `
 INSERT INTO documents(
     path, document_id, document_type, title, kind, sensitivity,
-    aliases_text, tags_text, body, body_line_start, revision,
+    aliases_text, tags_text, aliases_json, tags_json, body, body_line_start, revision,
     content_sha256, created_at, updated_at, indexed_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?)
 `)
 	if err != nil {
 		return fmt.Errorf("prepare document insert: %w", err)
@@ -257,6 +257,8 @@ VALUES (?, ?, ?, ?, ?, ?)
 			document.Sensitivity,
 			document.AliasesText,
 			document.TagsText,
+			document.AliasesJSON,
+			document.TagsJSON,
 			document.Body,
 			document.BodyLineStart,
 			document.Revision,

@@ -32,10 +32,13 @@ type ReadResult struct {
 }
 
 type SearchResult struct {
-	SchemaVersion int               `json:"schema_version"`
-	Query         string            `json:"query"`
-	Results       []search.Result   `json:"results"`
-	Warnings      []catalog.Warning `json:"warnings"`
+	SchemaVersion    int               `json:"schema_version"`
+	Query            string            `json:"query"`
+	Backend          search.Backend    `json:"backend"`
+	BackendRequested search.Backend    `json:"backend_requested"`
+	IndexState       string            `json:"index_state"`
+	Results          []search.Result   `json:"results"`
+	Warnings         []catalog.Warning `json:"warnings"`
 }
 
 func ParseLineRange(value string) (LineRange, error) {
@@ -123,22 +126,53 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 	if query.Kind != "" && !docs.ValidToken(query.Kind) {
 		return SearchResult{}, NewError(ExitValidation, "invalid_kind", "kind must match ^[a-z][a-z0-9_-]*$")
 	}
+	if query.Access.AllowedSensitivities == nil {
+		return SearchResult{}, NewError(ExitUsage, "access_policy_required", "search requires an explicit sensitivity access policy")
+	}
 	if err := search.ValidateQuery(query); err != nil {
 		apiErr := NewError(ExitValidation, "invalid_search", err.Error())
 		apiErr.Cause = err
 		return SearchResult{}, apiErr
 	}
-	results, warnings, err := s.Searcher.Search(ctx, s.Repo, query)
+	var detailed search.DetailedResponse
+	var err error
+	if searcher, ok := s.Searcher.(search.DetailedSearcher); ok {
+		detailed, err = searcher.SearchDetailed(ctx, s.Repo, query)
+	} else {
+		detailed.Results, detailed.Warnings, err = s.Searcher.Search(ctx, s.Repo, query)
+		detailed.Backend = search.BackendFilesystem
+		detailed.BackendRequested = query.Backend
+		if detailed.BackendRequested == "" {
+			detailed.BackendRequested = search.BackendAuto
+		}
+	}
 	if err != nil {
+		var backendErr *search.BackendError
+		if errors.As(err, &backendErr) {
+			exitCode := ExitRuntime
+			switch backendErr.Kind {
+			case search.BackendErrorUsage:
+				exitCode = ExitUsage
+			case search.BackendErrorConflict:
+				exitCode = ExitConflict
+			}
+			apiErr := NewError(exitCode, backendErr.Code, backendErr.Message)
+			apiErr.Details = map[string]any{"index_state": backendErr.State}
+			apiErr.Cause = backendErr.Cause
+			return SearchResult{}, apiErr
+		}
 		apiErr := NewError(ExitRuntime, "search_failed", "could not search managed documents")
 		apiErr.Cause = err
 		return SearchResult{}, apiErr
 	}
 	return SearchResult{
-		SchemaVersion: SchemaVersion,
-		Query:         query.Text,
-		Results:       results,
-		Warnings:      warnings,
+		SchemaVersion:    SchemaVersion,
+		Query:            query.Text,
+		Backend:          detailed.Backend,
+		BackendRequested: detailed.BackendRequested,
+		IndexState:       detailed.IndexState,
+		Results:          detailed.Results,
+		Warnings:         detailed.Warnings,
 	}, nil
 }
 

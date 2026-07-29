@@ -30,10 +30,12 @@ const (
 )
 
 type Query struct {
-	Text  string
-	Scope Scope
-	Kind  string
-	Limit int
+	Text    string
+	Scope   Scope
+	Kind    string
+	Limit   int
+	Backend Backend
+	Access  AccessPolicy
 }
 
 type Result struct {
@@ -88,6 +90,9 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		if query.Kind != "" && document.Kind() != query.Kind {
 			continue
 		}
+		if !query.Access.Allows(document.Sensitivity()) {
+			continue
+		}
 		score := scoreDocument(document, phrase, unique)
 		if score == 0 {
 			continue
@@ -129,6 +134,14 @@ func ValidateQuery(query Query) error {
 	case "", ScopeAll, ScopePages, ScopeSources:
 	default:
 		return fmt.Errorf("search scope must be all, pages, or sources")
+	}
+	switch query.Backend {
+	case "", BackendAuto, BackendIndex, BackendFilesystem:
+	default:
+		return fmt.Errorf("search backend must be auto, index, or filesystem")
+	}
+	if err := query.Access.Validate(); err != nil {
+		return err
 	}
 	if len(tokenize(query.Text)) == 0 {
 		return fmt.Errorf("search query is empty after tokenization")
@@ -179,11 +192,15 @@ func scoreDocument(document *docs.Document, phrase string, queryTokens []string)
 }
 
 func bestSnippet(document *docs.Document, phrase string, queryTokens []string) (int, int, string) {
-	lines := strings.Split(string(document.Body), "\n")
+	bodyStart := bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1
+	return bestSnippetBody(document.Body, bodyStart, phrase, queryTokens)
+}
+
+func bestSnippetBody(body []byte, bodyStart int, phrase string, queryTokens []string) (int, int, string) {
+	lines := strings.Split(string(body), "\n")
 	if len(lines) > 1 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-	bodyStart := bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1
 	if len(lines) == 0 {
 		return bodyStart, bodyStart, ""
 	}
