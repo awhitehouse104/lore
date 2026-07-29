@@ -105,6 +105,7 @@ type CaptureResult struct {
 	URI           string   `json:"uri"`
 	CapturedAt    string   `json:"captured_at"`
 	RawSHA256     string   `json:"raw_sha256"`
+	Revision      string   `json:"revision"`
 	Bytes         int      `json:"bytes"`
 	Written       bool     `json:"written"`
 	Committed     bool     `json:"committed"`
@@ -234,6 +235,7 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 		URI:           "lore://" + relative,
 		CapturedAt:    now.Format(time.RFC3339Nano),
 		RawSHA256:     rawHash,
+		Revision:      docs.Revision(data),
 		Bytes:         len(options.Body),
 		Written:       true,
 		Committed:     false,

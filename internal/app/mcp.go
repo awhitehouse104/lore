@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"lore/internal/auth"
 	"lore/internal/core"
 	"lore/internal/mcpserver"
 )
@@ -38,14 +39,14 @@ func runMCP(ctx context.Context, args []string, global globalOptions, s streams)
 func runMCPStdio(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := mcpStdioFlags{
 		repo:      global.repo,
-		profile:   "local-full",
+		profile:   auth.DefaultLocalProfile,
 		logFormat: "text",
 	}
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
 		case arg == "--help" || arg == "-h":
-			fmt.Fprintln(s.out, "Usage: lore mcp stdio --repo PATH [--profile local-full] [--log-format json|text]")
+			fmt.Fprintln(s.out, "Usage: lore mcp stdio --repo PATH [--profile local-full|local-query] [--log-format json|text]")
 			return core.ExitOK
 		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
 			value, next, apiErr := flagValue(args, index, "--repo")
@@ -72,8 +73,9 @@ func runMCPStdio(ctx context.Context, args []string, global globalOptions, s str
 			return emitError(s, false, core.NewError(core.ExitUsage, "unexpected_argument", "lore mcp stdio does not accept positional arguments"))
 		}
 	}
-	if flags.profile != "local-full" {
-		return emitError(s, false, core.NewError(core.ExitUsage, "unknown_local_profile", "v0.4 Milestone 1 supports only the local-full profile"))
+	principal, err := auth.LocalProfile(flags.profile)
+	if err != nil {
+		return emitError(s, false, core.NewError(core.ExitUsage, "unknown_local_profile", err.Error()))
 	}
 	if flags.logFormat != "text" && flags.logFormat != "json" {
 		return emitError(s, false, core.NewError(core.ExitUsage, "invalid_log_format", "--log-format must be json or text"))
@@ -83,7 +85,7 @@ func runMCPStdio(ctx context.Context, args []string, global globalOptions, s str
 		return emitError(s, false, apiErr)
 	}
 	logger := stdioLogger(s.err, flags.logFormat)
-	err := mcpserver.RunStdio(ctx, core.NewService(repo), s.in, s.out, logger)
+	err = mcpserver.RunStdio(ctx, core.NewService(repo), principal, s.in, s.out, logger)
 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 		return core.ExitOK
 	}

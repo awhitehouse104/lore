@@ -15,6 +15,7 @@ import (
 	"lore/internal/lint"
 	"lore/internal/recovery"
 	"lore/internal/repository"
+	"lore/internal/search"
 	"lore/internal/transaction"
 )
 
@@ -38,6 +39,17 @@ type CommitResult struct {
 }
 
 func (s *Service) Commit(ctx context.Context, options CommitOptions) (result CommitResult, returnErr error) {
+	return s.commit(ctx, options, nil)
+}
+
+func (s *Service) CommitAuthorized(ctx context.Context, options CommitOptions, access search.AccessPolicy) (result CommitResult, returnErr error) {
+	if access.AllowedSensitivities == nil {
+		return result, NewError(ExitUsage, "access_policy_required", "transaction commit requires an explicit sensitivity access policy")
+	}
+	return s.commit(ctx, options, &access)
+}
+
+func (s *Service) commit(ctx context.Context, options CommitOptions, access *search.AccessPolicy) (result CommitResult, returnErr error) {
 	if s == nil || s.Repo == nil || s.Clock == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "transaction service is not fully configured")
 	}
@@ -59,7 +71,13 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 		return result, digestConflict(options.TransactionID)
 	}
 	if apiErr := s.validateCommitActor(artifacts.Proposal.Actor); apiErr != nil {
+		if access != nil {
+			return result, transactionNotFound()
+		}
 		return result, apiErr
+	}
+	if access != nil && !s.transactionArtifactsAuthorized(ctx, artifacts, *access) {
+		return result, transactionNotFound()
 	}
 	if artifacts.State.Status == transaction.StatusCommitted {
 		return committedResult(artifacts, true), nil
@@ -93,6 +111,15 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	}
 	if !transaction.DigestEqual(options.PreviewDigest, artifacts.PreviewDigest) {
 		return result, digestConflict(options.TransactionID)
+	}
+	if apiErr := s.validateCommitActor(artifacts.Proposal.Actor); apiErr != nil {
+		if access != nil {
+			return result, transactionNotFound()
+		}
+		return result, apiErr
+	}
+	if access != nil && !s.transactionArtifactsAuthorized(ctx, artifacts, *access) {
+		return result, transactionNotFound()
 	}
 	if artifacts.State.Status == transaction.StatusCommitted {
 		return committedResult(artifacts, true), nil
@@ -502,9 +529,9 @@ func digestConflict(transactionID string) *APIError {
 }
 
 func (s *Service) validateCommitActor(actor string) *APIError {
-	if actor != transaction.DefaultActor || s.transactionActor() != transaction.DefaultActor {
+	if actor != s.transactionActor() {
 		apiErr := NewError(ExitConflict, "actor_mismatch", "the current actor is not permitted to commit this transaction")
-		apiErr.Details = map[string]any{"required_actor": transaction.DefaultActor}
+		apiErr.Details = map[string]any{}
 		return apiErr
 	}
 	return nil

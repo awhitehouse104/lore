@@ -77,7 +77,7 @@ func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 	var code int
 	go func() {
 		defer wait.Done()
-		code = Run(t.Context(), []string{"mcp", "stdio", "--repo", root}, stdinReader, stdoutWriter, &stderr)
+		code = Run(t.Context(), []string{"mcp", "stdio", "--repo", root, "--profile", "local-query"}, stdinReader, stdoutWriter, &stderr)
 	}()
 	responseReader := bufio.NewReader(stdoutReader)
 	requests := []string{
@@ -85,7 +85,7 @@ func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
 	}
-	for _, request := range requests {
+	for requestIndex, request := range requests {
 		if _, err := fmt.Fprintln(stdinWriter, request); err != nil {
 			t.Fatal(err)
 		}
@@ -100,6 +100,12 @@ func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 			}
 			if response["jsonrpc"] != "2.0" {
 				t.Fatalf("MCP stdout line = %#v", response)
+			}
+			if requestIndex == 2 {
+				tools := response["result"].(map[string]any)["tools"].([]any)
+				if len(tools) != 2 {
+					t.Fatalf("local-query advertised %d tools, want 2", len(tools))
+				}
 			}
 		}
 	}
@@ -124,7 +130,7 @@ func TestMCPStdioStartupErrorsStayOffStdout(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("startup error polluted protocol stdout: %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "unknown_local_profile") && !strings.Contains(stderr.String(), "supports only") {
+	if !strings.Contains(stderr.String(), "unknown local MCP profile") {
 		t.Fatalf("startup error missing from stderr: %q", stderr.String())
 	}
 }

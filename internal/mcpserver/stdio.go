@@ -5,17 +5,18 @@ import (
 	"io"
 	"log/slog"
 
+	"lore/internal/auth"
 	"lore/internal/core"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func RunStdio(ctx context.Context, service *core.Service, input io.Reader, output io.Writer, logger *slog.Logger) error {
+func RunStdio(ctx context.Context, service *core.Service, principal auth.Principal, input io.Reader, output io.Writer, logger *slog.Logger) error {
 	transport := &mcp.IOTransport{
 		Reader: readCloser{Reader: input},
 		Writer: writeCloser{Writer: output},
 	}
-	return New(service, logger).Run(ctx, transport)
+	return New(service, principal, logger).Run(ctx, transport)
 }
 
 type readCloser struct {

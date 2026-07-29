@@ -2,8 +2,8 @@
 
 ## Current release and milestone
 
-Lore v0.4.0 — Milestone 1 complete; Milestone 2 (authorization and mutation
-tools) is next.
+Lore v0.4.0 — Milestones 1–2 complete; Milestone 3 (stateless Streamable HTTP)
+is next.
 
 ## v0.4 completed milestones
 
@@ -18,6 +18,18 @@ tools) is next.
   lint service. In-process SDK tests cover modern discovery, legacy
   initialization, every M1 tool, annotations, schemas, bounds, and protocol-only
   stdout.
+- **M2 — authorization and mutation tools:** added immutable trusted principals,
+  additive query/capture/curate/inspect/history permissions, fixed launcher-side
+  local profiles, sensitivity-aware core operations, defensive HTTP
+  `local-only` exclusion, not-found masking, mixed-history subject redaction,
+  filtered lint and index aggregates, actor-owned transaction operations, and
+  commit-time reauthorization. Added capture, preview, commit, transaction
+  list/show/discard tools with strict schemas and accurate annotations, exact
+  capture-byte handling, stable external error envelopes, bounded response
+  content, and principal-scoped durable idempotency records containing only
+  digests and minimal results. Cross-principal, sensitivity-change, source
+  integration, retry, expiry, lock, symlink, and protocol tests cover the new
+  boundary.
 
 ## Verified v0.3 baseline for v0.4
 
@@ -179,6 +191,11 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.4 M1 `go mod tidy -diff`: clean
 - v0.4 M1 `go mod verify`: passed (`all modules verified`)
 - v0.4 M1 `govulncheck ./...`: passed (`No vulnerabilities found`)
+- v0.4 M2 `make check`: passed
+- v0.4 M2 `make test-race`: passed
+- v0.4 M2 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.4 M2 `go mod tidy -diff`: clean
+- v0.4 M2 `go mod verify`: passed (`all modules verified`)
 
 ## v0.3 completed milestones
 

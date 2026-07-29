@@ -13,7 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"lore/internal/auth"
 	"lore/internal/core"
+	"lore/internal/docs"
 	"lore/internal/gitx"
 	"lore/internal/initrepo"
 	"lore/internal/repository"
@@ -23,7 +25,7 @@ import (
 
 func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	service := newTestService(t)
-	server := New(service, slog.New(slog.DiscardHandler))
+	server := New(service, fullPrincipal(t), slog.New(slog.DiscardHandler))
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.ProtocolServer().Connect(t.Context(), serverTransport, nil)
 	if err != nil {
@@ -51,17 +53,32 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		if tool.InputSchema == nil || tool.OutputSchema == nil {
 			t.Errorf("%s has incomplete schemas", tool.Name)
 		}
-		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint || !tool.Annotations.IdempotentHint {
+		wantReadOnly, wantIdempotent, wantDestructive := expectedAnnotations(tool.Name)
+		if tool.Annotations == nil ||
+			tool.Annotations.ReadOnlyHint != wantReadOnly ||
+			tool.Annotations.IdempotentHint != wantIdempotent {
 			t.Errorf("%s annotations = %+v", tool.Name, tool.Annotations)
 		}
-		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint {
+		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint != wantDestructive {
 			t.Errorf("%s destructive annotation = %+v", tool.Name, tool.Annotations)
 		}
 		if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
 			t.Errorf("%s open-world annotation = %+v", tool.Name, tool.Annotations)
 		}
 	}
-	wantNames := []string{"lore_index_status", "lore_lint", "lore_read", "lore_recent", "lore_search"}
+	wantNames := []string{
+		"lore_capture",
+		"lore_commit",
+		"lore_index_status",
+		"lore_lint",
+		"lore_preview",
+		"lore_read",
+		"lore_recent",
+		"lore_search",
+		"lore_transaction_discard",
+		"lore_transaction_list",
+		"lore_transaction_show",
+	}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("tool order = %v, want %v", names, wantNames)
 	}
@@ -121,7 +138,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 }
 
 func TestLegacyInitializeAndToolList(t *testing.T) {
-	server := New(newTestService(t), slog.New(slog.DiscardHandler))
+	server := New(newTestService(t), fullPrincipal(t), slog.New(slog.DiscardHandler))
 	clientToServerReader, clientToServerWriter := io.Pipe()
 	serverToClientReader, serverToClientWriter := io.Pipe()
 	serverSession, err := server.ProtocolServer().Connect(t.Context(), &mcp.IOTransport{
@@ -166,8 +183,21 @@ func TestLegacyInitializeAndToolList(t *testing.T) {
 	})
 	list := readJSONLine(t, reader)
 	tools := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 5 {
+	if len(tools) != 11 {
 		t.Fatalf("legacy tool list = %#v", list)
+	}
+}
+
+func expectedAnnotations(name string) (readOnly, idempotent, destructive bool) {
+	switch name {
+	case "lore_capture":
+		return false, false, true
+	case "lore_preview":
+		return false, false, false
+	case "lore_commit", "lore_transaction_discard":
+		return false, true, true
+	default:
+		return true, true, false
 	}
 }
 
@@ -225,6 +255,54 @@ Project Foo must remain deployable without Kubernetes.
 	if err := os.WriteFile(filepath.Join(root, "pages", "project-foo.md"), page, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	sensitive := []byte(`---
+id: page_sensitive_notes
+title: Sensitive Notes
+kind: topic
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: sensitive
+---
+Private sensitive material.
+`)
+	if err := os.WriteFile(filepath.Join(root, "pages", "sensitive-notes.md"), sensitive, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	localOnly := []byte(`---
+id: page_local_notes
+title: Local Notes
+kind: topic
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: local-only
+---
+Material reserved for local clients.
+`)
+	if err := os.WriteFile(filepath.Join(root, "pages", "local-notes.md"), localOnly, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sourceBody := []byte("Normal evidence for transaction authorization.")
+	source := docs.Source{
+		ID:          "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		Kind:        "evidence",
+		CapturedAt:  "2026-07-29T12:00:00Z",
+		Origin:      "test",
+		RawSHA256:   docs.SHA256(sourceBody),
+		Sensitivity: "normal",
+	}
+	sourceData, err := docs.MarshalSource(source, sourceBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDir := filepath.Join(root, "sources", "2026", "07")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, source.ID+"-evidence.md"), sourceData, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runGit(t, root, "init", "-b", "main")
 	runGit(t, root, "config", "user.name", "Lore Test")
 	runGit(t, root, "config", "user.email", "lore-test@example.invalid")
@@ -242,6 +320,15 @@ func requireGit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is required for MCP integration tests")
 	}
+}
+
+func fullPrincipal(t *testing.T) auth.Principal {
+	t.Helper()
+	principal, err := auth.LocalProfile(auth.DefaultLocalProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return principal
 }
 
 func runGit(t *testing.T, root string, arguments ...string) {

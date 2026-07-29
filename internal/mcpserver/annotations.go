@@ -12,3 +12,14 @@ func readOnlyAnnotations(title string) *mcp.ToolAnnotations {
 		OpenWorldHint:   &no,
 	}
 }
+
+func mutationAnnotations(title string, destructive, idempotent bool) *mcp.ToolAnnotations {
+	no := false
+	return &mcp.ToolAnnotations{
+		Title:           title,
+		ReadOnlyHint:    false,
+		IdempotentHint:  idempotent,
+		DestructiveHint: &destructive,
+		OpenWorldHint:   &no,
+	}
+}

@@ -3,9 +3,9 @@ package mcpserver
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"lore/internal/core"
+	"lore/internal/idempotency"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -36,10 +36,20 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 		switch apiErr.Code {
 		case "reference_not_found":
 			code, message = "not_found", "The requested document was not found."
+		case "permission_denied":
+			code, message = "permission_denied", "The principal is not authorized for this operation."
 		case "ambiguous_reference":
 			code, message = "conflict", "The document reference is ambiguous."
 		case "repository_locked":
 			code, message = "locked", "The Lore repository is busy."
+		case "prospective_lint_invalid", "lint_invalid", "prospective_lint_changed":
+			code, message = "lint_failed", "The Lore operation did not pass canonical lint."
+		case "recovery_required":
+			code, message = "recovery_required", "Repository recovery is required before this write."
+		case "git_push_failed", "push_required_failed":
+			code, message = "required_push_failed", "The canonical change is locally safe, but the required Git push failed."
+		case "transaction_integrity_failed", "commit_content_mismatch":
+			code, message = "integrity_error", "Stored Lore operation data failed integrity verification."
 		default:
 			switch apiErr.ExitCode {
 			case core.ExitUsage, core.ExitValidation:
@@ -67,5 +77,17 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 	result := &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
 	}
-	return result, &toolError{code: code, message: fmt.Sprintf("%s: %s", code, message)}
+	return result, &toolError{code: code, message: string(data)}
+}
+
+func mappedIdempotencyError(err error, requestID string) (*mcp.CallToolResult, error) {
+	var conflict *idempotency.ConflictError
+	if errors.As(err, &conflict) {
+		return mappedToolError(core.NewError(core.ExitConflict, "idempotency_conflict", "idempotency key input conflicts with its existing operation"), requestID)
+	}
+	var locked *idempotency.LockedError
+	if errors.As(err, &locked) {
+		return mappedToolError(core.NewError(core.ExitConflict, "repository_locked", "idempotent operation is already running"), requestID)
+	}
+	return mappedToolError(err, requestID)
 }

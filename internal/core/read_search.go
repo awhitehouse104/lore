@@ -64,6 +64,17 @@ func ParseLineRange(value string) (LineRange, error) {
 }
 
 func (s *Service) Read(ctx context.Context, reference string, requested *LineRange) (ReadResult, error) {
+	return s.read(ctx, reference, requested, search.AllAccessPolicy())
+}
+
+func (s *Service) ReadAuthorized(ctx context.Context, reference string, requested *LineRange, access search.AccessPolicy) (ReadResult, error) {
+	if access.AllowedSensitivities == nil {
+		return ReadResult{}, NewError(ExitUsage, "access_policy_required", "read requires an explicit sensitivity access policy")
+	}
+	return s.read(ctx, reference, requested, access)
+}
+
+func (s *Service) read(ctx context.Context, reference string, requested *LineRange, access search.AccessPolicy) (ReadResult, error) {
 	if s == nil || s.Repo == nil {
 		return ReadResult{}, NewError(ExitRuntime, "service_unavailable", "read service is not fully configured")
 	}
@@ -106,6 +117,9 @@ func (s *Service) Read(ctx context.Context, reference string, requested *LineRan
 			apiErr.Cause = err
 			return ReadResult{}, apiErr
 		}
+	}
+	if !access.Allows(document.Sensitivity()) {
+		return ReadResult{}, NewError(ExitValidation, "reference_not_found", "no managed document matches reference")
 	}
 
 	content, lineStart, lineEnd, err := sliceLines(document.Data, requested)

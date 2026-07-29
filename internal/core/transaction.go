@@ -16,6 +16,7 @@ import (
 	"lore/internal/lint"
 	"lore/internal/lock"
 	"lore/internal/repository"
+	"lore/internal/search"
 	"lore/internal/transaction"
 )
 
@@ -78,6 +79,17 @@ type TransactionDiscardResult struct {
 }
 
 func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result PreviewResult, returnErr error) {
+	return s.preview(ctx, requestBytes, nil)
+}
+
+func (s *Service) PreviewAuthorized(ctx context.Context, requestBytes []byte, access search.AccessPolicy) (result PreviewResult, returnErr error) {
+	if access.AllowedSensitivities == nil {
+		return result, NewError(ExitUsage, "access_policy_required", "transaction preview requires an explicit sensitivity access policy")
+	}
+	return s.preview(ctx, requestBytes, &access)
+}
+
+func (s *Service) preview(ctx context.Context, requestBytes []byte, access *search.AccessPolicy) (result PreviewResult, returnErr error) {
 	if s == nil || s.Repo == nil || s.Clock == nil || s.TxIDs == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "transaction service is not fully configured")
 	}
@@ -174,6 +186,17 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 	if apiErr := validateIntegratedPageReferences(view, effective); apiErr != nil {
 		return result, apiErr
 	}
+	if access != nil {
+		originals := make([][]byte, len(diffChanges))
+		resulting := make([][]byte, len(diffChanges))
+		for index, change := range diffChanges {
+			originals[index] = change.Original
+			resulting[index] = change.Result
+		}
+		if apiErr := s.authorizeTransactionContent(ctx, effective, originals, resulting, *access); apiErr != nil {
+			return result, apiErr
+		}
+	}
 	lintResult, err := lint.RunViewAt(ctx, s.Repo, view, s.TxGit, now)
 	if err != nil {
 		return result, transactionRuntimeError("prospective_lint_failed", "could not lint the prospective repository", err)
@@ -186,6 +209,16 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 		return result, NewError(ExitValidation, "diff_too_large", fmt.Sprintf("transaction diff exceeds %d bytes", transaction.MaxDiffBytes))
 	}
 	warnings := lintWarnings(lintResult)
+	displayLint := lintResult
+	displayWarnings := warnings
+	if access != nil {
+		authorizedLint, filterErr := filterLintResult(ctx, view, lintResult, *access)
+		if filterErr != nil {
+			return result, transactionRuntimeError("lint_authorization_failed", "could not filter prospective lint diagnostics", filterErr)
+		}
+		displayLint = authorizedLint.Result
+		displayWarnings = lintWarnings(displayLint)
+	}
 	result = PreviewResult{
 		SchemaVersion: SchemaVersion,
 		Status:        "invalid",
@@ -197,8 +230,8 @@ func (s *Service) Preview(ctx context.Context, requestBytes []byte) (result Prev
 		Operations:    len(effective),
 		DiffSHA256:    transaction.Digest(diffBytes),
 		Diff:          string(diffBytes),
-		Lint:          lintResult,
-		Warnings:      warnings,
+		Lint:          displayLint,
+		Warnings:      displayWarnings,
 	}
 	if !lintResult.Valid {
 		apiErr := NewError(ExitValidation, "prospective_lint_invalid", "the prospective repository has lint errors")
@@ -460,6 +493,40 @@ func (s *Service) TransactionList(status transaction.Status, limit int) (Transac
 	return result, nil
 }
 
+func (s *Service) TransactionListOwned(ctx context.Context, status transaction.Status, limit int, access search.AccessPolicy) (TransactionListResult, error) {
+	result := TransactionListResult{SchemaVersion: SchemaVersion, Transactions: []TransactionSummary{}}
+	if access.AllowedSensitivities == nil {
+		return result, NewError(ExitUsage, "access_policy_required", "transaction listing requires an explicit sensitivity access policy")
+	}
+	if limit < 1 || limit > MaximumTransactionLimit {
+		return result, NewError(ExitUsage, "invalid_limit", fmt.Sprintf("transaction limit must be between 1 and %d", MaximumTransactionLimit))
+	}
+	store, err := transaction.NewStore(s.Repo)
+	if err != nil {
+		return result, transactionRuntimeError("transaction_store_failed", "could not open the transaction store", err)
+	}
+	ids, err := store.ListIDs()
+	if err != nil {
+		return result, transactionRuntimeError("transaction_list_failed", "could not list transactions", err)
+	}
+	for _, transactionID := range ids {
+		artifacts, err := store.Load(transactionID)
+		if err != nil {
+			return result, transactionRuntimeError("transaction_integrity_failed", "a transaction failed integrity verification", err)
+		}
+		if artifacts.Proposal.Actor != s.transactionActor() ||
+			(status != "" && artifacts.State.Status != status) ||
+			!s.transactionArtifactsAuthorized(ctx, artifacts, access) {
+			continue
+		}
+		result.Transactions = append(result.Transactions, transactionSummary(artifacts))
+		if len(result.Transactions) == limit {
+			break
+		}
+	}
+	return result, nil
+}
+
 func (s *Service) TransactionShow(transactionID string, includeDiff bool) (TransactionShowResult, error) {
 	var result TransactionShowResult
 	store, err := transaction.NewStore(s.Repo)
@@ -497,7 +564,53 @@ func (s *Service) TransactionShow(transactionID string, includeDiff bool) (Trans
 	return result, nil
 }
 
+func (s *Service) TransactionShowOwned(ctx context.Context, transactionID string, includeDiff bool, access search.AccessPolicy) (TransactionShowResult, error) {
+	if access.AllowedSensitivities == nil {
+		return TransactionShowResult{}, NewError(ExitUsage, "access_policy_required", "transaction inspection requires an explicit sensitivity access policy")
+	}
+	if err := transaction.ValidateTransactionID(transactionID); err != nil {
+		return TransactionShowResult{}, NewError(ExitUsage, "invalid_transaction_id", "transaction ID is invalid")
+	}
+	result, err := s.TransactionShow(transactionID, includeDiff)
+	if err != nil || result.Proposal.Actor != s.transactionActor() {
+		return TransactionShowResult{}, transactionNotFound()
+	}
+	store, storeErr := transaction.NewStore(s.Repo)
+	if storeErr != nil {
+		return TransactionShowResult{}, transactionRuntimeError("transaction_store_failed", "could not open the transaction store", storeErr)
+	}
+	artifacts, loadErr := store.Load(transactionID)
+	if loadErr != nil || !s.transactionArtifactsAuthorized(ctx, artifacts, access) {
+		return TransactionShowResult{}, transactionNotFound()
+	}
+	overlayFiles := make(map[string][]byte, len(artifacts.Proposal.Operations))
+	for index, operation := range artifacts.Proposal.Operations {
+		overlayFiles[operation.Path] = artifacts.Contents[index]
+	}
+	view, viewErr := repository.NewOverlayView(s.Repo, nil, overlayFiles)
+	if viewErr != nil {
+		return TransactionShowResult{}, transactionRuntimeError("overlay_failed", "could not authorize transaction inspection", viewErr)
+	}
+	authorizedLint, filterErr := filterLintResult(ctx, view, result.Lint, access)
+	if filterErr != nil {
+		return TransactionShowResult{}, transactionRuntimeError("lint_authorization_failed", "could not filter transaction lint diagnostics", filterErr)
+	}
+	result.Lint = authorizedLint.Result
+	return result, nil
+}
+
 func (s *Service) TransactionDiscard(transactionID string) (result TransactionDiscardResult, returnErr error) {
+	return s.transactionDiscard(context.Background(), transactionID, nil)
+}
+
+func (s *Service) TransactionDiscardOwned(ctx context.Context, transactionID string, access search.AccessPolicy) (result TransactionDiscardResult, returnErr error) {
+	if access.AllowedSensitivities == nil {
+		return result, NewError(ExitUsage, "access_policy_required", "transaction discard requires an explicit sensitivity access policy")
+	}
+	return s.transactionDiscard(ctx, transactionID, &access)
+}
+
+func (s *Service) transactionDiscard(ctx context.Context, transactionID string, access *search.AccessPolicy) (result TransactionDiscardResult, returnErr error) {
 	now := s.Clock.Now().UTC()
 	handle, apiErr := acquireWriteLock(s.Repo, "transaction discard", now)
 	if apiErr != nil {
@@ -515,6 +628,16 @@ func (s *Service) TransactionDiscard(transactionID string) (result TransactionDi
 	if err != nil {
 		return result, transactionRuntimeError("transaction_store_failed", "could not open the transaction store", err)
 	}
+	if access != nil {
+		artifacts, loadErr := store.Load(transactionID)
+		if loadErr != nil || artifacts.Proposal.Actor != s.transactionActor() {
+			return result, transactionNotFound()
+		}
+		if artifacts.State.Status != transaction.StatusDiscarded &&
+			!s.transactionArtifactsAuthorized(ctx, artifacts, *access) {
+			return result, transactionNotFound()
+		}
+	}
 	state, err := store.Discard(transactionID, now.Format(time.RFC3339Nano))
 	if err != nil {
 		return result, transactionRuntimeError("transaction_discard_failed", fmt.Sprintf("could not discard transaction %s", transactionID), err)
@@ -525,6 +648,10 @@ func (s *Service) TransactionDiscard(transactionID string) (result TransactionDi
 		Status:        state.Status,
 		Discarded:     true,
 	}, nil
+}
+
+func transactionNotFound() *APIError {
+	return NewError(ExitValidation, "reference_not_found", "transaction was not found")
 }
 
 func (s *Service) requireTransactionGit(ctx context.Context) *APIError {
