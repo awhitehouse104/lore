@@ -2,8 +2,8 @@
 
 ## Current release and milestone
 
-Lore v0.4.0 — Milestones 1–2 complete; Milestone 3 (stateless Streamable HTTP)
-is next.
+Lore v0.4.0 — Milestones 1–3 complete; Milestone 4 (resources, audit, and
+operational hardening) is next.
 
 ## v0.4 completed milestones
 
@@ -30,6 +30,19 @@ is next.
   digests and minimal results. Cross-principal, sensitivity-change, source
   integration, retry, expiry, lock, symlink, and protocol tests cover the new
   boundary.
+- **M3 — stateless Streamable HTTP:** added strict external YAML configuration
+  and `lore mcp check-config`, protected regular-file token loading, fixed-size
+  token digests, constant-time bearer matching, per-request HTTP principals,
+  and `lore mcp serve` with the official SDK's stateless modern transport.
+  Exact origin matching, explicit IP bind policy, loopback defaults,
+  non-loopback plaintext refusal, forwarded-header refusal, request/concurrency/
+  timeout/response bounds, private/no-store responses, minimal health endpoints,
+  SIGINT/SIGTERM handling, and bounded graceful shutdown make the network
+  boundary fail closed. Hermetic HTTP/SDK tests cover authentication failure
+  equivalence, principal-specific discovery, current-protocol calls, stateless
+  operation, local-only exclusion, origin and size limits, cancellation,
+  concurrency exhaustion, response bounds, health privacy, and active-request
+  shutdown.
 
 ## Verified v0.3 baseline for v0.4
 
@@ -196,6 +209,11 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.4 M2 `CGO_ENABLED=0 go build ./cmd/lore`: passed
 - v0.4 M2 `go mod tidy -diff`: clean
 - v0.4 M2 `go mod verify`: passed (`all modules verified`)
+- v0.4 M3 `make check`: passed
+- v0.4 M3 `make test-race`: passed
+- v0.4 M3 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.4 M3 `go mod tidy -diff`: clean
+- v0.4 M3 `go mod verify`: passed (`all modules verified`)
 
 ## v0.3 completed milestones
 

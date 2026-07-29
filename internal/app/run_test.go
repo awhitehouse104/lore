@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -132,6 +133,64 @@ func TestMCPStdioStartupErrorsStayOffStdout(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "unknown local MCP profile") {
 		t.Fatalf("startup error missing from stderr: %q", stderr.String())
+	}
+}
+
+func TestMCPCheckConfigLoadsExternalConfigurationAndTokens(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := Run(t.Context(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	tokenFile := filepath.Join(t.TempDir(), "reader.token")
+	if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configFile := filepath.Join(t.TempDir(), "mcp.yaml")
+	config := fmt.Sprintf(`version: 1
+repo: %s
+auth:
+  tokens:
+    - name: remote_reader
+      token_file: %s
+      permissions: [query]
+      sensitivities: [normal]
+`, root, tokenFile)
+	if err := os.WriteFile(configFile, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(t.Context(), []string{"mcp", "check-config", "--config", configFile}, strings.NewReader(""), &stdout, &stderr)
+	if code != core.ExitOK || stdout.String() != "MCP server configuration is valid.\n" || stderr.Len() != 0 {
+		t.Fatalf("check-config = code %d, stdout=%q, stderr=%q", code, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	code = Run(t.Context(), []string{"--json", "mcp", "check-config", "--config=" + configFile}, strings.NewReader(""), &stdout, &stderr)
+	var result struct {
+		SchemaVersion int    `json:"schema_version"`
+		Status        string `json:"status"`
+		Principals    int    `json:"principals"`
+	}
+	if code != core.ExitOK || json.Unmarshal(stdout.Bytes(), &result) != nil ||
+		result.SchemaVersion != 1 || result.Status != "ok" || result.Principals != 1 {
+		t.Fatalf("JSON check-config = code %d, stdout=%q, result=%+v", code, stdout.String(), result)
+	}
+}
+
+func TestMCPHTTPCommandFlagAndConfigErrors(t *testing.T) {
+	for _, arguments := range [][]string{
+		{"mcp", "serve", "--config="},
+		{"mcp", "check-config", "--unknown"},
+		{"--repo", "/tmp/not-used", "mcp", "check-config"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(t.Context(), arguments, strings.NewReader(""), &stdout, &stderr); code != core.ExitUsage {
+			t.Errorf("Run(%v) = %d, stderr=%q", arguments, code, stderr.String())
+		}
 	}
 }
 
