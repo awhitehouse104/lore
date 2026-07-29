@@ -77,6 +77,8 @@ func TestIndexedAndFilesystemSearchParityFixtures(t *testing.T) {
 		{Text: "source evidence", Scope: search.ScopeSources, Limit: 20, Access: all},
 		{Text: "needle", Scope: search.ScopePages, Kind: "note", Limit: 20, Access: normal},
 		{Text: "pathonly", Scope: search.ScopePages, Limit: 20, Access: all},
+		{Text: "deployment", Scope: search.ScopeAll, Tags: []string{"deployment"}, Paths: []string{"pages/"}, Limit: 20, Access: all},
+		{Text: "needle", Scope: search.ScopePages, Paths: []string{"pages/needle-a.md"}, Limit: 20, Access: all},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.Text+"/"+string(fixture.Scope), func(t *testing.T) {

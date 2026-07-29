@@ -134,6 +134,26 @@ WHERE documents_fts MATCH ?`)
 		query.WriteString(" AND d.kind=?")
 		arguments = append(arguments, request.Kind)
 	}
+	tags := append([]string(nil), request.Tags...)
+	sort.Strings(tags)
+	for _, tag := range tags {
+		query.WriteString(" AND EXISTS (SELECT 1 FROM json_each(d.tags_json) WHERE value=?)")
+		arguments = append(arguments, tag)
+	}
+	paths := append([]string(nil), request.Paths...)
+	sort.Strings(paths)
+	if len(paths) > 0 {
+		query.WriteString(" AND (")
+		for index, path := range paths {
+			if index > 0 {
+				query.WriteString(" OR ")
+			}
+			path = strings.TrimSuffix(path, "/")
+			query.WriteString("(d.path=? OR d.path LIKE ? ESCAPE '\\')")
+			arguments = append(arguments, path, escapeLike(path)+"/%")
+		}
+		query.WriteByte(')')
+	}
 	sensitivities := append([]string(nil), request.AllowedSensitivities...)
 	sort.Strings(sensitivities)
 	if len(sensitivities) == 0 {
@@ -207,4 +227,9 @@ WHERE documents_fts MATCH ?`)
 	}
 	batch.Documents = candidates
 	return batch, nil
+}
+
+func escapeLike(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(value)
 }

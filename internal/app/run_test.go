@@ -1,15 +1,21 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"lore/internal/core"
 )
 
 func TestVersionJSON(t *testing.T) {
@@ -26,7 +32,7 @@ func TestVersionJSON(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-	if result.SchemaVersion != 1 || result.Version != "0.3.0-dev" {
+	if result.SchemaVersion != 1 || result.Version != "0.4.0-dev" {
 		t.Fatalf("unexpected version response: %+v", result)
 	}
 }
@@ -53,6 +59,73 @@ func TestInitAndLintJSON(t *testing.T) {
 	}
 	if result.SchemaVersion != 1 || !result.Valid {
 		t.Fatalf("unexpected lint response: %+v", result)
+	}
+}
+
+func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
+	root := t.TempDir()
+	var setupOut, setupErr bytes.Buffer
+	if code := Run(t.Context(), []string{"init", root, "--no-git"}, strings.NewReader(""), &setupOut, &setupErr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, setupErr.String())
+	}
+
+	stdinReader, stdinWriter := io.Pipe()
+	stdoutReader, stdoutWriter := io.Pipe()
+	var stderr bytes.Buffer
+	var wait sync.WaitGroup
+	wait.Add(1)
+	var code int
+	go func() {
+		defer wait.Done()
+		code = Run(t.Context(), []string{"mcp", "stdio", "--repo", root}, stdinReader, stdoutWriter, &stderr)
+	}()
+	responseReader := bufio.NewReader(stdoutReader)
+	requests := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"clean-stdout-test","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+	}
+	for _, request := range requests {
+		if _, err := fmt.Fprintln(stdinWriter, request); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(request, `"id":`) {
+			line, err := responseReader.ReadBytes('\n')
+			if err != nil {
+				t.Fatalf("read MCP stdout: %v", err)
+			}
+			var response map[string]any
+			if err := json.Unmarshal(line, &response); err != nil {
+				t.Fatalf("MCP stdout line was not JSON-RPC: %q: %v", line, err)
+			}
+			if response["jsonrpc"] != "2.0" {
+				t.Fatalf("MCP stdout line = %#v", response)
+			}
+		}
+	}
+	_ = stdinWriter.Close()
+	wait.Wait()
+	_ = stdoutWriter.Close()
+	_ = stdoutReader.Close()
+	if code != 0 {
+		t.Fatalf("mcp stdio returned %d, stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected MCP stderr: %q", stderr.String())
+	}
+}
+
+func TestMCPStdioStartupErrorsStayOffStdout(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run(t.Context(), []string{"--json", "mcp", "stdio", "--profile", "missing"}, strings.NewReader(""), &stdout, &stderr)
+	if code != core.ExitUsage {
+		t.Fatalf("mcp stdio returned %d, stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("startup error polluted protocol stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "unknown_local_profile") && !strings.Contains(stderr.String(), "supports only") {
+		t.Fatalf("startup error missing from stderr: %q", stderr.String())
 	}
 }
 

@@ -106,6 +106,8 @@ type CandidateRequest struct {
 	MatchExpression      string
 	Scope                Scope
 	Kind                 string
+	Tags                 []string
+	Paths                []string
 	AllowedSensitivities []string
 	Limit                int
 }
@@ -229,6 +231,8 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 		MatchExpression:      expression,
 		Scope:                query.Scope,
 		Kind:                 query.Kind,
+		Tags:                 query.Tags,
+		Paths:                query.Paths,
 		AllowedSensitivities: query.Access.Values(),
 		Limit:                candidateLimit,
 	})
@@ -386,6 +390,9 @@ func RankCandidates(candidates []Candidate, query Query) []Result {
 	results := make([]Result, 0, len(candidates))
 	for _, candidate := range candidates {
 		if !query.Access.Allows(candidate.Sensitivity) {
+			continue
+		}
+		if !matchesTags(candidate.Tags, query.Tags) || !matchesPath(candidate.Path, query.Paths) {
 			continue
 		}
 		document := candidateDocument(candidate)

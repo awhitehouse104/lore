@@ -69,6 +69,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runRecover(ctx, remaining[1:], global, s)
 	case "index":
 		return runIndex(ctx, remaining[1:], global, s)
+	case "mcp":
+		return runMCP(ctx, remaining[1:], global, s)
 	case "version":
 		return runVersion(remaining[1:], global, s)
 	case "help", "--help", "-h":
@@ -776,10 +778,22 @@ func runLint(ctx context.Context, args []string, global globalOptions, s streams
 	if apiErr != nil {
 		return emitError(s, jsonOutput, apiErr)
 	}
-	result, err := lint.RunRoot(ctx, root, gitx.New())
+	repo, err := repository.Open(root)
+	if err != nil {
+		result, lintErr := lint.RunRoot(ctx, root, gitx.New())
+		if lintErr != nil {
+			return emitOperationError(s, jsonOutput, lintErr)
+		}
+		return emitLintResult(s, jsonOutput, result)
+	}
+	result, err := core.NewService(repo).Lint(ctx)
 	if err != nil {
 		return emitOperationError(s, jsonOutput, err)
 	}
+	return emitLintResult(s, jsonOutput, result)
+}
+
+func emitLintResult(s streams, jsonOutput bool, result lint.Result) int {
 	if jsonOutput {
 		if err := output.JSON(s.out, result); err != nil {
 			return emitOperationError(s, false, fmt.Errorf("write lint output: %w", err))
@@ -917,6 +931,7 @@ Commands:
             inspect or discard transaction proposals
   recover   inspect, roll back, or finalize interrupted transactions
   index     build, update, inspect, or clear the derived search index
+  mcp       serve Lore through the Model Context Protocol
   recent    inspect recent knowledge commits
   version   print build version
 

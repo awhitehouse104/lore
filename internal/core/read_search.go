@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -25,8 +26,10 @@ type ReadResult struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
 	Kind          string `json:"kind"`
+	Sensitivity   string `json:"sensitivity"`
 	LineStart     int    `json:"line_start"`
 	LineEnd       int    `json:"line_end"`
+	More          bool   `json:"more"`
 	Revision      string `json:"revision"`
 	Content       string `json:"content"`
 }
@@ -70,7 +73,13 @@ func (s *Service) Read(ctx context.Context, reference string, requested *LineRan
 		apiErr.Cause = err
 		return ReadResult{}, apiErr
 	}
-	document, err := documentCatalog.Resolve(s.Repo, reference)
+	resolvedReference, err := normalizeReadReference(reference)
+	if err != nil {
+		apiErr := NewError(ExitUsage, "unsafe_reference", err.Error())
+		apiErr.Cause = err
+		return ReadResult{}, apiErr
+	}
+	document, err := documentCatalog.Resolve(s.Repo, resolvedReference)
 	if err != nil {
 		var ambiguous *catalog.AmbiguousError
 		var unsafe *catalog.UnsafeReferenceError
@@ -112,8 +121,10 @@ func (s *Service) Read(ctx context.Context, reference string, requested *LineRan
 		ID:            document.ID(),
 		Title:         document.Title(),
 		Kind:          document.Kind(),
+		Sensitivity:   document.Sensitivity(),
 		LineStart:     lineStart,
 		LineEnd:       lineEnd,
+		More:          lineEnd < lineCount(document.Data),
 		Revision:      docs.Revision(document.Data),
 		Content:       string(content),
 	}, nil
@@ -128,6 +139,13 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 	}
 	if query.Access.AllowedSensitivities == nil {
 		return SearchResult{}, NewError(ExitUsage, "access_policy_required", "search requires an explicit sensitivity access policy")
+	}
+	for _, path := range query.Paths {
+		if _, err := s.Repo.SafeContentPath(strings.TrimSuffix(path, "/")); err != nil {
+			apiErr := NewError(ExitValidation, "invalid_search_path", "search path filter is not a safe managed path")
+			apiErr.Cause = err
+			return SearchResult{}, apiErr
+		}
 	}
 	if err := search.ValidateQuery(query); err != nil {
 		apiErr := NewError(ExitValidation, "invalid_search", err.Error())
@@ -174,6 +192,33 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 		Results:          detailed.Results,
 		Warnings:         detailed.Warnings,
 	}, nil
+}
+
+func normalizeReadReference(reference string) (string, error) {
+	if !strings.HasPrefix(reference, "lore://") {
+		return reference, nil
+	}
+	parsed, err := url.Parse(reference)
+	if err != nil || parsed.Scheme != "lore" || parsed.User != nil || parsed.RawQuery != "" {
+		return "", fmt.Errorf("Lore URI is invalid")
+	}
+	path := strings.TrimPrefix(parsed.Host+parsed.EscapedPath(), "/")
+	path, err = url.PathUnescape(path)
+	if err != nil || path == "" {
+		return "", fmt.Errorf("Lore URI is invalid")
+	}
+	return path, nil
+}
+
+func lineCount(data []byte) int {
+	count := bytes.Count(data, []byte{'\n'})
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		count++
+	}
+	if count == 0 {
+		return 1
+	}
+	return count
 }
 
 func sliceLines(data []byte, requested *LineRange) ([]byte, int, int, error) {

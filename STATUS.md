@@ -2,7 +2,58 @@
 
 ## Current release and milestone
 
-Lore v0.3.0 — implementation complete and release-verified.
+Lore v0.4.0 — Milestone 1 complete; Milestone 2 (authorization and mutation
+tools) is next.
+
+## v0.4 completed milestones
+
+- **M1 — SDK adapter and local stdio:** pinned the official
+  `github.com/modelcontextprotocol/go-sdk` v1.7.0 release, targeting modern MCP
+  `2026-07-28` discovery while retaining the SDK's legacy `2025-11-25`
+  initialization path. Added `lore mcp stdio`, deterministic read-only tool
+  schemas and annotations for search, read, recent history, lint, and index
+  health, schema-v1 structured envelopes with compact text summaries, bounded
+  search/read/history inputs, managed tag/path filters shared by filesystem and
+  indexed search, Lore-URI reads, safe external error mapping, and a typed core
+  lint service. In-process SDK tests cover modern discovery, legacy
+  initialization, every M1 tool, annotations, schemas, bounds, and protocol-only
+  stdout.
+
+## Verified v0.3 baseline for v0.4
+
+- Baseline commit: `80216c229887dbcfd9aeb7c2ce1a7154ff0c41e9`
+- Baseline tag: `v0.3.0`
+- Baseline date: 2026-07-29
+- Working tree before v0.4 changes: clean
+- `make check`: passed
+- `make test-race`: passed
+- `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- `go mod tidy -diff`: clean
+- `go mod verify`: passed (`all modules verified`)
+- `govulncheck ./...`: passed (`No vulnerabilities found`)
+
+## v0.4 milestone plan
+
+1. **SDK adapter and local stdio**
+   - Pin the official Go MCP SDK, define a transport-neutral gateway seam, add
+     stdio serving, read/query/inspection tools, deterministic schemas and
+     annotations, and modern/legacy in-process protocol coverage.
+2. **Authorization model and mutation tools**
+   - Add trusted principals, additive permissions, sensitivity enforcement,
+     local profiles, actor-bound capture/transaction operations,
+     not-found masking, and bounded durable idempotency.
+3. **Stateless Streamable HTTP**
+   - Add strict external configuration, protected token-file loading,
+     constant-time bearer authentication, exact origins, safe bind/plaintext
+     policy, request/concurrency/time limits, health checks, and shutdown.
+4. **Resources, audit, and operational hardening**
+   - Add bounded ID resources, privacy-preserving audit logs, recovery and
+     concurrency behavior, adversarial prompt/path tests, deployment examples,
+     and MCP Inspector validation.
+5. **Client matrix, docs, and v0.4 release**
+   - Validate current Codex and Claude Code stdio/HTTP configurations, document
+     permissions, deployment, token rotation and troubleshooting, audit
+     dependencies/security, run the complete release matrix, and tag `v0.4.0`.
 
 ## Verified v0.2 baseline for v0.3
 
@@ -122,6 +173,12 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.3 release build/version injection: passed
 - v0.3 generated-template initialization, lint, full index verification,
   explicit non-Git indexed search, and clear smoke: passed
+- v0.4 M1 `make check`: passed
+- v0.4 M1 `make test-race`: passed
+- v0.4 M1 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.4 M1 `go mod tidy -diff`: clean
+- v0.4 M1 `go mod verify`: passed (`all modules verified`)
+- v0.4 M1 `govulncheck ./...`: passed (`No vulnerabilities found`)
 
 ## v0.3 completed milestones
 

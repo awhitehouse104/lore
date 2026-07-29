@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"lore/internal/gitx"
 )
@@ -15,6 +16,7 @@ const (
 type RecentOptions struct {
 	Limit int
 	All   bool
+	Since *time.Time
 }
 
 type RecentResult struct {
@@ -41,11 +43,29 @@ func (s *Service) Recent(ctx context.Context, options RecentOptions) (RecentResu
 	if !isGit {
 		return RecentResult{}, NewError(ExitRuntime, "git_repository_required", "lore recent requires a Git repository")
 	}
-	commits, err := s.History.Recent(ctx, s.Repo.Root, options.Limit, !options.All)
+	fetchLimit := options.Limit
+	if options.Since != nil {
+		fetchLimit = MaximumRecentLimit
+	}
+	commits, err := s.History.Recent(ctx, s.Repo.Root, fetchLimit, !options.All)
 	if err != nil {
 		apiErr := NewError(ExitRuntime, "git_history_failed", "could not read Git history")
 		apiErr.Cause = err
 		return RecentResult{}, apiErr
+	}
+	if options.Since != nil {
+		since := options.Since.UTC()
+		filtered := commits[:0]
+		for _, commit := range commits {
+			if commit.CommittedAt.Before(since) {
+				continue
+			}
+			filtered = append(filtered, commit)
+			if len(filtered) == options.Limit {
+				break
+			}
+		}
+		commits = filtered
 	}
 	return RecentResult{
 		SchemaVersion: SchemaVersion,

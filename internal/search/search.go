@@ -33,6 +33,8 @@ type Query struct {
 	Text    string
 	Scope   Scope
 	Kind    string
+	Tags    []string
+	Paths   []string
 	Limit   int
 	Backend Backend
 	Access  AccessPolicy
@@ -90,6 +92,9 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		if query.Kind != "" && document.Kind() != query.Kind {
 			continue
 		}
+		if !matchesTags(document.Tags(), query.Tags) || !matchesPath(document.Path, query.Paths) {
+			continue
+		}
 		if !query.Access.Allows(document.Sensitivity()) {
 			continue
 		}
@@ -143,10 +148,70 @@ func ValidateQuery(query Query) error {
 	if err := query.Access.Validate(); err != nil {
 		return err
 	}
+	for _, tag := range query.Tags {
+		if strings.TrimSpace(tag) == "" {
+			return fmt.Errorf("search tags must be non-empty")
+		}
+	}
+	for _, path := range query.Paths {
+		if err := ValidatePathFilter(path); err != nil {
+			return err
+		}
+	}
 	if len(tokenize(query.Text)) == 0 {
 		return fmt.Errorf("search query is empty after tokenization")
 	}
 	return nil
+}
+
+// ValidatePathFilter accepts repository-relative prefixes under managed
+// content roots. Repository methods still perform the authoritative symlink
+// and escape checks before a search is run.
+func ValidatePathFilter(value string) error {
+	if value == "" || strings.ContainsRune(value, '\x00') ||
+		strings.Contains(value, `\`) || strings.HasPrefix(value, "/") {
+		return fmt.Errorf("search path filters must be repository-relative paths under pages/ or sources/")
+	}
+	clean := strings.TrimSuffix(value, "/")
+	parts := strings.Split(clean, "/")
+	if len(parts) == 0 || (parts[0] != "pages" && parts[0] != "sources") {
+		return fmt.Errorf("search path filters must be under pages/ or sources/")
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return fmt.Errorf("search path filters must not contain empty, dot, or traversal segments")
+		}
+	}
+	return nil
+}
+
+func matchesTags(documentTags, required []string) bool {
+	for _, requiredTag := range required {
+		found := false
+		for _, documentTag := range documentTags {
+			if documentTag == requiredTag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesPath(documentPath string, prefixes []string) bool {
+	if len(prefixes) == 0 {
+		return true
+	}
+	for _, prefix := range prefixes {
+		prefix = strings.TrimSuffix(prefix, "/")
+		if documentPath == prefix || strings.HasPrefix(documentPath, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func scoreDocument(document *docs.Document, phrase string, queryTokens []string) int {

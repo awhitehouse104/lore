@@ -493,6 +493,7 @@ Other body.
 	service := core.NewService(repo)
 	references := []string{
 		"pages/project-foo.md",
+		"lore://pages/project-foo.md#L13-L15",
 		"page_project_foo",
 		"project-foo",
 		"PROJECT FOO",
