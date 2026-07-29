@@ -9,3 +9,10 @@ git:
 
 capture:
   max_bytes: 4194304
+
+index:
+  backend: auto
+  auto_refresh_existing: true
+  candidate_multiplier: 20
+  minimum_candidates: 200
+  maximum_candidates: 2000

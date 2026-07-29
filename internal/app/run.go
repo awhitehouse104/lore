@@ -67,6 +67,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runTransaction(ctx, remaining[1:], global, s)
 	case "recover":
 		return runRecover(ctx, remaining[1:], global, s)
+	case "index":
+		return runIndex(ctx, remaining[1:], global, s)
 	case "version":
 		return runVersion(remaining[1:], global, s)
 	case "help", "--help", "-h":
@@ -869,6 +871,7 @@ Commands:
   transaction
             inspect or discard transaction proposals
   recover   inspect, roll back, or finalize interrupted transactions
+  index     build, update, inspect, or clear the derived search index
   recent    inspect recent knowledge commits
   version   print build version
 

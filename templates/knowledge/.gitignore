@@ -1,2 +1,6 @@
 .lore/
+.lore/index.sqlite
+.lore/index.sqlite-shm
+.lore/index.sqlite-wal
+.lore/index.build.*
 .DS_Store

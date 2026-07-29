@@ -62,7 +62,11 @@ func Initialize(ctx context.Context, options Options, git gitx.Client) (Result, 
 		Warnings:      []string{},
 	}
 	for _, dir := range []string{"pages", "sources", "assets", "system", ".lore"} {
-		if err := ensureDirectory(filepath.Join(absolute, dir)); err != nil {
+		mode := fs.FileMode(0o755)
+		if dir == ".lore" {
+			mode = 0o700
+		}
+		if err := ensureDirectory(filepath.Join(absolute, dir), mode); err != nil {
 			return Result{}, err
 		}
 	}
@@ -162,18 +166,23 @@ func Initialize(ctx context.Context, options Options, git gitx.Client) (Result, 
 	return result, nil
 }
 
-func ensureDirectory(path string) error {
+func ensureDirectory(path string, mode fs.FileMode) error {
 	info, err := os.Lstat(path)
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return fmt.Errorf("required directory path is not a directory: %s", path)
+		}
+		if mode == 0o700 {
+			if err := os.Chmod(path, mode); err != nil {
+				return fmt.Errorf("restrict directory permissions %s: %w", path, err)
+			}
 		}
 		return nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect directory %s: %w", path, err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, mode); err != nil {
 		return fmt.Errorf("create directory %s: %w", path, err)
 	}
 	return nil

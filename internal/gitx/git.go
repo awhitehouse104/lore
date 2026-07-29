@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -184,6 +186,51 @@ func (c Client) Head(ctx context.Context, dir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(stdout)), nil
+}
+
+func (c Client) HeadOptional(ctx context.Context, dir string) (string, bool, error) {
+	stdout, err := c.run(ctx, dir, "rev-parse", "--verify", "HEAD")
+	if err == nil {
+		return strings.TrimSpace(string(stdout)), true, nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) && (commandErr.ExitCode == 1 || commandErr.ExitCode == 128) {
+		return "", false, nil
+	}
+	return "", false, err
+}
+
+func (c Client) CommonDirectory(ctx context.Context, dir string) (string, error) {
+	stdout, err := c.run(ctx, dir, "rev-parse", "--git-common-dir")
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSpace(string(stdout))
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(dir, path)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve Git common directory: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return filepath.Clean(path), nil
+	}
+	return "", fmt.Errorf("resolve Git common directory: %w", err)
+}
+
+func (c Client) RootCommits(ctx context.Context, dir string) ([]string, error) {
+	stdout, err := c.run(ctx, dir, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	roots := strings.Fields(string(stdout))
+	sort.Strings(roots)
+	return roots, nil
 }
 
 func (c Client) CurrentBranch(ctx context.Context, dir string) (string, error) {

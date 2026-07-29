@@ -2,7 +2,46 @@
 
 ## Current release and milestone
 
-Lore v0.2.0 — implementation complete and release-verified.
+Lore v0.3.0 — Milestone 2 (incremental maintenance) in progress.
+
+## Verified v0.2 baseline for v0.3
+
+- Baseline commit: `ba9578d5f56c9073df154247cbe2892d5cbd5c3b`
+- Baseline tag: `v0.2.0`
+- Baseline date: 2026-07-29
+- `make check`: passed
+- `make test-race`: passed
+- `go mod tidy -diff`: clean
+- `go mod verify`: passed (`all modules verified`)
+- Working tree before v0.3 changes: clean
+
+The first baseline invocation used an empty sandbox module cache and a compiler
+cache beneath a read-only home directory. After downloading the exact modules
+already pinned by v0.2 and redirecting `ccache` to `/tmp`, the complete suite
+passed without source changes.
+
+## v0.3 milestone plan
+
+1. **Schema, lifecycle, and full build**
+   - Pin a pure-Go SQLite driver, probe FTS5, bind index identity to the
+     repository, build through a private single-file temporary database,
+     verify it, atomically replace it, and expose `index build` and `status`.
+2. **Incremental maintenance**
+   - Reconcile deterministic canonical scans with add/update/delete/no-op
+     behavior, implement `index update` and safe idempotent `clear`, and
+     classify freshness across Git, non-Git, recovery, and corruption states.
+3. **Indexed search**
+   - Add safe FTS candidate generation, backend selection, explicit
+     sensitivity policy, scorer/snippet reuse, additive response metadata, and
+     committed filesystem/index parity fixtures.
+4. **Write integration and hardening**
+   - Best-effort refresh existing indexes after capture and transaction commit,
+     preserve canonical success on derived failure, extend lint diagnostics,
+     and cover concurrency, permissions, adversarial queries, and benchmarks.
+5. **Documentation and v0.3 release**
+   - Update generated rules, CLI/config/index/security documentation, dependency
+     and license records, benchmarks, release notes, full verification, and the
+     annotated `v0.3.0` tag.
 
 ## Verified baseline
 
@@ -52,6 +91,20 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.2 M5 `go mod verify`: passed (`all modules verified`)
 - v0.2 M5 `govulncheck ./...`: passed (`No vulnerabilities found`)
 - Release build/version injection and generated-template initialization/lint smoke: passed
+- v0.3 M1 `make check`: passed
+- v0.3 M1 `go test -race ./...`: passed
+- v0.3 M1 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.3 M1 `go mod tidy -diff`: clean
+- v0.3 M1 `go mod verify`: passed (`all modules verified`)
+
+## v0.3 completed milestones
+
+- M1: pinned `modernc.org/sqlite` v1.54.0, private and contained index
+  paths, process-shared operation locking, FTS5 capability probing, schema and
+  secure-delete configuration, Git/UUID repository identity, deterministic
+  canonical scans, verified single-transaction temporary builds, atomic
+  replacement with live WAL mode, lightweight/full status, strict index
+  configuration, generated ignore rules, and real-SQLite integration coverage.
 
 ## v0.2 completed milestones
 
@@ -84,6 +137,5 @@ Milestone commits:
 
 ## Next checkpoint
 
-Publish the verified `v0.2.0` commit and annotated tag when desired, then scope
-the next release without changing the v0.2 transaction and compatibility
-contracts.
+Complete v0.3 Milestone 2: exact incremental reconciliation, `index update`,
+safe idempotent `index clear`, and complete freshness-state coverage.

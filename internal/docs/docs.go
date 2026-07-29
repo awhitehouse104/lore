@@ -125,6 +125,16 @@ func (d *Document) Tags() []string {
 	return nil
 }
 
+func (d *Document) Sensitivity() string {
+	if d.Source != nil {
+		return d.Source.Sensitivity
+	}
+	if d.Page != nil {
+		return d.Page.Sensitivity
+	}
+	return ""
+}
+
 func Parse(path string, data []byte) (*Document, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("managed Markdown is not valid UTF-8")

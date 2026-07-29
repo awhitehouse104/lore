@@ -26,7 +26,7 @@ func TestVersionJSON(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-	if result.SchemaVersion != 1 || result.Version != "0.2.0-dev" {
+	if result.SchemaVersion != 1 || result.Version != "0.3.0-dev" {
 		t.Fatalf("unexpected version response: %+v", result)
 	}
 }
@@ -441,6 +441,48 @@ func TestRecoveryStatusJSONWithoutActiveJournal(t *testing.T) {
 	}
 }
 
+func TestIndexBuildAndStatusJSON(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(context.Background(), []string{"index", "build", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index build returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var build struct {
+		SchemaVersion int    `json:"schema_version"`
+		IndexState    string `json:"index_state"`
+		Path          string `json:"path"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &build); err != nil {
+		t.Fatal(err)
+	}
+	if build.SchemaVersion != 1 || build.IndexState != "uncertified" || build.Path != ".lore/index.sqlite" {
+		t.Fatalf("build = %+v", build)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"--repo", root, "index", "status", "--verify", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index status returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var status struct {
+		IndexState      string `json:"index_state"`
+		Verification    string `json:"verification"`
+		ManifestMatches bool   `json:"manifest_matches"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != "uncertified" || status.Verification != "full" || !status.ManifestMatches {
+		t.Fatalf("status = %+v", status)
+	}
+}
+
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},
@@ -453,6 +495,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 		{"commit", "--bad", "--json"},
 		{"transaction", "list", "--bad", "--json"},
 		{"recover", "--bad", "--json"},
+		{"index", "status", "--bad", "--json"},
 		{"init", "--bad", "--json"},
 	}
 	for _, args := range tests {
@@ -481,7 +524,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 }
 
 func TestEveryCommandSupportsHelp(t *testing.T) {
-	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recover", "recent", "version"} {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recover", "index", "recent", "version"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)

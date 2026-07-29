@@ -38,6 +38,13 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 	if _, err := config.Load(filepath.Join(root, "lore.yaml")); err != nil {
 		t.Fatalf("load generated config: %v", err)
 	}
+	loreInfo, err := os.Stat(filepath.Join(root, ".lore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loreInfo.Mode().Perm() != 0o700 {
+		t.Fatalf(".lore mode = %o, want 700", loreInfo.Mode().Perm())
+	}
 	if !first.Validation.Valid {
 		t.Fatalf("first init validation: %+v", first.Validation)
 	}

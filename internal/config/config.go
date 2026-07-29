@@ -12,14 +12,22 @@ import (
 )
 
 const (
-	DefaultMaxBytes = int64(4 * 1024 * 1024)
-	MaxMaxBytes     = int64(64 * 1024 * 1024)
+	DefaultMaxBytes            = int64(4 * 1024 * 1024)
+	MaxMaxBytes                = int64(64 * 1024 * 1024)
+	DefaultIndexBackend        = "auto"
+	DefaultCandidateMultiplier = 20
+	DefaultMinimumCandidates   = 200
+	DefaultMaximumCandidates   = 2000
+	MaximumCandidateMultiplier = 100
+	MaximumMinimumCandidates   = 10_000
+	MaximumMaximumCandidates   = 100_000
 )
 
 type Config struct {
 	Version int           `yaml:"version"`
 	Git     GitConfig     `yaml:"git"`
 	Capture CaptureConfig `yaml:"capture"`
+	Index   IndexConfig   `yaml:"index"`
 }
 
 type GitConfig struct {
@@ -34,6 +42,14 @@ type CaptureConfig struct {
 	MaxBytes int64 `yaml:"max_bytes"`
 }
 
+type IndexConfig struct {
+	Backend             string `yaml:"backend"`
+	AutoRefreshExisting bool   `yaml:"auto_refresh_existing"`
+	CandidateMultiplier int    `yaml:"candidate_multiplier"`
+	MinimumCandidates   int    `yaml:"minimum_candidates"`
+	MaximumCandidates   int    `yaml:"maximum_candidates"`
+}
+
 func Defaults() Config {
 	return Config{
 		Version: 1,
@@ -46,6 +62,13 @@ func Defaults() Config {
 		},
 		Capture: CaptureConfig{
 			MaxBytes: DefaultMaxBytes,
+		},
+		Index: IndexConfig{
+			Backend:             DefaultIndexBackend,
+			AutoRefreshExisting: true,
+			CandidateMultiplier: DefaultCandidateMultiplier,
+			MinimumCandidates:   DefaultMinimumCandidates,
+			MaximumCandidates:   DefaultMaximumCandidates,
 		},
 	}
 }
@@ -118,6 +141,23 @@ func (c Config) Validate() error {
 	}
 	if c.Capture.MaxBytes > MaxMaxBytes {
 		return fmt.Errorf("capture.max_bytes must not exceed %d bytes", MaxMaxBytes)
+	}
+	switch c.Index.Backend {
+	case "auto", "index", "filesystem":
+	default:
+		return fmt.Errorf("index.backend must be auto, index, or filesystem")
+	}
+	if c.Index.CandidateMultiplier < 1 || c.Index.CandidateMultiplier > MaximumCandidateMultiplier {
+		return fmt.Errorf("index.candidate_multiplier must be between 1 and %d", MaximumCandidateMultiplier)
+	}
+	if c.Index.MinimumCandidates < 1 || c.Index.MinimumCandidates > MaximumMinimumCandidates {
+		return fmt.Errorf("index.minimum_candidates must be between 1 and %d", MaximumMinimumCandidates)
+	}
+	if c.Index.MaximumCandidates < 1 || c.Index.MaximumCandidates > MaximumMaximumCandidates {
+		return fmt.Errorf("index.maximum_candidates must be between 1 and %d", MaximumMaximumCandidates)
+	}
+	if c.Index.MaximumCandidates < c.Index.MinimumCandidates {
+		return fmt.Errorf("index.maximum_candidates must not be less than index.minimum_candidates")
 	}
 	return nil
 }

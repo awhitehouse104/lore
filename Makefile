@@ -1,6 +1,6 @@
 .PHONY: fmt vet test test-race build check
 
-VERSION ?= 0.2.0-dev
+VERSION ?= 0.3.0-dev
 COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
 LDFLAGS = -X lore/internal/version.Version=$(VERSION) -X lore/internal/version.Commit=$(COMMIT) -X lore/internal/version.BuildDate=$(BUILD_DATE)
