@@ -481,6 +481,51 @@ func TestIndexBuildAndStatusJSON(t *testing.T) {
 	if status.IndexState != "uncertified" || status.Verification != "full" || !status.ManifestMatches {
 		t.Fatalf("status = %+v", status)
 	}
+	page := []byte(`---
+id: page_index_cli
+title: Index CLI
+kind: note
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: normal
+---
+Indexed through the CLI.
+`)
+	if err := os.WriteFile(filepath.Join(root, "pages", "index-cli.md"), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"index", "update", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index update returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var update struct {
+		Added int `json:"added"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &update); err != nil {
+		t.Fatal(err)
+	}
+	if update.Added != 1 {
+		t.Fatalf("update = %+v", update)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"index", "clear", "--repo", root, "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("index clear returned %d: stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var clear struct {
+		Existed bool     `json:"existed"`
+		Removed []string `json:"removed"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &clear); err != nil {
+		t.Fatal(err)
+	}
+	if !clear.Existed || len(clear.Removed) == 0 {
+		t.Fatalf("clear = %+v", clear)
+	}
 }
 
 func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {

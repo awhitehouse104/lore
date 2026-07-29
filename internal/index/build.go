@@ -58,6 +58,9 @@ func (m *Manager) Build(ctx context.Context, options BuildOptions) (result Build
 	if err != nil {
 		return result, newError(ErrorRuntime, "repository_identity_failed", "could not compute the repository identity", err)
 	}
+	if err := m.requireStableManagedSnapshot(ctx, snapshot); err != nil {
+		return result, err
+	}
 	indexedAt := started.Format(time.RFC3339Nano)
 	buildID, err := newBuildID(started)
 	if err != nil {
@@ -150,6 +153,9 @@ func (m *Manager) Build(ctx context.Context, options BuildOptions) (result Build
 	if closeErr != nil {
 		return result, newError(ErrorRuntime, "index_close_failed", "could not close the verified temporary index", closeErr)
 	}
+	if err := m.requireStableManagedSnapshot(ctx, snapshot); err != nil {
+		return result, err
+	}
 	if err := prepareExistingIndexForReplacement(ctx, indexPaths); err != nil {
 		return result, err
 	}
@@ -175,7 +181,7 @@ func (m *Manager) Build(ctx context.Context, options BuildOptions) (result Build
 	}
 
 	state := StateUncertified
-	if snapshot.isGit {
+	if snapshot.isGit && snapshot.head != "" {
 		state = StateFresh
 	}
 	duration := m.Clock.Now().UTC().Sub(started).Milliseconds()

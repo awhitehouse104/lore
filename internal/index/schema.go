@@ -16,7 +16,7 @@ CREATE TABLE metadata (
 CREATE TABLE documents (
     rowid           INTEGER PRIMARY KEY,
     path            TEXT NOT NULL UNIQUE,
-    document_id     TEXT NOT NULL UNIQUE,
+    document_id     TEXT NOT NULL,
     document_type   TEXT NOT NULL CHECK (document_type IN ('page', 'source')),
     title           TEXT NOT NULL,
     kind            TEXT NOT NULL,

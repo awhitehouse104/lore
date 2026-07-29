@@ -141,6 +141,83 @@ func TestGitBuildFreshAndManagedEditStale(t *testing.T) {
 	}
 }
 
+func TestGitFreshnessTracksOnlyManagedDirtyStateAndExactSnapshot(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	ctx := context.Background()
+	repo := newTestRepository(t)
+	writeTestPage(t, repo.Root, "committed body")
+	runGit(t, repo.Root, "init", "-b", "main")
+	runGit(t, repo.Root, "config", "user.name", "Lore Test")
+	runGit(t, repo.Root, "config", "user.email", "lore@example.invalid")
+	runGit(t, repo.Root, "add", "--", ".")
+	runGit(t, repo.Root, "commit", "-m", "test: initialize")
+	manager := NewManager(repo, gitx.New(), "0.3.0-test")
+	manager.Clock = fixedClock{value: time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)}
+	if _, err := manager.Build(ctx, BuildOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	readme := filepath.Join(repo.Root, "README.md")
+	if err := os.WriteFile(readme, []byte("unrelated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status, err := manager.Status(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != StateFresh {
+		t.Fatalf("unrelated worktree state = %s, want fresh", status.IndexState)
+	}
+	runGit(t, repo.Root, "add", "--", "README.md")
+	runGit(t, repo.Root, "commit", "-m", "docs: unrelated")
+	status, err = manager.Status(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != StateStale || !status.ManagedWorktreeClean {
+		t.Fatalf("new HEAD status = %+v", status)
+	}
+	update, err := manager.Update(ctx)
+	if err != nil {
+		t.Fatalf("update new HEAD: %v", err)
+	}
+	if update.Unchanged != 1 || update.IndexState != StateFresh {
+		t.Fatalf("new HEAD update = %+v", update)
+	}
+
+	runGit(t, repo.Root, "switch", "-c", "other")
+	status, err = manager.Status(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != StateStale {
+		t.Fatalf("new branch state = %s, want stale", status.IndexState)
+	}
+	if _, err := manager.Update(ctx); err != nil {
+		t.Fatalf("update new branch: %v", err)
+	}
+	runGit(t, repo.Root, "checkout", "--detach")
+	status, err = manager.Status(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != StateStale || status.CurrentBranch != detachedBranch {
+		t.Fatalf("detached status = %+v", status)
+	}
+	if _, err := manager.Update(ctx); err != nil {
+		t.Fatalf("update detached HEAD: %v", err)
+	}
+	status, err = manager.Status(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != StateFresh || status.IndexedBranch != detachedBranch {
+		t.Fatalf("updated detached status = %+v", status)
+	}
+}
+
 type fixedClock struct {
 	value time.Time
 }

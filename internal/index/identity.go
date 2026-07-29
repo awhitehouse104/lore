@@ -80,6 +80,26 @@ func (m *Manager) currentSnapshot(ctx context.Context, createID bool) (snapshot,
 	return snapshot{identity: "uuid:" + identity, isGit: false}, nil
 }
 
+func (m *Manager) requireStableManagedSnapshot(ctx context.Context, expected snapshot) error {
+	current, err := m.currentSnapshot(ctx, false)
+	if err != nil {
+		return newError(ErrorConflict, "repository_snapshot_changed", "the repository identity or Git snapshot changed during indexing", err)
+	}
+	if current.identity != expected.identity || current.head != expected.head || current.branch != expected.branch || current.isGit != expected.isGit {
+		return newError(ErrorConflict, "repository_snapshot_changed", "the repository identity, branch, or HEAD changed during indexing", nil)
+	}
+	if current.isGit {
+		changes, err := m.Git.Changes(ctx, m.Repo.Root, []string{"pages", "sources"})
+		if err != nil {
+			return newError(ErrorRuntime, "git_status_failed", "could not inspect managed Git paths", err)
+		}
+		if len(changes) > 0 {
+			return newError(ErrorConflict, "managed_worktree_dirty", "pages or sources changed during indexing", nil)
+		}
+	}
+	return nil
+}
+
 func digestIdentity(parts ...string) string {
 	hash := sha256.New()
 	for _, part := range parts {

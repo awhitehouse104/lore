@@ -70,6 +70,29 @@ type BuildResult struct {
 	Warnings      []Warning `json:"warnings"`
 }
 
+type UpdateResult struct {
+	SchemaVersion int       `json:"schema_version"`
+	Status        string    `json:"status"`
+	IndexState    State     `json:"index_state"`
+	Added         int       `json:"added"`
+	Updated       int       `json:"updated"`
+	Deleted       int       `json:"deleted"`
+	Unchanged     int       `json:"unchanged"`
+	IndexedHead   string    `json:"indexed_head"`
+	IndexedBranch string    `json:"indexed_branch"`
+	IndexedAt     string    `json:"indexed_at"`
+	IndexBuildID  string    `json:"index_build_id"`
+	DurationMS    int64     `json:"duration_ms"`
+	Warnings      []Warning `json:"warnings"`
+}
+
+type ClearResult struct {
+	SchemaVersion int      `json:"schema_version"`
+	Status        string   `json:"status"`
+	Existed       bool     `json:"existed"`
+	Removed       []string `json:"removed"`
+}
+
 type Clock interface {
 	Now() time.Time
 }

@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.3.0 — Milestone 2 (incremental maintenance) in progress.
+Lore v0.3.0 — Milestone 3 (indexed search) in progress.
 
 ## Verified v0.2 baseline for v0.3
 
@@ -96,6 +96,10 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.3 M1 `CGO_ENABLED=0 go build ./cmd/lore`: passed
 - v0.3 M1 `go mod tidy -diff`: clean
 - v0.3 M1 `go mod verify`: passed (`all modules verified`)
+- v0.3 M2 `make check`: passed
+- v0.3 M2 `go test -race ./...`: passed
+- v0.3 M2 `go mod tidy -diff`: clean
+- v0.3 M2 `go mod verify`: passed (`all modules verified`)
 
 ## v0.3 completed milestones
 
@@ -105,6 +109,15 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
   canonical scans, verified single-transaction temporary builds, atomic
   replacement with live WAL mode, lightweight/full status, strict index
   configuration, generated ignore rules, and real-SQLite integration coverage.
+- M2: transactional full-scan reconciliation with exact add/update/delete/no-op
+  counts, unchanged-row preservation, same-transaction FTS maintenance and
+  verification, snapshot revalidation, Git/non-Git freshness classification,
+  manifest verification, wrong-identity/corruption/incompatibility detection,
+  and idempotent contained clear with derived-symlink rejection.
+
+v0.3 milestone commits:
+
+- M1: `719f9c2`
 
 ## v0.2 completed milestones
 
@@ -137,5 +150,6 @@ Milestone commits:
 
 ## Next checkpoint
 
-Complete v0.3 Milestone 2: exact incremental reconciliation, `index update`,
-safe idempotent `index clear`, and complete freshness-state coverage.
+Complete v0.3 Milestone 3: safe indexed candidate generation, backend
+selection, explicit sensitivity policy, scorer/snippet reuse, and retrieval
+parity fixtures.
