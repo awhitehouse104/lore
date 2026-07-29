@@ -9,6 +9,11 @@ Lore never automatically resumes an interrupted apply. The two explicit
 outcomes are exact rollback before a transaction Git commit or verified
 finalization after that commit.
 
+The MCP gateway deliberately exposes no recovery mutation tool. An active
+journal keeps authorized search, read, resources, history, and inspection
+available but blocks capture, preview, commit, and transaction discard.
+Resolve recovery from a trusted local CLI session.
+
 ## Inspect first
 
 ```bash
@@ -87,7 +92,14 @@ working tree and Git history against the transaction artifacts, and restore
 from trusted backup if exact state cannot be established.
 
 Recovery artifacts can contain exact private document bytes. Keep them out of
-support tickets, logs, and commit messages.
+support tickets, logs, MCP requests, client transcripts, and commit messages.
+
+If the interrupted transaction was created through MCP, its owner remains the
+configured principal ID. Finalization records the original transaction commit;
+rollback marks that transaction failed. Rotating a token while preserving the
+principal name preserves ownership. Removing or renaming the principal does
+not make local CLI recovery unsafe, but the replacement principal cannot
+inspect or commit the old actor-bound proposal through MCP.
 
 ## Derived-index recovery is separate
 

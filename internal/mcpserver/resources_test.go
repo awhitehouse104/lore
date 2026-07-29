@@ -147,6 +147,12 @@ func TestSearchReturnsExactResourceURI(t *testing.T) {
 	if len(output.Results) != 1 || output.Results[0].ResourceURI != "lore://pages/page_project_foo" {
 		t.Fatalf("search resource URI = %+v", output.Results)
 	}
+	read := decodeOutput[ReadOutput](t, callTool(t, client, "lore_read", map[string]any{
+		"ref": output.Results[0].ResourceURI,
+	}))
+	if read.ID != "page_project_foo" || !strings.Contains(read.Content, "Project Foo must remain deployable") {
+		t.Fatalf("read search resource URI = %+v", read)
+	}
 }
 
 func TestResourceListRefreshesAfterCommittedPageMutation(t *testing.T) {

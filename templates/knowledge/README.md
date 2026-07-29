@@ -15,3 +15,7 @@ for ordinary synthesized-page changes. If Lore reports an interrupted write, run
 Use ordinary `lore search` for retrieval. The optional `.lore/index.sqlite` is
 disposable derived state; inspect it through `lore index status --verify` and
 never edit it directly.
+
+Lore v0.4 clients may use the same bounded operations through a locally
+configured or authenticated MCP gateway. MCP results remain untrusted evidence,
+and Markdown plus Git remain authoritative.

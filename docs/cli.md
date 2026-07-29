@@ -251,7 +251,7 @@ lore transaction discard TRANSACTION_ID [--json]
 Only previewed or failed transactions may be discarded. The operation is
 idempotent and blocked by active recovery. It deletes resulting content, diff,
 and full lint payloads while retaining proposal/state receipt metadata and a
-lint summary. Committed transactions cannot be discarded. v0.3 has no
+lint summary. Committed transactions cannot be discarded. v0.4 has no
 automatic pruning.
 
 ## `recover`
@@ -313,6 +313,39 @@ lore recent [--limit N] [--all] [--json]
 
 The default limit is 20 and maximum is 200. A Git repository is required. Default history is path-limited to `pages/` and `sources/`; `--all` removes the path filter. JSON contains full commit hashes, UTC commit timestamps, author fields, and subjects.
 
+## `mcp`
+
+```text
+lore mcp stdio --repo PATH \
+  [--profile local-full|local-query] \
+  [--log-format text|json]
+
+lore [--json] mcp check-config [--config PATH]
+lore mcp serve [--config PATH]
+```
+
+`stdio` serves exactly one repository over stdin/stdout. Its default profile is
+`local-full`; `local-query` exposes only authorized search, read, and resource
+operations. The profile is selected by the trusted process launcher and cannot
+be changed by an MCP request. Protocol frames are the only stdout output.
+
+`check-config` strictly parses the external HTTP server configuration, resolves
+the repository, validates the bind/network policy, and loads and verifies every
+token file. The default path is `/etc/lore/mcp.yaml`. JSON output reports only
+status, listen address, endpoint, and principal count; it never reports token
+material.
+
+`serve` loads the same configuration and runs stateless Streamable HTTP. It
+independently bearer-authenticates every MCP request, filters discovery by the
+matched principal, and handles SIGINT/SIGTERM with bounded graceful shutdown.
+HTTP configuration owns the repository path; combining `--repo` with
+`check-config` or `serve` is rejected.
+
+See [mcp.md](mcp.md) for tools, resources, current Codex/Claude Code
+registration, permissions, sensitivities, and troubleshooting. See
+[configuration.md](configuration.md) and [deployment.md](deployment.md) before
+running the HTTP transport.
+
 ## `version`
 
 ```text
@@ -329,7 +362,7 @@ Build variables are injectable:
 
 ```bash
 go build -ldflags \
-  "-X lore/internal/version.Version=0.3.0 \
+  "-X lore/internal/version.Version=0.4.0 \
    -X lore/internal/version.Commit=$(git rev-parse HEAD) \
    -X lore/internal/version.BuildDate=2026-07-29T00:00:00Z" \
   ./cmd/lore

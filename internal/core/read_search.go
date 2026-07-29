@@ -216,6 +216,22 @@ func normalizeReadReference(reference string) (string, error) {
 	if err != nil || parsed.Scheme != "lore" || parsed.User != nil || parsed.RawQuery != "" {
 		return "", fmt.Errorf("Lore URI is invalid")
 	}
+	if parsed.Fragment == "" && (parsed.Host == "pages" || parsed.Host == "sources") {
+		escapedID := strings.TrimPrefix(parsed.EscapedPath(), "/")
+		if escapedID != "" && !strings.Contains(escapedID, "/") {
+			id, decodeErr := url.PathUnescape(escapedID)
+			if decodeErr == nil && escapedID == url.PathEscape(id) {
+				if parsed.Host == "pages" {
+					decodeErr = docs.ValidatePageID(id)
+				} else {
+					decodeErr = docs.ValidateSourceID(id)
+				}
+				if decodeErr == nil {
+					return id, nil
+				}
+			}
+		}
+	}
 	path := strings.TrimPrefix(parsed.Host+parsed.EscapedPath(), "/")
 	path, err = url.PathUnescape(path)
 	if err != nil || path == "" {

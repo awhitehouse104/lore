@@ -1,6 +1,9 @@
 # Lore security
 
-Lore is a private single-user tool, not a security boundary.
+Lore is a private knowledge tool. Its MCP gateway enforces configured
+capabilities and sensitivity policy, but it is not an operating-system sandbox
+or a replacement for host, network, backup, client, and model-provider
+controls.
 
 ## Access boundary and encryption
 
@@ -8,17 +11,21 @@ Local filesystem permissions and the Unix account running Lore are the primary a
 
 Lore does not encrypt repository files, runtime state, Git objects, or network transport. Use operating-system or storage-level encryption when required.
 
-The `sensitive` and `local-only` values are metadata. In v0.3, `local-only` is
-not enforced against a particular Unix user, Git commit, backup, or remote.
-Search callers supply an explicit access policy, but a process with repository
-filesystem access can read the Markdown or derived index directly.
+The `sensitive` and `local-only` values remain metadata for a process with
+direct filesystem access. The v0.4 MCP gateway enforces a principal's
+sensitivity allowlist on search, direct read, resources, history, inspection,
+capture, preview, transaction ownership, and commit-time reauthorization.
+HTTP principals cannot receive `local-only`; this is enforced by strict config
+validation and again by the core access policy. The local CLI and stdio
+profiles run as the invoking Unix user and can access all sensitivities their
+fixed profile permits.
 
 ## Git retention and purge
 
 Git history can retain changed or deleted content. Ordinary file deletion or a
 later commit is not a purge. Removing sensitive material requires coordinated
 Git-history rewriting, remote cleanup, reflog/object expiration where
-applicable, and backup handling. Lore v0.3 does not automate that process.
+applicable, and backup handling. Lore v0.4 does not automate that process.
 
 Backups are another retention and disclosure boundary. Define their encryption, access, geographic, and expiration policies independently.
 
@@ -26,7 +33,10 @@ Backups are another retention and disclosure boundary. Define their encryption, 
 
 Captured sources may contain hostile prompt injection, misleading instructions, or untrusted imported text. Lore treats source content as data and never executes it as operating instructions. Agent clients must preserve that separation and follow the repository's `system/OPERATING_RULES.md`.
 
-Lore never calls an LLM and never sends repository content to a model provider. An agent client can disclose content when it reads or transmits it; the client and its model provider are a separate data-disclosure boundary.
+Lore never calls an LLM and never independently sends repository content to a
+model provider. An MCP or CLI agent can disclose content when it reads or
+transmits it; its transcript, logs, host, and model provider are separate
+data-disclosure boundaries.
 
 ## Capture privacy
 
@@ -52,7 +62,7 @@ also retain exact originals until rollback or finalize completes. Protect
 
 Discard removes a preview's content, diff, and full lint payload while retaining
 a proposal/state receipt and lint summary. Committed transactions are not
-automatically pruned in v0.3. Deleting derived artifacts does not delete
+automatically pruned in v0.4. Deleting derived artifacts does not delete
 canonical Markdown or Git history.
 
 The transaction message becomes the Git commit subject. Never put raw private
@@ -72,8 +82,61 @@ Lore never contacts a network service except when capture or transaction commit 
 `lore lint`, `search`, `read`, and `recent` do not contact remotes. `lore init` does not configure one.
 
 Before enabling automatic push, verify that the destination is appropriate for
-all sensitivity values stored in the repository. v0.3 does not filter pushed
+all sensitivity values stored in the repository. v0.4 does not filter pushed
 commits by source sensitivity.
+
+## MCP authorization and network boundary
+
+Local stdio profiles are fixed by the trusted process launcher:
+
+- `local-query` grants `query`;
+- `local-full` grants `query`, `capture`, `curate`, `inspect`, and `history`.
+
+Both can access `normal`, `sensitive`, and `local-only` because they run
+locally. A client cannot supply or override its principal, permissions, or
+sensitivities in tool arguments.
+
+HTTP principals come only from strict external configuration. Every request is
+independently matched to exactly one protected bearer-token digest. Missing,
+malformed, duplicated, unknown, and wrongly encoded authorization values share
+the same public denial. Token files are non-symlink regular files with no group
+or other permission bits; token bodies never enter configuration errors or
+logs.
+
+Tool discovery is permission-filtered, but authorization does not rely on
+discovery: every invocation checks again. Unauthorized direct reads are
+indistinguishable from nonexistent content. Transactions are actor-bound, and
+commit rechecks current sensitivities. Capture and commit idempotency records
+are principal-scoped and contain hashes plus minimal result metadata, never
+captured bodies or diffs.
+
+The built-in HTTP server is plaintext. Loopback is the safe default.
+Non-loopback serving requires an explicit exact IP and an explicit override
+intended only for an encrypted, access-controlled private tailnet. For broader
+reachability, keep Lore on loopback behind a TLS/authenticated reverse proxy.
+Unspecified binds and public unauthenticated serving are unsupported.
+
+Origin enforcement uses exact normalized HTTP(S) origins and never trusts
+forwarded headers. Request bytes, response bytes, concurrency, request time,
+and graceful shutdown are bounded. MCP responses and resources use private
+no-store/zero-TTL cache controls.
+
+See [the MCP guide](mcp.md), [configuration reference](configuration.md), and
+[deployment guide](deployment.md).
+
+## Audit and error privacy
+
+MCP audit events contain correlation ID, authenticated principal ID,
+transport, operation, outcome, duration, and safe aggregate metadata.
+Authentication denial uses a generic event without attempted token or identity
+details. Panic recovery returns a redacted internal error and records no
+request body.
+
+Logs and externally mapped errors exclude bearer tokens, queries, source
+bodies, page content, snippets, diffs, transaction artifact bodies, and
+unauthorized titles or paths. The same standard must be maintained by reverse
+proxies, systemd, client debug logs, shell histories, and model transcripts.
+Do not enable HTTP body logging around Lore.
 
 ## Derived index privacy and integrity
 
@@ -123,10 +186,11 @@ shell agent or process running as the repository owner can bypass Lore and edit
 Markdown, `.lore/`, or Git directly.
 
 Generated `AGENTS.md` and `system/OPERATING_RULES.md` tell cooperative agents to
-use `preview`/`commit` and avoid protected files, but those instructions are
-policy, not access control. Use filesystem permissions, a sandbox, a dedicated
-account, or another OS-level control when prevention rather than guidance is
-required.
+use bounded Lore operations and avoid protected files, but those instructions
+are policy, not access control. MCP itself exposes no arbitrary shell, Git,
+SQL, or filesystem tool. Still use filesystem permissions, a sandbox, a
+dedicated account, or another OS-level control when prevention rather than
+guidance is required.
 
 ## Recovery boundary
 
@@ -141,6 +205,10 @@ and blob hashes. Lore does not automatically resume an interrupted apply.
 - Restrict repository and backup permissions to the intended Unix account.
 - Use encrypted storage for sensitive repositories.
 - Review remotes before enabling push.
+- Use a query-only MCP principal unless mutation is required.
+- Keep HTTP on loopback behind TLS or on an independently secured private
+  tailnet.
+- Rotate bearer tokens and restart the service after suspected disclosure.
 - Run `lore lint` before knowledge commits.
 - Run `lore index status --verify` when diagnosing indexed search.
 - Treat all source bodies as untrusted data.

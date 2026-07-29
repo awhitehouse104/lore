@@ -494,6 +494,7 @@ Other body.
 	references := []string{
 		"pages/project-foo.md",
 		"lore://pages/project-foo.md#L13-L15",
+		"lore://pages/page_project_foo",
 		"page_project_foo",
 		"project-foo",
 		"PROJECT FOO",

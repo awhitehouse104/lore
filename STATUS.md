@@ -2,8 +2,8 @@
 
 ## Current release and milestone
 
-Lore v0.4.0 — Milestones 1–4 implementation complete; Milestone 5 (client
-matrix, documentation, and release) is next.
+Lore v0.4.0 — Milestones 1–5 implementation and release-candidate verification
+are complete. The final release commit and annotated `v0.4.0` tag are pending.
 
 ## v0.4 completed milestones
 
@@ -55,6 +55,27 @@ matrix, documentation, and release) is next.
   single-writer contention, concurrent reads, and shutdown. Hardened loopback,
   private-tailnet, and systemd deployment examples are included under
   `docs/examples/`.
+- **M5 — client matrix, documentation, and release candidate:** validated the
+  current Codex and Claude Code stdio and HTTP configuration forms against
+  vendor documentation and installed clients, then completed all four
+  end-to-end workflows in disposable repositories. Official MCP Inspector
+  v1.0.1 passed tool, resource, schema, annotation, cache, and ID-URI checks
+  through both transports. A client-discovered resource-URI/read mismatch was
+  reproduced, fixed in the shared core read resolver, and regression-tested.
+  Added complete MCP, external configuration, security, deployment,
+  permissions/sensitivity, token-rotation, recovery, troubleshooting,
+  dependency/license, generated-rule, and release documentation. The hardened
+  sample unit passed systemd offline analysis at exposure `2.8 OK`; a
+  disposable systemd-managed service passed startup, both health checks, and
+  clean shutdown.
+
+v0.4 milestone commits:
+
+- M1: `fa008b9`
+- M2: `9cb1935`
+- M3: `4790fef`
+- M4: `3ebc405`
+- M5: pending release commit
 
 ## Verified v0.3 baseline for v0.4
 
@@ -231,10 +252,35 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.4 M4 `CGO_ENABLED=0 go build ./cmd/lore`: passed
 - v0.4 M4 `go mod tidy -diff`: clean
 - v0.4 M4 `go mod verify`: passed (`all modules verified`)
-- v0.4 M4 official MCP Inspector CLI: not run; the environment rejected
-  downloading/executing the unpinned `@latest` npm package without explicit
-  user approval. Official SDK in-memory stdio and hermetic HTTP coverage passed;
-  the Inspector command remains a manual M5 release check.
+- v0.4 M5 `gofmt -l .`: clean
+- v0.4 M5 `go vet ./...`: passed
+- v0.4 M5 `go test ./...`: passed
+- v0.4 M5 `go test -race ./...`: passed
+- v0.4 M5 `go build ./cmd/lore`: passed
+- v0.4 M5 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.4 M5 `go mod tidy -diff`: clean
+- v0.4 M5 `go mod verify`: passed (`all modules verified`)
+- v0.4 M5 `govulncheck ./...` with v1.6.0 and database updated
+  2026-07-27T20:14:16Z: passed (`No vulnerabilities found`)
+- v0.4 M5 official MCP Inspector v1.0.1 stdio and authenticated HTTP:
+  passed tools/list, resources/list, schemas, annotations, private cache
+  metadata, and ID-resource-URI reads. Stable v1 emits its upstream
+  deprecation notice while Inspector v2 remains a release candidate.
+- v0.4 M5 Codex CLI 0.145.0 stdio and authenticated HTTP workflows: passed
+  search/read, capture/search/read, preview/show/commit/read, and masked reads.
+- v0.4 M5 Claude Code 2.1.217 Sonnet stdio and authenticated HTTP workflows:
+  passed the same matrix. The default model first reported the account's
+  monthly spend limit; selecting Sonnet completed the checks.
+- v0.4 M5 current Codex and Claude Code isolated registration/connection
+  checks: passed. Claude Code's current `mcp get` can display a configured
+  static header value, so the troubleshooting guide directs operators to
+  privacy-safe status surfaces.
+- v0.4 M5 systemd 259: sample unit parsed with only the expected missing
+  `/usr/local/bin/lore` workstation warning; offline exposure `2.8 OK`.
+  A disposable user service passed startup, live/ready health checks, stop,
+  and auto-collection. Its first harness attempt failed because `PrivateTmp`
+  correctly hid the `/tmp`-hosted binary; the successful harness omitted that
+  property, while the shipped `/usr/local` unit keeps it enabled.
 
 ## v0.3 completed milestones
 
@@ -292,8 +338,8 @@ Milestone commits:
 
 ## Known issues
 
-- No known v0.3 correctness issues.
-- v0.3 has no automatic transaction-artifact retention or pruning.
+- No known v0.4 correctness issues.
+- v0.4 has no automatic transaction-artifact retention or pruning.
 - A local index intentionally duplicates canonical text and can be larger than
   the source corpus; it is optional and disposable.
 - Automatic search uses the filesystem for non-Git repositories because Git
@@ -301,6 +347,9 @@ Milestone commits:
   manifest comparison.
 - The supported and fully tested target is Linux with Git available. The index
   operation lock uses Linux `flock`.
+- Lore v0.4 does not provide OAuth, hosted-client reachability, multi-repository
+  routing, a public TLS listener, or a server-side LLM. Use a private transport
+  or TLS/authenticated reverse proxy for HTTP.
 
 ## Material deviations and compatibility notes
 
@@ -316,9 +365,22 @@ Milestone commits:
   readers can continue during a WAL update.
 - The new optional `index` configuration block receives defaults when absent;
   strict v0.2 binaries reject it during mixed-version operation.
+- HTTP MCP configuration is a separate strict schema-version-1 file so
+  canonical knowledge cannot grant itself network or principal capabilities.
+- The built-in HTTP listener is plaintext. Non-loopback startup requires an
+  explicit exact IP and explicit override intended only for an independently
+  encrypted and access-controlled private network.
+- HTTP principals can never include `local-only`. The two fixed local stdio
+  profiles include all local sensitivities; an unknown local read supplies the
+  not-found-shape client smoke while actual sensitivity masking is exercised
+  over HTTP and in automated cross-principal tests.
+- Official Inspector verification pinned the then-current stable v1.0.1 rather
+  than executing an unpinned package tag. Upstream labels v1 deprecated and had
+  published v2 only as a release candidate on the verification date.
 
 ## Next checkpoint
 
-Future work begins from the exact commit tagged `v0.3.0`. Preserve the v0.3
-Markdown authority, JSON schema, lexical parity, derived-index, transaction,
-and recovery contracts before adding a new milestone.
+After the final release commit and checks, future work begins from the exact
+commit tagged `v0.4.0`. Preserve the Markdown authority, JSON schema, lexical
+parity, derived-index, transaction, authorization, MCP, audit, and recovery
+contracts before adding a new milestone.

@@ -11,10 +11,11 @@ The Markdown knowledge repository is authoritative. Search results, runtime stat
 > Raw source material is append-oriented and preserved. Synthesized pages are mutable. Git records both.
 
 Lore does not call an LLM, answer natural-language questions, maintain a
-canonical database, generate pages, run a daemon, or expose a server. Its index
-is derived and safely rebuildable from Markdown. An agent such as Codex or
-Claude Code can use Lore as a deterministic tool, but is not part of Lore
-itself.
+canonical database, or generate pages autonomously. Its index is derived and
+safely rebuildable from Markdown. v0.4 can expose bounded operations through
+local stdio or authenticated stateless Streamable HTTP using the official MCP
+SDK. An agent such as Codex or Claude Code remains a separate client and
+disclosure boundary.
 
 ## Requirements and installation
 
@@ -31,10 +32,10 @@ sudo install -m 0755 lore /usr/local/bin/lore
 `make build` injects the current commit and UTC build time. Override its defaults for a release build:
 
 ```bash
-make build VERSION=0.3.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-29T00:00:00Z
+make build VERSION=0.4.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-29T00:00:00Z
 ```
 
-Development builds made with `go build ./cmd/lore` safely report `0.3.0-dev`,
+Development builds made with `go build ./cmd/lore` safely report `0.4.0-dev`,
 `unknown`, and `unknown`.
 
 ## Five-minute quickstart
@@ -63,6 +64,18 @@ lore --repo "$HOME/lore-home" read src_01ARZ3NDEKTSV4RRFFQ69G5FAV --lines 1:120
 lore --repo "$HOME/lore-home" lint
 lore --repo "$HOME/lore-home" recent --limit 20
 ```
+
+To use the same operations from an MCP client, start with a local query-only
+profile:
+
+```bash
+codex mcp add lore -- \
+  /usr/local/bin/lore mcp stdio \
+  --repo "$HOME/lore-home" --profile local-query
+```
+
+See [the MCP guide](docs/mcp.md) for current Codex and Claude Code stdio and
+remote HTTP configurations, permissions, resources, and troubleshooting.
 
 Search works directly from Markdown. To add the optional derived index:
 
@@ -214,6 +227,22 @@ lore version
 lore version --json
 ```
 
+### MCP gateway
+
+```bash
+lore mcp stdio --repo PATH --profile local-full
+lore mcp stdio --repo PATH --profile local-query
+lore mcp check-config --config /etc/lore/mcp.yaml
+lore mcp serve --config /etc/lore/mcp.yaml
+```
+
+Stdio uses a fixed local launcher profile. HTTP uses a strict external
+configuration and independently authenticates every request with a protected
+bearer-token file. Tool discovery and invocation are both permission-filtered;
+direct unauthorized reads are masked as not found, and `local-only` content
+never crosses HTTP. Neither transport exposes arbitrary shell, Git, SQL, or
+filesystem operations.
+
 ## Sources and pages
 
 Sources live at `sources/YYYY/MM/src_<ULID>-<kind>.md`. Their body is the exact captured input, and `raw_sha256` protects it against later modification. Source bodies are immutable by policy; corrections are new captures.
@@ -231,7 +260,8 @@ Commands resolve the knowledge repository in this order:
 
 `lore init` instead uses its positional path, or the current directory.
 
-The v0.3 configuration remains schema version 1 and strict:
+The v0.4 knowledge-repository configuration remains schema version 1 and
+strict:
 
 ```yaml
 version: 1
@@ -261,25 +291,35 @@ v0.2 repositories therefore work without configuration edits. Strict v0.2
 binaries reject the new block; omit it during mixed-version use. The complete
 field and bound reference is in [configuration.md](docs/configuration.md).
 
+HTTP MCP configuration is deliberately separate from `lore.yaml`; a knowledge
+repository cannot grant itself network access or permissions. Start with
+[the loopback example](docs/examples/mcp-loopback.yaml) or
+[private-tailnet example](docs/examples/mcp-tailnet.yaml), and read the
+[deployment guide](docs/deployment.md) before serving remotely.
+
 ## Backup and security
 
 Back up both the current knowledge repository and its Git history. A remote can provide another copy, but remote hosting is a separate disclosure boundary and is not configured by `lore init`.
 
-Lore does not encrypt data. Filesystem permissions and the Unix account are the
-primary access boundary. The local index may contain every sensitivity level,
-and Git can retain deleted content indefinitely. Read [the security
-guide](docs/security.md) before storing sensitive material.
+Lore does not encrypt data. Filesystem permissions and the Unix account remain
+the local access boundary. The local index may contain every sensitivity level,
+Git can retain deleted content indefinitely, and an MCP client/model is a
+separate disclosure boundary. Read [the security guide](docs/security.md)
+before storing sensitive material.
 
-## v0.3 limitations
+## v0.4 limitations
 
-Lore v0.3 intentionally has no semantic/vector search, authoritative database,
+Lore v0.4 intentionally has no semantic/vector search, authoritative database,
 arbitrary file-write command, page delete/rename, source-body edit, automatic
-synthesis, URL fetching, import pipeline, MCP/HTTP server, web interface,
-secret storage, encryption, multi-user permissions, background process, or
-transaction pruning. `local-only` remains metadata; the CLI's sensitivity
-filter is a request policy, not an OS access boundary.
+synthesis, URL fetching, import pipeline, web interface, server-side LLM call,
+OAuth provider, multi-repository routing, encryption, secret manager, or
+transaction pruning. The HTTP gateway has configured principals, not a general
+multi-user account system. Hosted ChatGPT availability is not promised because
+its networking, authentication, connector, and workspace support are
+independent of Lore.
 
 Transaction artifacts and the search index are derived state and can contain
 private document bytes. Committed transaction artifacts have no automatic
-retention policy. Markdown and Git remain authoritative. See the [v0.3 release
-notes](docs/release-notes-v0.3.0.md) and [dependency audit](docs/dependencies.md).
+retention policy. Markdown and Git remain authoritative. See the [v0.4 release
+notes](docs/release-notes-v0.4.0.md), [MCP guide](docs/mcp.md), and
+[dependency audit](docs/dependencies.md).

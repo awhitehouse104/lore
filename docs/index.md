@@ -1,6 +1,6 @@
 # Lore derived search index
 
-Lore v0.3 can keep a local SQLite FTS5 index beside a knowledge repository.
+Lore can keep a local SQLite FTS5 index beside a knowledge repository.
 The index accelerates candidate discovery; Markdown and Git remain authoritative.
 Deleting every index file loses no canonical knowledge.
 
@@ -134,7 +134,7 @@ lore --repo PATH index build
 ```
 
 Never edit `.lore/index.sqlite` with SQL. It is not a repair surface, and an
-in-place schema migration is intentionally unsupported in v0.3.
+in-place schema migration is intentionally unsupported in v0.4.
 
 ## Reproducible build benchmark
 

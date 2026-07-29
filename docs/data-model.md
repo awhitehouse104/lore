@@ -23,13 +23,13 @@ lore-home/
 ```
 
 `pages/**` and `sources/**` are managed content roots. Capture can create only
-date-partitioned source files. v0.3 transactions can create or update only
+date-partitioned source files. Lore transactions can create or update only
 direct `pages/*.md` children and can update only `integrated_at` and
 `integrated_into` in an existing source. `system/**`, repository instructions,
 configuration, Git metadata, and `.lore/**` are protected from normal content
 writes.
 
-Pages remain flat in v0.3. Sources are partitioned by their UTC capture date:
+Pages remain flat in v0.4. Sources are partitioned by their UTC capture date:
 
 ```text
 sources/YYYY/MM/src_<26-character-uppercase-ULID>-<kind>.md
@@ -126,7 +126,7 @@ Lore does not merge. Page `id` and `created` are immutable during update.
 Relative inline Markdown links and reference definitions are checked from the
 containing document. Repository escapes and missing targets are lint errors.
 External schemes and pure anchors are not resolved; anchors within local files
-are not validated in v0.3.
+are not validated in v0.4.
 
 Read references resolve in this priority:
 
@@ -200,7 +200,7 @@ markers and advances through `prepared`, `applying_files`, `files_applied`,
 blocks all other writers. See [recovery.md](recovery.md).
 
 Derived transaction artifacts can contain synthesized page bytes and diffs.
-They use private permissions where supported, but v0.3 has no automatic
+They use private permissions where supported, but v0.4 has no automatic
 retention or pruning.
 
 The SQLite index contains normalized document metadata, body text, exact
