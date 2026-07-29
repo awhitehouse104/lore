@@ -47,6 +47,9 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
+	if list.CacheScope != "private" || list.TTLMs != 0 {
+		t.Fatalf("tool discovery cache metadata = scope %q ttl %d", list.CacheScope, list.TTLMs)
+	}
 	var names []string
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)

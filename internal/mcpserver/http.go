@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"lore/internal/audit"
 	"lore/internal/auth"
 	"lore/internal/core"
 	"lore/internal/serverconfig"
@@ -32,13 +33,14 @@ func NewHTTPService(service *core.Service, config serverconfig.Config, logger *s
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	authenticator := auth.NewBearerAuthenticator(config.BearerPrincipals)
+	auditRecorder := audit.New(logger)
 	protocolHandler := mcp.NewStreamableHTTPHandler(
 		func(request *http.Request) *mcp.Server {
 			principal, ok := auth.PrincipalFromContext(request.Context())
 			if !ok {
 				return nil
 			}
-			return New(service, principal, logger).ProtocolServer()
+			return NewWithContext(request.Context(), service, principal, logger).ProtocolServer()
 		},
 		&mcp.StreamableHTTPOptions{
 			Stateless:                    true,
@@ -51,6 +53,7 @@ func NewHTTPService(service *core.Service, config serverconfig.Config, logger *s
 	endpoint := requestTimeoutMiddleware(
 		authenticationMiddleware(
 			authenticator,
+			auditRecorder,
 			concurrencyMiddleware(
 				config.Transport.MaxConcurrentRequests,
 				protocolHandler,
@@ -177,10 +180,11 @@ func originMiddleware(allowed []string, next http.Handler) http.Handler {
 	})
 }
 
-func authenticationMiddleware(authenticator *auth.BearerAuthenticator, next http.Handler) http.Handler {
+func authenticationMiddleware(authenticator *auth.BearerAuthenticator, recorder *audit.Recorder, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		principal, ok := authenticator.Authenticate(request.Header.Values("Authorization"))
 		if !ok {
+			recorder.AuthenticationDenied("http")
 			writer.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(writer, "Unauthorized", http.StatusUnauthorized)
 			return

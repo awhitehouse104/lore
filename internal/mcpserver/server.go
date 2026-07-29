@@ -9,9 +9,11 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
+	"lore/internal/audit"
 	"lore/internal/auth"
 	"lore/internal/catalog"
 	"lore/internal/core"
@@ -26,19 +28,34 @@ import (
 )
 
 type Server struct {
-	service   *core.Service
-	principal auth.Principal
-	mcp       *mcp.Server
+	service       *core.Service
+	principal     auth.Principal
+	mcp           *mcp.Server
+	logger        *slog.Logger
+	resourceMu    sync.Mutex
+	pageResources map[string]pageResource
 }
 
 func New(service *core.Service, principal auth.Principal, logger *slog.Logger) *Server {
+	return NewWithContext(context.Background(), service, principal, logger)
+}
+
+func NewWithContext(ctx context.Context, service *core.Service, principal auth.Principal, logger *slog.Logger) *Server {
 	if service == nil {
 		panic("nil Lore service")
+	}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
 	principal = principal.Clone()
 	serviceCopy := *service
 	serviceCopy.Actor = principal.ID
-	server := &Server{service: &serviceCopy, principal: principal}
+	server := &Server{
+		service:       &serviceCopy,
+		principal:     principal,
+		logger:        logger,
+		pageResources: make(map[string]pageResource),
+	}
 	server.mcp = mcp.NewServer(
 		&mcp.Implementation{Name: "lore", Version: version.Version},
 		&mcp.ServerOptions{
@@ -49,6 +66,9 @@ func New(service *core.Service, principal auth.Principal, logger *slog.Logger) *
 		},
 	)
 	server.addTools()
+	server.addResources(ctx)
+	server.mcp.AddReceivingMiddleware(privateCacheMiddleware)
+	server.mcp.AddReceivingMiddleware(auditMiddleware(audit.New(logger), principal))
 	return server
 }
 
@@ -85,7 +105,7 @@ func (s *Server) addTools() {
 }
 
 func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionQuery, requestID); toolErr != nil {
 		return callResult, SearchOutput{}, toolErr
 	}
@@ -132,7 +152,7 @@ func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input Searc
 }
 
 func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInput) (*mcp.CallToolResult, ReadOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionQuery, requestID); toolErr != nil {
 		return callResult, ReadOutput{}, toolErr
 	}
@@ -181,7 +201,7 @@ func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInp
 }
 
 func (s *Server) recent(ctx context.Context, _ *mcp.CallToolRequest, input RecentInput) (*mcp.CallToolResult, RecentOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionHistory, requestID); toolErr != nil {
 		return callResult, RecentOutput{}, toolErr
 	}
@@ -212,7 +232,7 @@ func (s *Server) recent(ctx context.Context, _ *mcp.CallToolRequest, input Recen
 }
 
 func (s *Server) lint(ctx context.Context, _ *mcp.CallToolRequest, _ LintInput) (*mcp.CallToolResult, LintOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionInspect, requestID); toolErr != nil {
 		return callResult, LintOutput{}, toolErr
 	}
@@ -237,7 +257,7 @@ func (s *Server) lint(ctx context.Context, _ *mcp.CallToolRequest, _ LintInput) 
 }
 
 func (s *Server) indexStatus(ctx context.Context, _ *mcp.CallToolRequest, _ IndexStatusInput) (*mcp.CallToolResult, IndexStatusOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionInspect, requestID); toolErr != nil {
 		return callResult, IndexStatusOutput{}, toolErr
 	}
@@ -274,7 +294,7 @@ func (s *Server) indexStatus(ctx context.Context, _ *mcp.CallToolRequest, _ Inde
 }
 
 func (s *Server) capture(ctx context.Context, _ *mcp.CallToolRequest, input CaptureInput) (*mcp.CallToolResult, CaptureOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCapture, requestID); toolErr != nil {
 		return callResult, CaptureOutput{}, toolErr
 	}
@@ -357,7 +377,7 @@ func (s *Server) capture(ctx context.Context, _ *mcp.CallToolRequest, input Capt
 }
 
 func (s *Server) preview(ctx context.Context, _ *mcp.CallToolRequest, input PreviewInput) (*mcp.CallToolResult, PreviewOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, PreviewOutput{}, toolErr
 	}
@@ -398,7 +418,7 @@ func (s *Server) preview(ctx context.Context, _ *mcp.CallToolRequest, input Prev
 }
 
 func (s *Server) commit(ctx context.Context, _ *mcp.CallToolRequest, input CommitInput) (*mcp.CallToolResult, CommitOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, CommitOutput{}, toolErr
 	}
@@ -444,6 +464,7 @@ func (s *Server) commit(ctx context.Context, _ *mcp.CallToolRequest, input Commi
 				return callResult, CommitOutput{}, toolErr
 			}
 			reauthorized.AlreadyCommitted = true
+			s.refreshPageResources(ctx)
 			output := commitOutput(requestID, reauthorized)
 			return textResult(fmt.Sprintf("Commit replay returned transaction %s.", output.TransactionID)), output, nil
 		}
@@ -465,12 +486,13 @@ func (s *Server) commit(ctx context.Context, _ *mcp.CallToolRequest, input Commi
 		callResult, toolErr := mappedToolError(err, requestID)
 		return callResult, CommitOutput{}, toolErr
 	}
+	s.refreshPageResources(ctx)
 	output := commitOutput(requestID, result)
 	return textResult(fmt.Sprintf("Committed transaction %s as %s.", output.TransactionID, output.Commit)), output, nil
 }
 
 func (s *Server) transactionList(ctx context.Context, _ *mcp.CallToolRequest, input TransactionListInput) (*mcp.CallToolResult, TransactionListOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, TransactionListOutput{}, toolErr
 	}
@@ -513,7 +535,7 @@ func (s *Server) transactionList(ctx context.Context, _ *mcp.CallToolRequest, in
 }
 
 func (s *Server) transactionShow(ctx context.Context, _ *mcp.CallToolRequest, input TransactionShowInput) (*mcp.CallToolResult, TransactionShowOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, TransactionShowOutput{}, toolErr
 	}
@@ -539,7 +561,7 @@ func (s *Server) transactionShow(ctx context.Context, _ *mcp.CallToolRequest, in
 }
 
 func (s *Server) transactionDiscard(ctx context.Context, _ *mcp.CallToolRequest, input TransactionDiscardInput) (*mcp.CallToolResult, TransactionDiscardOutput, error) {
-	requestID := newID("req")
+	requestID := requestID(ctx)
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, TransactionDiscardOutput{}, toolErr
 	}

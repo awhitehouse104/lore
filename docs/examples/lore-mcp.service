@@ -1,0 +1,31 @@
+[Unit]
+Description=Lore MCP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lore
+Group=lore
+ExecStart=/usr/local/bin/lore mcp serve --config /etc/lore/mcp.yaml
+Restart=on-failure
+RestartSec=3
+StateDirectory=lore
+Environment=HOME=/var/lib/lore
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/lore/home /var/lib/lore
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

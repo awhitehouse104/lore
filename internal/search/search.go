@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"unicode"
@@ -41,17 +42,18 @@ type Query struct {
 }
 
 type Result struct {
-	Rank      int    `json:"rank"`
-	Score     int    `json:"score"`
-	Path      string `json:"path"`
-	URI       string `json:"uri"`
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Kind      string `json:"kind"`
-	LineStart int    `json:"line_start"`
-	LineEnd   int    `json:"line_end"`
-	Snippet   string `json:"snippet"`
-	Revision  string `json:"revision"`
+	Rank        int    `json:"rank"`
+	Score       int    `json:"score"`
+	Path        string `json:"path"`
+	URI         string `json:"uri"`
+	ResourceURI string `json:"resource_uri"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Kind        string `json:"kind"`
+	LineStart   int    `json:"line_start"`
+	LineEnd     int    `json:"line_end"`
+	Snippet     string `json:"snippet"`
+	Revision    string `json:"revision"`
 }
 
 type Searcher interface {
@@ -104,16 +106,17 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		}
 		lineStart, lineEnd, snippet := bestSnippet(document, phrase, unique)
 		results = append(results, Result{
-			Score:     score,
-			Path:      document.Path,
-			URI:       fmt.Sprintf("lore://%s#L%d-L%d", document.Path, lineStart, lineEnd),
-			ID:        document.ID(),
-			Title:     document.Title(),
-			Kind:      document.Kind(),
-			LineStart: lineStart,
-			LineEnd:   lineEnd,
-			Snippet:   snippet,
-			Revision:  docs.Revision(document.Data),
+			Score:       score,
+			Path:        document.Path,
+			URI:         fmt.Sprintf("lore://%s#L%d-L%d", document.Path, lineStart, lineEnd),
+			ResourceURI: resourceURI(document.Type, document.ID()),
+			ID:          document.ID(),
+			Title:       document.Title(),
+			Kind:        document.Kind(),
+			LineStart:   lineStart,
+			LineEnd:     lineEnd,
+			Snippet:     snippet,
+			Revision:    docs.Revision(document.Data),
 		})
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -129,6 +132,10 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		results[index].Rank = index + 1
 	}
 	return results, warnings, nil
+}
+
+func resourceURI(documentType docs.Type, id string) string {
+	return fmt.Sprintf("lore://%ss/%s", documentType, url.PathEscape(id))
 }
 
 func ValidateQuery(query Query) error {

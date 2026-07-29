@@ -402,16 +402,17 @@ func RankCandidates(candidates []Candidate, query Query) []Result {
 		}
 		lineStart, lineEnd, snippet := bestSnippetBody(candidate.Body, candidate.BodyLineStart, phrase, tokens)
 		results = append(results, Result{
-			Score:     score,
-			Path:      candidate.Path,
-			URI:       fmt.Sprintf("lore://%s#L%d-L%d", candidate.Path, lineStart, lineEnd),
-			ID:        candidate.DocumentID,
-			Title:     candidate.Title,
-			Kind:      candidate.Kind,
-			LineStart: lineStart,
-			LineEnd:   lineEnd,
-			Snippet:   snippet,
-			Revision:  candidate.Revision,
+			Score:       score,
+			Path:        candidate.Path,
+			URI:         fmt.Sprintf("lore://%s#L%d-L%d", candidate.Path, lineStart, lineEnd),
+			ResourceURI: resourceURI(candidate.DocumentType, candidate.DocumentID),
+			ID:          candidate.DocumentID,
+			Title:       candidate.Title,
+			Kind:        candidate.Kind,
+			LineStart:   lineStart,
+			LineEnd:     lineEnd,
+			Snippet:     snippet,
+			Revision:    candidate.Revision,
 		})
 	}
 	sort.Slice(results, func(i, j int) bool {

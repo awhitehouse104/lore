@@ -1,0 +1,29 @@
+version: 1
+
+repo: /srv/lore/home
+listen: 127.0.0.1:8787
+endpoint: /mcp
+
+transport:
+  request_max_bytes: 8388608
+  response_max_bytes: 8388608
+  max_concurrent_requests: 8
+  request_timeout: 60s
+  shutdown_timeout: 15s
+  allowed_origins: []
+  trust_forwarded_headers: false
+  allow_plaintext_non_loopback: false
+
+auth:
+  tokens:
+    - name: remote-reader
+      token_file: /etc/lore/tokens/remote-reader
+      permissions:
+        - query
+      sensitivities:
+        - normal
+
+logging:
+  format: json
+  level: info
+  destination: stderr

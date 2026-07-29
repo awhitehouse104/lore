@@ -2,8 +2,8 @@
 
 ## Current release and milestone
 
-Lore v0.4.0 — Milestones 1–3 complete; Milestone 4 (resources, audit, and
-operational hardening) is next.
+Lore v0.4.0 — Milestones 1–4 implementation complete; Milestone 5 (client
+matrix, documentation, and release) is next.
 
 ## v0.4 completed milestones
 
@@ -43,6 +43,18 @@ operational hardening) is next.
   operation, local-only exclusion, origin and size limits, cancellation,
   concurrency exhaustion, response bounds, health privacy, and active-request
   shutdown.
+- **M4 — resources, audit, and operational hardening:** added authorized,
+  deterministic page-resource listing with private zero-TTL pagination,
+  canonical ID-only page/source templates, bounded exact resource reads through
+  the shared authorized core path, additive resource URIs in search results,
+  and post-commit resource refresh. Added metadata-only structured audit events,
+  generic authentication-denial events, shared request correlation IDs, and
+  redacted panic recovery. Seeded-secret tests cover tokens, queries, capture
+  bodies, preview diffs, unauthorized titles and paths, prompt injection,
+  protected-path intent, URI confusion, tool-name injection, active recovery,
+  single-writer contention, concurrent reads, and shutdown. Hardened loopback,
+  private-tailnet, and systemd deployment examples are included under
+  `docs/examples/`.
 
 ## Verified v0.3 baseline for v0.4
 
@@ -214,6 +226,15 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.4 M3 `CGO_ENABLED=0 go build ./cmd/lore`: passed
 - v0.4 M3 `go mod tidy -diff`: clean
 - v0.4 M3 `go mod verify`: passed (`all modules verified`)
+- v0.4 M4 `make check`: passed
+- v0.4 M4 `make test-race`: passed
+- v0.4 M4 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.4 M4 `go mod tidy -diff`: clean
+- v0.4 M4 `go mod verify`: passed (`all modules verified`)
+- v0.4 M4 official MCP Inspector CLI: not run; the environment rejected
+  downloading/executing the unpinned `@latest` npm package without explicit
+  user approval. Official SDK in-memory stdio and hermetic HTTP coverage passed;
+  the Inspector command remains a manual M5 release check.
 
 ## v0.3 completed milestones
 
