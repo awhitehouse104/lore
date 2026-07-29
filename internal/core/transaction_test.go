@@ -15,6 +15,7 @@ import (
 	"lore/internal/core"
 	"lore/internal/docs"
 	"lore/internal/gitx"
+	loreindex "lore/internal/index"
 	"lore/internal/initrepo"
 	"lore/internal/lock"
 	"lore/internal/repository"
@@ -613,6 +614,78 @@ func TestCommitPushFailureKeepsLocalCommit(t *testing.T) {
 	}
 	if head := strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD")); head != result.Commit {
 		t.Fatalf("local HEAD = %s, commit = %s", head, result.Commit)
+	}
+}
+
+func TestCommitRefreshFailureKeepsCanonicalCommit(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 29, 16, 0, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	maintenance := &fakeIndexMaintenance{
+		status:    loreindex.Status{IndexState: loreindex.StateStale},
+		updateErr: errors.New("database unavailable"),
+	}
+	service.IndexMaintenance = maintenance
+	page := validTransactionPage("page_refresh_failure", "Refresh failure", "2026-07-29", "Durable.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: refresh failure", []map[string]any{{
+		"op": "create_page", "path": "pages/refresh-failure.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if result.Commit == "" || maintenance.updateCalls != 1 {
+		t.Fatalf("result=%+v refresh=%+v", result, maintenance)
+	}
+	foundWarning := false
+	for _, warning := range result.Warnings {
+		if warning == "existing index refresh failed; run lore index update" {
+			foundWarning = true
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("missing refresh warning: %v", result.Warnings)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "refresh-failure.md")); err != nil {
+		t.Fatalf("canonical page was undone: %v", err)
+	}
+	if strings.TrimSpace(runGit(t, repo.Root, "rev-parse", "HEAD")) != result.Commit {
+		t.Fatalf("canonical Git commit was undone: %+v", result)
+	}
+}
+
+func TestCommitRefreshesExistingGitIndex(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 29, 16, 0, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	if _, err := service.IndexBuild(context.Background(), core.IndexBuildOptions{}); err != nil {
+		t.Fatalf("IndexBuild: %v", err)
+	}
+	page := validTransactionPage("page_index_refresh", "Index refresh", "2026-07-29", "Indexed.\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "create: index refresh", []map[string]any{{
+		"op": "create_page", "path": "pages/index-refresh.md", "content": string(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	}); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	status, err := service.IndexStatus(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != loreindex.StateFresh || status.PageCount != 1 {
+		t.Fatalf("index status = %+v", status)
 	}
 }
 

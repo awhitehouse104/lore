@@ -226,7 +226,7 @@ func (c fixedClock) Now() time.Time {
 	return c.value
 }
 
-func newTestRepository(t *testing.T) *repository.Repository {
+func newTestRepository(t testing.TB) *repository.Repository {
 	t.Helper()
 	root := t.TempDir()
 	for _, directory := range []string{"pages", "sources", "assets", "system", ".lore"} {

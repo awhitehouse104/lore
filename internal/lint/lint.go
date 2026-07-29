@@ -16,6 +16,7 @@ import (
 
 	"lore/internal/docs"
 	"lore/internal/gitx"
+	loreindex "lore/internal/index"
 	"lore/internal/recovery"
 	"lore/internal/repository"
 	"lore/internal/transaction"
@@ -121,7 +122,7 @@ func RunViewAt(ctx context.Context, repo *repository.Repository, view repository
 		return Result{}, err
 	}
 	if isGit {
-		ignored, ignoreErr := git.IsIgnored(ctx, repo.Root, ".lore/")
+		ignored, ignoreErr := git.IsIgnored(ctx, repo.Root, ".lore/.lore-ignore-check")
 		if ignoreErr != nil {
 			return Result{}, ignoreErr
 		}
@@ -247,8 +248,164 @@ func RunViewAt(ctx context.Context, repo *repository.Repository, view repository
 		}
 	}
 	checkRuntimeState(&result, repo, now.UTC())
+	if filesystemView(view) {
+		checkDerivedIndex(ctx, &result, repo, git, isGit)
+	}
 	finish(&result)
 	return result, nil
+}
+
+func filesystemView(view repository.View) bool {
+	switch view.(type) {
+	case repository.FilesystemView, *repository.FilesystemView:
+		return true
+	default:
+		return false
+	}
+}
+
+func checkDerivedIndex(ctx context.Context, result *Result, repo *repository.Repository, git gitx.Client, isGit bool) {
+	if isGit {
+		tracked, err := git.TrackedPaths(ctx, repo.Root, []string{
+			".lore/index.sqlite",
+			".lore/index.sqlite-wal",
+			".lore/index.sqlite-shm",
+			".lore/index.build.*",
+			".lore/index.operation.lock",
+		})
+		if err != nil {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_git_tracking_unknown",
+				Path:     ".lore",
+				Message:  "Git tracking for derived index files could not be inspected",
+			})
+		} else {
+			for _, path := range tracked {
+				result.Findings = append(result.Findings, Finding{
+					Severity: SeverityWarning,
+					Code:     "index_file_tracked",
+					Path:     path,
+					Message:  "derived index files must not be tracked by Git",
+				})
+			}
+		}
+	}
+
+	indexPath := filepath.Join(repo.Root, filepath.FromSlash(loreindex.RelativeIndexPath))
+	info, err := os.Lstat(indexPath)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_path_symlink",
+				Path:     loreindex.RelativeIndexPath,
+				Message:  "derived index path must not be a symlink",
+			})
+		} else if !info.Mode().IsRegular() {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_path_not_regular",
+				Path:     loreindex.RelativeIndexPath,
+				Message:  "derived index path must be a regular file",
+			})
+		} else if info.Mode().Perm()&0o077 != 0 {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_permissions_open",
+				Path:     loreindex.RelativeIndexPath,
+				Message:  "derived index permissions should deny group and other access",
+			})
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     "index_path_unreadable",
+			Path:     loreindex.RelativeIndexPath,
+			Message:  "derived index path could not be inspected",
+		})
+	}
+
+	checkIndexCompanionPermissions(result, repo)
+	if errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	manager := loreindex.NewManager(repo, git, "lint")
+	status, statusErr := manager.Status(ctx, false)
+	if statusErr != nil {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     "index_health_unknown",
+			Path:     loreindex.RelativeIndexPath,
+			Message:  "existing derived index health could not be inspected",
+		})
+		return
+	}
+	code := ""
+	message := ""
+	switch status.IndexState {
+	case loreindex.StateStale:
+		code = "index_stale"
+		message = "derived index is stale; run lore index update"
+	case loreindex.StateCorrupt:
+		code = "index_corrupt"
+		message = "derived index is corrupt; run lore index build --force"
+	case loreindex.StateIncompatible:
+		code = "index_incompatible"
+		message = "derived index is incompatible; run lore index build --force"
+	case loreindex.StateBuilding:
+		code = "index_building"
+		message = "derived index build state is incomplete or busy"
+	case loreindex.StateUncertified:
+		code = "index_uncertified"
+		message = "derived index freshness cannot be certified by Git"
+	}
+	if code != "" {
+		result.Findings = append(result.Findings, Finding{
+			Severity: SeverityWarning,
+			Code:     code,
+			Path:     loreindex.RelativeIndexPath,
+			Message:  message,
+		})
+	}
+}
+
+func checkIndexCompanionPermissions(result *Result, repo *repository.Repository) {
+	entries, err := os.ReadDir(filepath.Join(repo.Root, ".lore"))
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		known := name == "index.sqlite-wal" ||
+			name == "index.sqlite-shm" ||
+			name == "index.operation.lock" ||
+			(strings.HasPrefix(name, "index.build.") && strings.HasSuffix(name, ".sqlite"))
+		if !known {
+			continue
+		}
+		path := filepath.Join(repo.Root, ".lore", name)
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		relative := filepath.ToSlash(filepath.Join(".lore", name))
+		if info.Mode()&os.ModeSymlink != 0 {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_companion_symlink",
+				Path:     relative,
+				Message:  "derived index companion must not be a symlink",
+			})
+		} else if info.Mode().IsRegular() && info.Mode().Perm()&0o077 != 0 {
+			result.Findings = append(result.Findings, Finding{
+				Severity: SeverityWarning,
+				Code:     "index_permissions_open",
+				Path:     relative,
+				Message:  "derived index permissions should deny group and other access",
+			})
+		}
+	}
 }
 
 func checkRuntimeState(result *Result, repo *repository.Repository, now time.Time) {

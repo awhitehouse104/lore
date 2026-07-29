@@ -11,13 +11,37 @@ import (
 )
 
 func (m *Manager) IndexSearchStatus(ctx context.Context, verifyManifest bool) (search.IndexedStatus, error) {
-	status, err := m.Status(ctx, verifyManifest)
+	status, err := m.Status(ctx, false)
 	if err != nil {
 		return search.IndexedStatus{}, err
 	}
+	manifestMatches := status.ManifestMatches
+	if verifyManifest && status.IndexState == StateUncertified {
+		indexPaths, err := resolvePaths(m.Repo, false)
+		if err != nil {
+			return search.IndexedStatus{}, newError(ErrorRuntime, "unsafe_index_path", "could not resolve the index path", err)
+		}
+		operationLock, err := acquireIndexLock(indexPaths.directory, false)
+		if err != nil {
+			return search.IndexedStatus{}, classifyRuntime("index_lock_failed", "could not acquire the index operation lock", err)
+		}
+		defer operationLock.release()
+		db, _, err := openDatabase(ctx, indexPaths.live, openReadOnly, "")
+		if err != nil {
+			return search.IndexedStatus{}, classifyRuntime("index_open_failed", "could not open the index for manifest verification", err)
+		}
+		manifestMatches, err = m.manifestMatches(ctx, db)
+		closeErr := db.Close()
+		if err != nil {
+			return search.IndexedStatus{}, newError(ErrorRuntime, "manifest_verification_failed", "could not verify the non-Git canonical manifest", err)
+		}
+		if closeErr != nil {
+			return search.IndexedStatus{}, newError(ErrorRuntime, "index_close_failed", "could not close the index after manifest verification", closeErr)
+		}
+	}
 	return search.IndexedStatus{
 		State:           string(status.IndexState),
-		ManifestMatches: status.ManifestMatches,
+		ManifestMatches: manifestMatches,
 	}, nil
 }
 

@@ -150,6 +150,21 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 		return h.filesystem(ctx, repo, query, response)
 	}
 	tokens := uniqueTokens(tokenize(query.Text))
+	if len(tokens) > MaximumIndexQueryTokens {
+		if requested == BackendAuto {
+			response.Warnings = append(response.Warnings, catalog.Warning{
+				Code:    "index_query_fallback",
+				Path:    ".lore/index.sqlite",
+				Message: "query has too many terms for bounded indexed candidate generation",
+			})
+			return h.filesystem(ctx, repo, query, response)
+		}
+		return response, &BackendError{
+			Kind:    BackendErrorUsage,
+			Code:    "index_query_unsuitable",
+			Message: fmt.Sprintf("explicit index search supports at most %d unique query terms", MaximumIndexQueryTokens),
+		}
+	}
 	suitable := SuitableForAutomaticIndex(tokens)
 	if requested == BackendAuto && !suitable {
 		response.Warnings = append(response.Warnings, catalog.Warning{
@@ -164,21 +179,6 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 			Kind:    BackendErrorUsage,
 			Code:    "index_query_unsuitable",
 			Message: "explicit index search requires query terms of at least three Unicode letters or digits",
-		}
-	}
-	if len(tokens) > MaximumIndexQueryTokens {
-		if requested == BackendAuto {
-			response.Warnings = append(response.Warnings, catalog.Warning{
-				Code:    "index_query_fallback",
-				Path:    ".lore/index.sqlite",
-				Message: "query has too many terms for bounded indexed candidate generation",
-			})
-			return h.filesystem(ctx, repo, query, response)
-		}
-		return response, &BackendError{
-			Kind:    BackendErrorUsage,
-			Code:    "index_query_unsuitable",
-			Message: fmt.Sprintf("explicit index search supports at most %d unique query terms", MaximumIndexQueryTokens),
 		}
 	}
 	if h.Index == nil {

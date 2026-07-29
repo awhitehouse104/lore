@@ -357,6 +357,24 @@ func (c Client) IsIgnored(ctx context.Context, dir, path string) (bool, error) {
 	return false, err
 }
 
+func (c Client) TrackedPaths(ctx context.Context, dir string, patterns []string) ([]string, error) {
+	args := []string{"ls-files", "-z", "--"}
+	args = append(args, patterns...)
+	stdout, err := c.run(ctx, dir, args...)
+	if err != nil {
+		return nil, err
+	}
+	fields := bytes.Split(stdout, []byte{0})
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) > 0 {
+			paths = append(paths, filepathSlash(string(field)))
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
 func (c Client) PushHead(ctx context.Context, dir, remote string) error {
 	branch, err := c.CurrentBranch(ctx, dir)
 	if err != nil {

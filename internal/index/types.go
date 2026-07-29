@@ -108,6 +108,7 @@ type Manager struct {
 	Git         Git
 	Clock       Clock
 	LoreVersion string
+	Hooks       Hooks
 }
 
 func NewManager(repo *repository.Repository, git Git, loreVersion string) *Manager {
@@ -117,6 +118,11 @@ func NewManager(repo *repository.Repository, git Git, loreVersion string) *Manag
 		Clock:       realClock{},
 		LoreVersion: loreVersion,
 	}
+}
+
+type Hooks interface {
+	BeforeBuildReplace() error
+	BeforeUpdateCommit() error
 }
 
 type ErrorClass string

@@ -242,6 +242,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 		shouldPush = *options.Push
 	}
 	if !shouldPush {
+		result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 		return result, nil
 	}
 	if err := s.TxGit.PushHead(ctx, s.Repo.Root, s.Repo.Config.Git.Remote); err != nil {
@@ -251,6 +252,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 		if stateErr := store.UpdateState(options.TransactionID, committedState); stateErr != nil {
 			result.Warnings = append(result.Warnings, "push failure could not be recorded in transaction state")
 		}
+		result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 		if s.Repo.Config.Git.RequirePush {
 			apiErr := NewError(ExitRuntime, "push_required_failed", "transaction is safely committed locally, but the required push failed")
 			apiErr.Details = map[string]any{
@@ -271,6 +273,7 @@ func (s *Service) Commit(ctx context.Context, options CommitOptions) (result Com
 	if err := store.UpdateState(options.TransactionID, committedState); err != nil {
 		result.Warnings = append(result.Warnings, "push succeeded but transaction state could not record it")
 	}
+	result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 	return result, nil
 }
 

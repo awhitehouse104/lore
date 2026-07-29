@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.3.0 — Milestone 4 (write integration and hardening) in progress.
+Lore v0.3.0 — Milestone 5 (documentation and release) in progress.
 
 ## Verified v0.2 baseline for v0.3
 
@@ -105,6 +105,13 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.3 M3 retrieval parity and adversarial-query fixtures: passed
 - v0.3 M3 `go mod tidy -diff`: clean
 - v0.3 M3 `go mod verify`: passed (`all modules verified`)
+- v0.3 M4 `make check`: passed
+- v0.3 M4 `make test-race`: passed
+- v0.3 M4 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.3 M4 `go mod tidy -diff`: clean
+- v0.3 M4 `go mod verify`: passed (`all modules verified`)
+- v0.3 M4 10,000-document benchmark: `809817535 ns/op`,
+  `179286976 B/op`, `2221907 allocs/op`, index/text ratio `2.223`
 
 ## v0.3 completed milestones
 
@@ -124,11 +131,18 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
   bounded FTS5 candidate generation, unchanged Go scoring/snippet/tie logic,
   additive backend response metadata, stale explicit-index refusal, and
   real-index parity/security/large-result fixtures.
+- M4: best-effort updates of existing compatible indexes after durable capture
+  and transaction writes, generic non-fatal refresh diagnostics, real-tree
+  lint warnings for derived health/tracking/symlinks/permissions, deterministic
+  pre-replacement/pre-commit fault hooks, rollback preservation, WAL reader and
+  exclusive-operation concurrency coverage, and a reproducible 10,000-document
+  build benchmark.
 
 v0.3 milestone commits:
 
 - M1: `719f9c2`
 - M2: `a27280d`
+- M3: `80ee3b6`
 
 ## v0.2 completed milestones
 
@@ -161,5 +175,6 @@ Milestone commits:
 
 ## Next checkpoint
 
-Complete v0.3 Milestone 4: best-effort refresh after durable writes, derived
-lint diagnostics, concurrency/failure hardening, and reproducible benchmarks.
+Complete v0.3 Milestone 5: generated rules, command/config/index/security
+documentation, dependency and license records, release notes, final security
+and smoke audits, and the annotated `v0.3.0` tag.

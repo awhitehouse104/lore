@@ -10,6 +10,7 @@ import (
 
 	"lore/internal/docs"
 	"lore/internal/gitx"
+	loreindex "lore/internal/index"
 	"lore/internal/initrepo"
 	"lore/internal/lint"
 	"lore/internal/recovery"
@@ -365,5 +366,134 @@ func TestLintMalformedRecoveryJournalIsError(t *testing.T) {
 	}
 	if !found || result.Valid {
 		t.Fatalf("malformed recovery findings = %+v", result.Findings)
+	}
+}
+
+func TestLintDerivedIndexWarningsDoNotInvalidateCanonicalRepository(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := loreindex.NewManager(repo, gitx.New(), "0.3.0-test")
+	if _, err := manager.Build(context.Background(), loreindex.BuildOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, ".lore", "index.sqlite"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.Run(context.Background(), repo, gitx.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := findingCodes(result)
+	if !result.Valid || !codes["index_uncertified"] || !codes["index_permissions_open"] {
+		t.Fatalf("derived findings changed validity: %+v", result)
+	}
+
+	view, err := repository.NewOverlayView(repo, nil, map[string][]byte{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prospective, err := lint.RunView(context.Background(), repo, view, gitx.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for code := range findingCodes(prospective) {
+		if code == "index_uncertified" || code == "index_permissions_open" {
+			t.Fatalf("prospective lint included derived finding %q: %+v", code, prospective.Findings)
+		}
+	}
+}
+
+func TestLintWarnsForStaleAndTrackedIndex(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root}, gitx.New()); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := loreindex.NewManager(repo, gitx.New(), "0.3.0-test")
+	if _, err := manager.Build(context.Background(), loreindex.BuildOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	runGitCommand(t, root, "add", "-f", "--", ".lore/index.sqlite")
+	page := []byte(`---
+id: page_lint_stale
+title: Lint stale
+kind: note
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: normal
+---
+External canonical edit.
+`)
+	if err := os.WriteFile(filepath.Join(root, "pages", "lint-stale.md"), page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.Run(context.Background(), repo, gitx.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	codes := findingCodes(result)
+	if !result.Valid || !codes["index_stale"] || !codes["index_file_tracked"] {
+		t.Fatalf("stale/tracked findings = %+v", result)
+	}
+}
+
+func TestLintWarnsForIndexSymlink(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.sqlite")
+	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, ".lore", "index.sqlite")); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.Run(context.Background(), repo, gitx.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Valid || !findingCodes(result)["index_path_symlink"] {
+		t.Fatalf("symlink findings = %+v", result)
+	}
+}
+
+func findingCodes(result lint.Result) map[string]bool {
+	codes := make(map[string]bool, len(result.Findings))
+	for _, finding := range result.Findings {
+		codes[finding.Code] = true
+	}
+	return codes
+}
+
+func runGitCommand(t *testing.T, root string, args ...string) {
+	t.Helper()
+	commandArgs := append([]string{"-C", root}, args...)
+	command := exec.Command("git", commandArgs...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
 }

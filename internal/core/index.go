@@ -13,6 +13,28 @@ type IndexBuildOptions struct {
 	Force bool
 }
 
+const indexRefreshWarning = "existing index refresh failed; run lore index update"
+
+func (s *Service) bestEffortIndexRefresh(ctx context.Context) []string {
+	if s == nil || s.Repo == nil || !s.Repo.Config.Index.AutoRefreshExisting || s.IndexMaintenance == nil {
+		return nil
+	}
+	status, err := s.IndexMaintenance.Status(ctx, false)
+	if err != nil {
+		return []string{indexRefreshWarning}
+	}
+	switch status.IndexState {
+	case loreindex.StateMissing:
+		return nil
+	case loreindex.StateCorrupt, loreindex.StateIncompatible, loreindex.StateBuilding:
+		return []string{indexRefreshWarning}
+	}
+	if _, err := s.IndexMaintenance.Update(ctx); err != nil {
+		return []string{indexRefreshWarning}
+	}
+	return nil
+}
+
 func (s *Service) IndexUpdate(ctx context.Context) (result loreindex.UpdateResult, returnErr error) {
 	if s == nil || s.Repo == nil || s.Clock == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "index service is not fully configured")
@@ -142,6 +164,12 @@ func (s *Service) IndexStatus(ctx context.Context, verify bool) (loreindex.Statu
 }
 
 func (s *Service) indexManager() *loreindex.Manager {
+	if manager, ok := s.IndexMaintenance.(*loreindex.Manager); ok && manager != nil {
+		if s.Clock != nil {
+			manager.Clock = s.Clock
+		}
+		return manager
+	}
 	manager := loreindex.NewManager(s.Repo, s.TxGit, version.Version)
 	if s.Clock != nil {
 		manager.Clock = s.Clock

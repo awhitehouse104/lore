@@ -12,6 +12,7 @@ import (
 	"lore/internal/docs"
 	"lore/internal/gitx"
 	"lore/internal/id"
+	"lore/internal/index"
 	"lore/internal/lock"
 	"lore/internal/repository"
 	"lore/internal/search"
@@ -43,17 +44,23 @@ type TransactionHooks interface {
 	AfterGitCommit(commit string) error
 }
 
+type IndexMaintenance interface {
+	Status(context.Context, bool) (index.Status, error)
+	Update(context.Context) (index.UpdateResult, error)
+}
+
 type Service struct {
-	Repo     *repository.Repository
-	Git      CaptureGit
-	Clock    Clock
-	IDs      id.Generator
-	Searcher search.Searcher
-	History  HistoryGit
-	TxGit    gitx.Client
-	TxIDs    transaction.IDGenerator
-	Actor    string
-	TxHooks  TransactionHooks
+	Repo             *repository.Repository
+	Git              CaptureGit
+	Clock            Clock
+	IDs              id.Generator
+	Searcher         search.Searcher
+	History          HistoryGit
+	TxGit            gitx.Client
+	TxIDs            transaction.IDGenerator
+	Actor            string
+	TxHooks          TransactionHooks
+	IndexMaintenance IndexMaintenance
 }
 
 func NewService(repo *repository.Repository) *Service {
@@ -67,9 +74,11 @@ func NewService(repo *repository.Repository) *Service {
 		TxIDs:   transaction.CryptoIDGenerator{},
 		Actor:   transaction.DefaultActor,
 	}
+	manager := service.indexManager()
+	service.IndexMaintenance = manager
 	service.Searcher = search.HybridSearcher{
 		Filesystem:          search.FilesystemLexicalSearcher{},
-		Index:               service.indexManager(),
+		Index:               manager,
 		CandidateMultiplier: repo.Config.Index.CandidateMultiplier,
 		MinimumCandidates:   repo.Config.Index.MinimumCandidates,
 		MaximumCandidates:   repo.Config.Index.MaximumCandidates,
@@ -235,6 +244,7 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 
 	shouldCommit := s.Repo.Config.Git.AutoCommitCaptures && !options.NoCommit
 	if !shouldCommit {
+		result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 		return result, nil
 	}
 	subject := fmt.Sprintf("capture: %s %s", options.Kind, sourceID)
@@ -261,9 +271,11 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 		shouldPush = *options.Push
 	}
 	if !shouldPush {
+		result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 		return result, nil
 	}
 	if err := s.Git.PushHead(ctx, s.Repo.Root, s.Repo.Config.Git.Remote); err != nil {
+		result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 		if s.Repo.Config.Git.RequirePush {
 			return result, &APIError{
 				Code:    "git_push_failed",
@@ -283,5 +295,6 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 		return result, nil
 	}
 	result.Pushed = true
+	result.Warnings = append(result.Warnings, s.bestEffortIndexRefresh(ctx)...)
 	return result, nil
 }

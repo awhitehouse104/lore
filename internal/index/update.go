@@ -152,6 +152,11 @@ func (m *Manager) Update(ctx context.Context) (result UpdateResult, returnErr er
 	if err := m.requireStableManagedSnapshot(ctx, snapshot); err != nil {
 		return result, err
 	}
+	if m.Hooks != nil {
+		if err := m.Hooks.BeforeUpdateCommit(); err != nil {
+			return result, newError(ErrorRuntime, "index_update_interrupted", "index update stopped before commit", nil)
+		}
+	}
 	if err := transaction.Commit(); err != nil {
 		return result, newError(ErrorRuntime, "index_transaction_failed", "could not commit the index update transaction", err)
 	}

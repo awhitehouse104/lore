@@ -13,6 +13,7 @@ import (
 	"lore/internal/core"
 	"lore/internal/docs"
 	"lore/internal/gitx"
+	loreindex "lore/internal/index"
 	"lore/internal/initrepo"
 	"lore/internal/lock"
 	"lore/internal/repository"
@@ -44,6 +45,24 @@ type fakeGit struct {
 	commitPath string
 	subject    string
 	pushed     bool
+}
+
+type fakeIndexMaintenance struct {
+	status      loreindex.Status
+	statusErr   error
+	updateErr   error
+	statusCalls int
+	updateCalls int
+}
+
+func (m *fakeIndexMaintenance) Status(context.Context, bool) (loreindex.Status, error) {
+	m.statusCalls++
+	return m.status, m.statusErr
+}
+
+func (m *fakeIndexMaintenance) Update(context.Context) (loreindex.UpdateResult, error) {
+	m.updateCalls++
+	return loreindex.UpdateResult{IndexState: loreindex.StateFresh}, m.updateErr
 }
 
 func (g *fakeGit) CommitPath(_ context.Context, _, path, subject string) (string, error) {
@@ -174,6 +193,82 @@ func TestCaptureGeneratedPathConflict(t *testing.T) {
 	var apiErr *core.APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != "capture_conflict" || apiErr.ExitCode != core.ExitConflict {
 		t.Fatalf("second Capture error = %T %v", err, err)
+	}
+}
+
+func TestCaptureRefreshFailureDoesNotUndoCanonicalWrite(t *testing.T) {
+	repo := newServiceRepository(t)
+	git := &fakeGit{commit: strings.Repeat("a", 40)}
+	service := testService(repo, git)
+	maintenance := &fakeIndexMaintenance{
+		status:    loreindex.Status{IndexState: loreindex.StateStale},
+		updateErr: errors.New("database unavailable"),
+	}
+	service.IndexMaintenance = maintenance
+	result, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("durable source"),
+	})
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	if !result.Written || !result.Committed || len(result.Warnings) != 1 ||
+		result.Warnings[0] != "existing index refresh failed; run lore index update" {
+		t.Fatalf("result = %+v", result)
+	}
+	if maintenance.statusCalls != 1 || maintenance.updateCalls != 1 {
+		t.Fatalf("refresh calls: status=%d update=%d", maintenance.statusCalls, maintenance.updateCalls)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, filepath.FromSlash(result.Path))); err != nil {
+		t.Fatalf("canonical source was undone: %v", err)
+	}
+}
+
+func TestCaptureDoesNotCreateMissingIndex(t *testing.T) {
+	repo := newServiceRepository(t)
+	service := testService(repo, &fakeGit{commit: strings.Repeat("a", 40)})
+	maintenance := &fakeIndexMaintenance{
+		status: loreindex.Status{IndexState: loreindex.StateMissing},
+	}
+	service.IndexMaintenance = maintenance
+	result, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("durable source"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 || maintenance.statusCalls != 1 || maintenance.updateCalls != 0 {
+		t.Fatalf("result=%+v refresh=%+v", result, maintenance)
+	}
+}
+
+func TestCaptureRefreshesExistingGitIndex(t *testing.T) {
+	requireGit(t)
+	root := initializeGitRepository(t)
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 29, 15, 0, 0, 0, time.UTC)}
+	service.IDs = fixedIDs{value: fixedID}
+	if _, err := service.IndexBuild(context.Background(), core.IndexBuildOptions{}); err != nil {
+		t.Fatalf("IndexBuild: %v", err)
+	}
+	result, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("indexed after capture"),
+	})
+	if err != nil {
+		t.Fatalf("Capture: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("capture warnings = %v", result.Warnings)
+	}
+	status, err := service.IndexStatus(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.IndexState != loreindex.StateFresh || status.SourceCount != 1 {
+		t.Fatalf("index status = %+v", status)
 	}
 }
 

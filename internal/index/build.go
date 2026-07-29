@@ -156,6 +156,11 @@ func (m *Manager) Build(ctx context.Context, options BuildOptions) (result Build
 	if err := m.requireStableManagedSnapshot(ctx, snapshot); err != nil {
 		return result, err
 	}
+	if m.Hooks != nil {
+		if err := m.Hooks.BeforeBuildReplace(); err != nil {
+			return result, newError(ErrorRuntime, "index_build_interrupted", "index build stopped before replacement", nil)
+		}
+	}
 	if err := prepareExistingIndexForReplacement(ctx, indexPaths); err != nil {
 		return result, err
 	}
