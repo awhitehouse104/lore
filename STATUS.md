@@ -2,8 +2,8 @@
 
 ## Current release and milestone
 
-Lore v0.4.0 — Milestones 1–5 implementation and release-candidate verification
-are complete. The final release commit and annotated `v0.4.0` tag are pending.
+Lore v0.4.0 — released from the final status commit tagged `v0.4.0`.
+Milestones 1–5 and the complete release matrix are finished.
 
 ## v0.4 completed milestones
 
@@ -75,7 +75,7 @@ v0.4 milestone commits:
 - M2: `9cb1935`
 - M3: `4790fef`
 - M4: `3ebc405`
-- M5: pending release commit
+- M5: `21982eb`
 
 ## Verified v0.3 baseline for v0.4
 
@@ -281,6 +281,10 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
   and auto-collection. Its first harness attempt failed because `PrivateTmp`
   correctly hid the `/tmp`-hosted binary; the successful harness omitted that
   property, while the shipped `/usr/local` unit keeps it enabled.
+- v0.4 M5 release build injected version `0.4.0`, full commit
+  `21982ebe5e9a121f952b7f3fb23cc8a9cc97e7cc`, and UTC build time successfully.
+- v0.4 M5 generated-template initialization, lint, verified full index build,
+  explicit indexed empty-result search, and derived-index clear: passed.
 
 ## v0.3 completed milestones
 
@@ -380,7 +384,7 @@ Milestone commits:
 
 ## Next checkpoint
 
-After the final release commit and checks, future work begins from the exact
-commit tagged `v0.4.0`. Preserve the Markdown authority, JSON schema, lexical
-parity, derived-index, transaction, authorization, MCP, audit, and recovery
-contracts before adding a new milestone.
+Future work begins from the exact commit tagged `v0.4.0`. Preserve the Markdown
+authority, JSON schema, lexical parity, derived-index, transaction,
+authorization, MCP, audit, and recovery contracts before adding a new
+milestone.
