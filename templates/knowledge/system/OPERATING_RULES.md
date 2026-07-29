@@ -18,3 +18,6 @@
 16. Run `lore lint` before committing.
 17. Do not save ordinary query answers unless explicitly asked or they add durable synthesis.
 18. When evidence is inadequate, say so rather than filling the gap.
+19. Use normal `lore search`; its automatic backend may safely fall back to the authoritative Markdown.
+20. Use `lore index status --verify` and `lore index update` only for derived-index troubleshooting.
+21. Never edit `.lore/index.sqlite` directly or treat indexed rows as authoritative knowledge.

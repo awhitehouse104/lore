@@ -81,12 +81,19 @@ Unrelated staged and working-tree changes remain untouched. `--no-commit` disabl
 
 The source remains present after every later Git failure. A required push failure reports that its commit is safe locally.
 
+When a compatible index already exists and `index.auto_refresh_existing` is
+enabled, capture attempts an index update only after source write, configured
+commit, and push handling complete. Refresh failure is a warning and cannot
+undo the source or local Git commit. Capture never creates an index.
+
 ## `search`
 
 ```text
 lore search QUERY... \
   [--scope all|pages|sources] \
   [--kind TOKEN] \
+  [--backend auto|index|filesystem] \
+  [--include-sensitivity normal|sensitive|local-only ...] \
   [--limit N] \
   [--json]
 ```
@@ -95,7 +102,20 @@ Defaults are `scope=all` and `limit=10`; maximum limit is 100. Query terms split
 
 The explainable scorer favors exact title and alias phrases, metadata tokens, tag phrases, body phrases and bounded token occurrences, then kind tokens. Results with no matched terms are omitted. Ordering is score descending and path ascending. No recency boost or normalization is used.
 
-Each result contains rank, score, path, URI, ID, title, kind, line range, bounded snippet, and whole-file SHA-256 revision. Oversized documents are skipped with warnings. Search never mutates the repository.
+`auto` is the configuration default. It uses a fresh compatible derived index
+only when indexed candidate generation preserves filesystem behavior;
+otherwise it falls back with a warning. `index` refuses missing, stale,
+corrupt, incompatible, or unsuitable state instead of silently returning old
+data. `filesystem` reads Markdown directly.
+
+All local sensitivities are included by default. Repeating
+`--include-sensitivity` constructs a narrower explicit request policy, and
+filtering occurs before index rows are returned to the core scorer.
+
+Each result contains rank, score, path, URI, ID, title, kind, line range,
+bounded snippet, and whole-file SHA-256 revision. Search JSON also contains
+`backend`, `backend_requested`, and `index_state`. Oversized documents are
+skipped with warnings. Search never mutates canonical knowledge.
 
 ## `read`
 
@@ -125,8 +145,13 @@ Lint checks:
 - optional source `integrated_into` page references;
 - uncommitted source changes and detached Git HEAD warnings;
 - stale preview warnings and active or malformed recovery-journal state.
+- warnings for an existing stale, corrupt, incompatible, busy, or uncertified
+  derived index;
+- derived-index Git tracking, symlink, and restrictive-permission checks.
 
-Errors return 1. Warnings return 0 when no errors exist. Git checks never contact a remote.
+An absent index is not a finding. Derived warnings never make otherwise-valid
+canonical Markdown invalid. Errors return 1. Warnings return 0 when no errors
+exist. Git checks never contact a remote.
 
 ## `preview`
 
@@ -191,6 +216,10 @@ failure is a success warning. With `git.require_push: true`, failure returns 3
 and states that the canonical commit is safe locally. A successful local commit
 is never reset because push or derived-state maintenance fails.
 
+After push handling, commit best-effort updates an already-existing compatible
+index when configured. It never creates an index, and refresh failure is only a
+warning.
+
 ## `transaction list`
 
 ```text
@@ -222,7 +251,7 @@ lore transaction discard TRANSACTION_ID [--json]
 Only previewed or failed transactions may be discarded. The operation is
 idempotent and blocked by active recovery. It deletes resulting content, diff,
 and full lint payloads while retaining proposal/state receipt metadata and a
-lint summary. Committed transactions cannot be discarded. v0.2 has no
+lint summary. Committed transactions cannot be discarded. v0.3 has no
 automatic pruning.
 
 ## `recover`
@@ -244,6 +273,37 @@ of the preview base commit on the preview branch, the complete changed-path
 set, and every resulting blob SHA-256 before recording the committed state.
 Lore never automatically resumes an interrupted apply. See
 [recovery.md](recovery.md).
+
+## `index`
+
+```text
+lore index build [--force] [--json]
+lore index update [--json]
+lore index status [--verify] [--json]
+lore index clear [--json]
+```
+
+`build` requires valid canonical documents and clean managed Git paths. It
+scans current Markdown, builds and fully verifies a private temporary database,
+then atomically installs it. A current compatible index requires `--force` for
+replacement; failed construction preserves the prior index.
+
+`update` requires an existing compatible index and the same canonical/Git
+preconditions. It performs deterministic add/update/delete reconciliation and
+full verification in one SQL transaction.
+
+`status` is lightweight by default and reports `missing`, `fresh`, `stale`,
+`uncertified`, `building`, `corrupt`, or `incompatible`. `--verify` adds full
+SQLite/FTS consistency and secure-delete checks, plus canonical manifest
+comparison where Git cannot certify freshness. Corrupt and incompatible status
+return exit code 3.
+
+`clear` acquires the exclusive derived-index operation lock and removes only
+known index, WAL, shared-memory, and temporary-build files. It retains the
+repository identity and is idempotent.
+
+See [index.md](index.md) for storage, fallback, locking, recovery, and benchmark
+details.
 
 ## `recent`
 
@@ -269,8 +329,8 @@ Build variables are injectable:
 
 ```bash
 go build -ldflags \
-  "-X lore/internal/version.Version=0.2.0 \
+  "-X lore/internal/version.Version=0.3.0 \
    -X lore/internal/version.Commit=$(git rev-parse HEAD) \
-   -X lore/internal/version.BuildDate=2026-07-28T00:00:00Z" \
+   -X lore/internal/version.BuildDate=2026-07-29T00:00:00Z" \
   ./cmd/lore
 ```

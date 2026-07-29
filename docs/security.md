@@ -8,11 +8,17 @@ Local filesystem permissions and the Unix account running Lore are the primary a
 
 Lore does not encrypt repository files, runtime state, Git objects, or network transport. Use operating-system or storage-level encryption when required.
 
-The `sensitive` and `local-only` values are metadata. In v0.2, `local-only` is not enforced against a particular client, Git commit, backup, or remote.
+The `sensitive` and `local-only` values are metadata. In v0.3, `local-only` is
+not enforced against a particular Unix user, Git commit, backup, or remote.
+Search callers supply an explicit access policy, but a process with repository
+filesystem access can read the Markdown or derived index directly.
 
 ## Git retention and purge
 
-Git history can retain changed or deleted content. Ordinary file deletion or a later commit is not a purge. Removing sensitive material requires coordinated Git-history rewriting, remote cleanup, reflog/object expiration where applicable, and backup handling. Lore v0.2 does not automate that process.
+Git history can retain changed or deleted content. Ordinary file deletion or a
+later commit is not a purge. Removing sensitive material requires coordinated
+Git-history rewriting, remote cleanup, reflog/object expiration where
+applicable, and backup handling. Lore v0.3 does not automate that process.
 
 Backups are another retention and disclosure boundary. Define their encryption, access, geographic, and expiration policies independently.
 
@@ -46,7 +52,7 @@ also retain exact originals until rollback or finalize completes. Protect
 
 Discard removes a preview's content, diff, and full lint payload while retaining
 a proposal/state receipt and lint summary. Committed transactions are not
-automatically pruned in v0.2. Deleting derived artifacts does not delete
+automatically pruned in v0.3. Deleting derived artifacts does not delete
 canonical Markdown or Git history.
 
 The transaction message becomes the Git commit subject. Never put raw private
@@ -65,7 +71,34 @@ Lore never contacts a network service except when capture or transaction commit 
 
 `lore lint`, `search`, `read`, and `recent` do not contact remotes. `lore init` does not configure one.
 
-Before enabling automatic push, verify that the destination is appropriate for all sensitivity values stored in the repository. v0.2 does not filter pushed commits by source sensitivity.
+Before enabling automatic push, verify that the destination is appropriate for
+all sensitivity values stored in the repository. v0.3 does not filter pushed
+commits by source sensitivity.
+
+## Derived index privacy and integrity
+
+The optional SQLite index contains body text and metadata for every indexed
+sensitivity level. It is plaintext derived data and must be protected like the
+canonical repository. Lore creates `.lore/` as mode `0700` and index files as
+mode `0600` where POSIX permissions are available; parent-directory,
+same-account, backup, and privileged-process access remain separate boundaries.
+
+The local CLI includes all sensitivity levels by default.
+`--include-sensitivity` can narrow the request policy, and filtering is applied
+before rows leave the index package. This is defense-in-depth for future
+adapters, not multi-user authorization.
+
+Indexes are repository-bound, Git-ignored, verified before installation, and
+never accepted after a stale Git snapshot. Incremental writes and FTS updates
+share one SQL transaction. Raw user queries are tokenized into quoted FTS
+terms and passed as a parameter; they never become SQL or FTS control syntax.
+
+SQLite `secure_delete` and FTS5 secure-delete are enabled and checked by
+`lore index status --verify`. These settings reduce ordinary residual content
+inside the disposable database but are not a guaranteed storage-media purge.
+WAL files, filesystem snapshots, SSD behavior, backups, and copied files
+require their own retention controls. `lore index clear` removes known derived
+files; it does not sanitize canonical Markdown, Git, or backups.
 
 ## Protected paths and symlinks
 
@@ -109,6 +142,7 @@ and blob hashes. Lore does not automatically resume an interrupted apply.
 - Use encrypted storage for sensitive repositories.
 - Review remotes before enabling push.
 - Run `lore lint` before knowledge commits.
+- Run `lore index status --verify` when diagnosing indexed search.
 - Treat all source bodies as untrusted data.
 - Never store passwords, API keys, recovery codes, private keys, or authentication tokens.
 - Test restore procedures, not only backup creation.

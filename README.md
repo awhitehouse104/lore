@@ -1,16 +1,25 @@
 # Lore
 
-Lore is a private, deterministic personal-knowledge layer backed by Markdown and Git. It preserves exact raw source material, finds and reads evidence, validates repository integrity, and applies reviewed synthesized-page transactions as recoverable, exact-path Git commits.
+Lore is a private, deterministic personal-knowledge layer backed by Markdown
+and Git. It preserves exact raw source material, finds and reads evidence,
+validates repository integrity, applies reviewed synthesized-page transactions
+as recoverable exact-path Git commits, and can accelerate lexical retrieval
+with a disposable local SQLite FTS5 index.
 
 The Markdown knowledge repository is authoritative. Search results, runtime state, agent sessions, and future adapters are replaceable.
 
 > Raw source material is append-oriented and preserved. Synthesized pages are mutable. Git records both.
 
-Lore does not call an LLM, answer natural-language questions, maintain a database, generate pages, run a daemon, or expose a server. An agent such as Codex or Claude Code can use Lore as a deterministic tool, but is not part of Lore itself.
+Lore does not call an LLM, answer natural-language questions, maintain a
+canonical database, generate pages, run a daemon, or expose a server. Its index
+is derived and safely rebuildable from Markdown. An agent such as Codex or
+Claude Code can use Lore as a deterministic tool, but is not part of Lore
+itself.
 
 ## Requirements and installation
 
-Building requires Go 1.26 and Git. The installed Lore binary requires only Git at runtime.
+Building requires Go 1.26 and Git. The installed Lore binary requires Git for
+Git-backed operations and has no external SQLite or CGo runtime requirement.
 
 ```bash
 make check
@@ -22,10 +31,11 @@ sudo install -m 0755 lore /usr/local/bin/lore
 `make build` injects the current commit and UTC build time. Override its defaults for a release build:
 
 ```bash
-make build VERSION=0.2.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-28T00:00:00Z
+make build VERSION=0.3.0 COMMIT="$(git rev-parse HEAD)" BUILD_DATE=2026-07-29T00:00:00Z
 ```
 
-Development builds made with `go build ./cmd/lore` safely report `0.2.0-dev`, `unknown`, and `unknown`.
+Development builds made with `go build ./cmd/lore` safely report `0.3.0-dev`,
+`unknown`, and `unknown`.
 
 ## Five-minute quickstart
 
@@ -52,6 +62,14 @@ lore --repo "$HOME/lore-home" search deploy Foo Kubernetes
 lore --repo "$HOME/lore-home" read src_01ARZ3NDEKTSV4RRFFQ69G5FAV --lines 1:120
 lore --repo "$HOME/lore-home" lint
 lore --repo "$HOME/lore-home" recent --limit 20
+```
+
+Search works directly from Markdown. To add the optional derived index:
+
+```bash
+lore --repo "$HOME/lore-home" index build
+lore --repo "$HOME/lore-home" index status --verify
+lore --repo "$HOME/lore-home" search deploy --backend auto
 ```
 
 For normal page maintenance, prepare a strict transaction request, preview its complete diff and prospective lint result, then commit the exact preview using its returned digest:
@@ -92,10 +110,16 @@ lore --repo PATH capture --kind note --origin import \
 
 ```bash
 lore --repo PATH search 'Project Foo'
-lore --repo PATH search deployment --scope pages --kind project --limit 25 --json
+lore --repo PATH search deployment --scope pages --kind project \
+  --backend auto --include-sensitivity normal --limit 25 --json
 ```
 
-Search is deterministic, Unicode-aware lexical ranking over current Markdown. It returns evidence records with metadata, a best-line snippet, Lore URI, line range, score, and SHA-256 revision. It never synthesizes an answer or mutates the repository.
+Search is deterministic Unicode-aware lexical ranking over current Markdown.
+The default `auto` backend uses a fresh compatible index when it can preserve
+the filesystem semantics and otherwise falls back safely. `index` requires a
+usable index; `filesystem` bypasses it. Results contain evidence metadata, a
+best-line snippet, Lore URI, line range, score, and SHA-256 revision. Search
+never synthesizes an answer or mutates canonical knowledge.
 
 ### Read
 
@@ -113,7 +137,12 @@ lore --repo PATH lint
 lore --repo PATH lint --json
 ```
 
-Lint validates configuration, structure, UTF-8, frontmatter, global IDs, page-name ambiguity, source hashes and paths, relative Markdown links, and selected Git state. Findings are deterministic. Errors return exit code 1; warnings do not.
+Lint validates configuration, structure, UTF-8, frontmatter, global IDs,
+page-name ambiguity, source hashes and paths, relative Markdown links, and
+selected Git state. It also warns when an existing derived index is unhealthy,
+tracked, symlinked, or too broadly readable. Derived warnings do not invalidate
+otherwise-valid canonical Markdown. Findings are deterministic. Errors return
+exit code 1; warnings do not.
 
 ### Preview and commit
 
@@ -149,6 +178,26 @@ lore --repo PATH recover --finalize [--json]
 
 An active recovery journal blocks all content writers. Plain `recover` reports its durable phase and exact recommended action. Rollback first proves that every target is either original or Lore-applied and never overwrites an unexpected edit. Finalize changes no canonical files: it proves the exact direct-child Git commit and its blob hashes, reconciles transaction state, and removes the journal. See [the recovery guide](docs/recovery.md).
 
+### Derived index
+
+```bash
+lore --repo PATH index build [--force] [--json]
+lore --repo PATH index update [--json]
+lore --repo PATH index status [--verify] [--json]
+lore --repo PATH index clear [--json]
+```
+
+Build constructs and verifies a private temporary database before atomic
+replacement. Update reconciles the current canonical scan in one verified SQL
+transaction. Status classifies the index as missing, fresh, stale, uncertified,
+building, corrupt, or incompatible. Clear removes only known derived files and
+is idempotent.
+
+Capture and transaction commit refresh an already-existing compatible index
+after canonical durability and push handling. Refresh is best effort: failure
+returns a warning but never undoes Markdown or Git. See [the index lifecycle
+guide](docs/index.md).
+
 ### Recent
 
 ```bash
@@ -182,7 +231,7 @@ Commands resolve the knowledge repository in this order:
 
 `lore init` instead uses its positional path, or the current directory.
 
-The v0.2 configuration remains schema version 1 and strict:
+The v0.3 configuration remains schema version 1 and strict:
 
 ```yaml
 version: 1
@@ -196,20 +245,41 @@ git:
 
 capture:
   max_bytes: 4194304
+
+index:
+  backend: auto
+  auto_refresh_existing: true
+  candidate_multiplier: 20
+  minimum_candidates: 200
+  maximum_candidates: 2000
 ```
 
 Unknown configuration keys are rejected. Capture and transaction commits preserve unrelated staged or working-tree changes. A transaction push failure never rolls back its local commit. Optional push failure is a warning; when `require_push` is true, it returns exit code 3 while reporting that the canonical update is safely committed locally.
 
-`auto_push_transactions` is optional and defaults to `false`. Adding it to an existing repository is understood by v0.2, but strict v0.1 binaries reject that new key. Leave it absent until every client is upgraded if temporary mixed-version operation is required.
+The `index` block is optional and receives the displayed defaults. Existing
+v0.2 repositories therefore work without configuration edits. Strict v0.2
+binaries reject the new block; omit it during mixed-version use. The complete
+field and bound reference is in [configuration.md](docs/configuration.md).
 
 ## Backup and security
 
 Back up both the current knowledge repository and its Git history. A remote can provide another copy, but remote hosting is a separate disclosure boundary and is not configured by `lore init`.
 
-Lore does not encrypt data. Filesystem permissions and the Unix account are the primary access boundary. Git can retain deleted content indefinitely. Read [the security guide](docs/security.md) before storing sensitive material.
+Lore does not encrypt data. Filesystem permissions and the Unix account are the
+primary access boundary. The local index may contain every sensitivity level,
+and Git can retain deleted content indefinitely. Read [the security
+guide](docs/security.md) before storing sensitive material.
 
-## v0.2 limitations
+## v0.3 limitations
 
-Lore v0.2 intentionally has no semantic/vector search, database, arbitrary file-write command, page delete/rename, source-body edit, automatic synthesis, URL fetching, import pipeline, MCP/HTTP server, web interface, secret storage, encryption, multi-user permissions, background process, or transaction pruning. `local-only` is metadata and is not enforced against clients or remotes.
+Lore v0.3 intentionally has no semantic/vector search, authoritative database,
+arbitrary file-write command, page delete/rename, source-body edit, automatic
+synthesis, URL fetching, import pipeline, MCP/HTTP server, web interface,
+secret storage, encryption, multi-user permissions, background process, or
+transaction pruning. `local-only` remains metadata; the CLI's sensitivity
+filter is a request policy, not an OS access boundary.
 
-Transaction artifacts are derived state and may contain synthesized page bytes and diffs until discarded; committed transaction artifacts have no automatic retention policy in v0.2. Markdown and Git remain authoritative.
+Transaction artifacts and the search index are derived state and can contain
+private document bytes. Committed transaction artifacts have no automatic
+retention policy. Markdown and Git remain authoritative. See the [v0.3 release
+notes](docs/release-notes-v0.3.0.md) and [dependency audit](docs/dependencies.md).

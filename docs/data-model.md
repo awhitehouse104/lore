@@ -1,6 +1,7 @@
 # Lore data model
 
-Lore stores canonical knowledge as UTF-8 Markdown with YAML frontmatter. Runtime state, search implementations, clients, and future indexes are derived adapters.
+Lore stores canonical knowledge as UTF-8 Markdown with YAML frontmatter.
+Runtime state, the local SQLite search index, and clients are derived adapters.
 
 ## Repository layout
 
@@ -22,13 +23,13 @@ lore-home/
 ```
 
 `pages/**` and `sources/**` are managed content roots. Capture can create only
-date-partitioned source files. v0.2 transactions can create or update only
+date-partitioned source files. v0.3 transactions can create or update only
 direct `pages/*.md` children and can update only `integrated_at` and
 `integrated_into` in an existing source. `system/**`, repository instructions,
 configuration, Git metadata, and `.lore/**` are protected from normal content
 writes.
 
-Pages remain flat in v0.2. Sources are partitioned by their UTC capture date:
+Pages remain flat in v0.3. Sources are partitioned by their UTC capture date:
 
 ```text
 sources/YYYY/MM/src_<26-character-uppercase-ULID>-<kind>.md
@@ -122,7 +123,10 @@ Lore does not merge. Page `id` and `created` are immutable during update.
 
 ## Links, references, and revisions
 
-Relative inline Markdown links and reference definitions are checked from the containing document. Repository escapes and missing targets are lint errors. External schemes and pure anchors are not resolved; anchors within local files are not validated in v0.2.
+Relative inline Markdown links and reference definitions are checked from the
+containing document. Repository escapes and missing targets are lint errors.
+External schemes and pure anchors are not resolved; anchors within local files
+are not validated in v0.3.
 
 Read references resolve in this priority:
 
@@ -150,12 +154,27 @@ Optional Git configuration fields are:
 - `remote` (default `origin`);
 - `require_push` (default `false`).
 
+Optional index configuration fields are:
+
+- `backend` (`auto`, `index`, or `filesystem`; default `auto`);
+- `auto_refresh_existing` (default `true`);
+- `candidate_multiplier` (default `20`);
+- `minimum_candidates` (default `200`);
+- `maximum_candidates` (default `2000`).
+
+See [configuration.md](configuration.md) for exact bounds and compatibility.
+
 `.lore/` contains replaceable runtime state. It must be ignored by Git and is
 never canonical knowledge:
 
 ```text
 .lore/
 ├── write.lock/
+├── index.sqlite
+├── index.sqlite-wal
+├── index.sqlite-shm
+├── index.operation.lock
+├── repository-id
 ├── transactions/
 │   └── tx_<ULID>/
 │       ├── proposal.json
@@ -181,5 +200,17 @@ markers and advances through `prepared`, `applying_files`, `files_applied`,
 blocks all other writers. See [recovery.md](recovery.md).
 
 Derived transaction artifacts can contain synthesized page bytes and diffs.
-They use private permissions where supported, but v0.2 has no automatic
+They use private permissions where supported, but v0.3 has no automatic
 retention or pruning.
+
+The SQLite index contains normalized document metadata, body text, exact
+canonical revisions, snapshot metadata, and an external-content FTS5 table.
+Its application schema version is independent of repository/JSON schema
+version `1`. It is never edited or migrated in place; incompatibility requires
+replacement. Installed databases use WAL, while full builds use one
+self-contained temporary database so only a verified artifact is promoted.
+
+All sensitivity levels may be indexed locally. Access policy is applied before
+candidate rows leave the index package. The index, companions, operation lock,
+and repository identity are private derived files and must remain ignored by
+Git. See [index.md](index.md).

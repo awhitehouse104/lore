@@ -11,3 +11,7 @@ Read `AGENTS.md` and `system/OPERATING_RULES.md` before maintaining knowledge.
 Capture raw material first, then use `lore preview` and digest-bound `lore commit`
 for ordinary synthesized-page changes. If Lore reports an interrupted write, run
 `lore recover` and follow its exact rollback or finalize recommendation.
+
+Use ordinary `lore search` for retrieval. The optional `.lore/index.sqlite` is
+disposable derived state; inspect it through `lore index status --verify` and
+never edit it directly.

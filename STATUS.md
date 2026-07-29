@@ -2,7 +2,7 @@
 
 ## Current release and milestone
 
-Lore v0.3.0 — Milestone 5 (documentation and release) in progress.
+Lore v0.3.0 — implementation complete and release-verified.
 
 ## Verified v0.2 baseline for v0.3
 
@@ -112,6 +112,16 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
 - v0.3 M4 `go mod verify`: passed (`all modules verified`)
 - v0.3 M4 10,000-document benchmark: `809817535 ns/op`,
   `179286976 B/op`, `2221907 allocs/op`, index/text ratio `2.223`
+- v0.3 M5 `make check`: passed
+- v0.3 M5 `make test-race`: passed
+- v0.3 M5 `CGO_ENABLED=0 go build ./cmd/lore`: passed
+- v0.3 M5 `go mod tidy -diff`: clean
+- v0.3 M5 `go mod verify`: passed (`all modules verified`)
+- v0.3 M5 `govulncheck ./...` with v1.6.0: passed
+  (`No vulnerabilities found`)
+- v0.3 release build/version injection: passed
+- v0.3 generated-template initialization, lint, full index verification,
+  explicit non-Git indexed search, and clear smoke: passed
 
 ## v0.3 completed milestones
 
@@ -137,12 +147,19 @@ The first baseline attempt ran with a fresh empty `/tmp` module cache and failed
   pre-replacement/pre-commit fault hooks, rollback preservation, WAL reader and
   exclusive-operation concurrency coverage, and a reproducible 10,000-document
   build benchmark.
+- M5: v0.3 command/configuration/index lifecycle/security/recovery
+  documentation, generated agent rules for derived-index handling, exact
+  runtime dependency and selected-graph license inventory, benchmark results,
+  release notes, vulnerability and module-integrity audits, pure-Go build, and
+  generated-repository lifecycle smoke coverage.
 
 v0.3 milestone commits:
 
 - M1: `719f9c2`
 - M2: `a27280d`
 - M3: `80ee3b6`
+- M4: `868fc90`
+- M5: the release commit tagged `v0.3.0`
 
 ## v0.2 completed milestones
 
@@ -162,9 +179,15 @@ Milestone commits:
 
 ## Known issues
 
-- No known v0.2 correctness issues.
-- v0.2 has no automatic transaction-artifact retention or pruning.
-- The supported and fully tested target is Linux with Git available.
+- No known v0.3 correctness issues.
+- v0.3 has no automatic transaction-artifact retention or pruning.
+- A local index intentionally duplicates canonical text and can be larger than
+  the source corpus; it is optional and disposable.
+- Automatic search uses the filesystem for non-Git repositories because Git
+  cannot cheaply certify freshness. Explicit indexed search performs a full
+  manifest comparison.
+- The supported and fully tested target is Linux with Git available. The index
+  operation lock uses Linux `flock`.
 
 ## Material deviations and compatibility notes
 
@@ -172,9 +195,17 @@ Milestone commits:
 - Unified diffs use a narrowly wrapped `git diff --no-index` operation rather than a new Go dependency.
 - Discarded transactions retain proposal/state receipt metadata and a lint summary; full content, diff, and lint payload artifacts are removed.
 - Knowledge-repository `lore.yaml` remains at `version: 1`. `git.auto_push_transactions` is optional and defaults to `false`; strict v0.1 binaries reject a configuration that includes the new key.
+- The v0.3 representative index schema includes deterministic alias/tag JSON
+  and body-line metadata so existing scorer/snippet code consumes exact
+  structured candidates.
+- Full FTS integrity verification remains an explicit status/build/update
+  operation. Indexed search uses read-only state and non-Git manifest checks so
+  readers can continue during a WAL update.
+- The new optional `index` configuration block receives defaults when absent;
+  strict v0.2 binaries reject it during mixed-version operation.
 
 ## Next checkpoint
 
-Complete v0.3 Milestone 5: generated rules, command/config/index/security
-documentation, dependency and license records, release notes, final security
-and smoke audits, and the annotated `v0.3.0` tag.
+Future work begins from the exact commit tagged `v0.3.0`. Preserve the v0.3
+Markdown authority, JSON schema, lexical parity, derived-index, transaction,
+and recovery contracts before adding a new milestone.

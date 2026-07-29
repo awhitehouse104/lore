@@ -88,3 +88,27 @@ from trusted backup if exact state cannot be established.
 
 Recovery artifacts can contain exact private document bytes. Keep them out of
 support tickets, logs, and commit messages.
+
+## Derived-index recovery is separate
+
+The SQLite search index is not part of canonical transaction recovery. An
+active recovery journal makes an installed index stale, so automatic and
+explicit indexed search will not use it.
+
+After rollback or finalize, inspect and refresh an existing index:
+
+```bash
+lore --repo PATH index status --verify
+lore --repo PATH index update
+```
+
+If status reports corruption or incompatibility, delete only the derived index
+and rebuild:
+
+```bash
+lore --repo PATH index clear
+lore --repo PATH index build
+```
+
+Index update/build failure cannot undo a recovered canonical tree or Git
+commit. Never edit SQLite metadata to make a stale index appear fresh.
