@@ -446,7 +446,7 @@ func checkRuntimeState(result *Result, repo *repository.Repository, now time.Tim
 		})
 		return
 	}
-	ids, err := transactionStore.ListIDs()
+	ids, err := transactionStore.ListIDsStrict()
 	if err != nil {
 		result.Findings = append(result.Findings, Finding{
 			Severity: SeverityWarning,
@@ -457,17 +457,35 @@ func checkRuntimeState(result *Result, repo *repository.Repository, now time.Tim
 		return
 	}
 	for _, transactionID := range ids {
-		state, err := transactionStore.LoadState(transactionID)
+		receipt, err := transactionStore.LoadReceipt(transactionID)
 		if err != nil {
 			result.Findings = append(result.Findings, Finding{
 				Severity: SeverityWarning,
 				Code:     "transaction_artifact_invalid",
 				Path:     ".lore/transactions/" + transactionID,
-				Message:  "transaction state failed integrity validation",
+				Message:  "transaction receipt failed integrity validation",
 			})
 			continue
 		}
-		if state.Status != transaction.StatusPreviewed {
+		if receipt.Retention != nil {
+			if _, err := transactionStore.InspectPrune(transactionID); err != nil {
+				result.Findings = append(result.Findings, Finding{
+					Severity: SeverityWarning,
+					Code:     "transaction_artifact_invalid",
+					Path:     ".lore/transactions/" + transactionID,
+					Message:  "transaction retention receipt failed integrity validation",
+				})
+			} else if receipt.Retention.Phase == transaction.RetentionPruning {
+				result.Findings = append(result.Findings, Finding{
+					Severity: SeverityWarning,
+					Code:     "transaction_prune_incomplete",
+					Path:     ".lore/transactions/" + transactionID,
+					Message:  "transaction payload pruning was interrupted and can be resumed",
+				})
+			}
+			continue
+		}
+		if receipt.State.Status != transaction.StatusPreviewed {
 			continue
 		}
 		artifacts, err := transactionStore.Load(transactionID)

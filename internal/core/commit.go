@@ -89,7 +89,7 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 	}
 
 	now := s.Clock.Now().UTC()
-	handle, apiErr := acquireWriteLock(s.Repo, "commit", now)
+	handle, apiErr := s.acquireWriteLock(ctx, "commit", now)
 	if apiErr != nil {
 		return result, apiErr
 	}

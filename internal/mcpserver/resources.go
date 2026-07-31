@@ -11,20 +11,31 @@ import (
 	"lore/internal/catalog"
 	"lore/internal/core"
 	"lore/internal/docs"
+	"lore/internal/repository"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
 	resourceMIMEType     = "text/markdown; charset=utf-8"
+	resourceListMethod   = "resources/list"
 	maximumResourceBytes = 512 * 1024
 )
+
+var errResourceCatalogUnavailable = errors.New("Lore resource catalog unavailable")
+
+type resourceCatalogScanner func(context.Context, *repository.Repository) (catalog.Catalog, error)
+
+func scanResourceCatalog(ctx context.Context, repo *repository.Repository) (catalog.Catalog, error) {
+	documentCatalog, _, err := catalog.Scan(ctx, repo, false)
+	return documentCatalog, err
+}
 
 func (s *Server) addResources(ctx context.Context) {
 	if !s.principal.Has(auth.PermissionQuery) {
 		return
 	}
-	s.refreshPageResources(ctx)
+	s.mcp.AddReceivingMiddleware(s.lazyResourceListMiddleware)
 	for _, kind := range []string{"pages", "sources"} {
 		s.mcp.AddResourceTemplate(&mcp.ResourceTemplate{
 			URITemplate: "lore://" + kind + "/{id}",
@@ -32,6 +43,11 @@ func (s *Server) addResources(ctx context.Context) {
 			Description: "Read one authorized Lore document by its exact canonical ID",
 			MIMEType:    resourceMIMEType,
 		}, s.readResource)
+	}
+	if s.principal.Transport != auth.TransportHTTP {
+		if err := s.ensurePageResources(ctx); err != nil {
+			s.logResourceCatalogUnavailable()
+		}
 	}
 }
 
@@ -42,11 +58,43 @@ type pageResource struct {
 	size        int64
 }
 
+func (s *Server) lazyResourceListMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+		if method == resourceListMethod {
+			if err := s.ensurePageResources(ctx); err != nil {
+				s.logResourceCatalogUnavailable()
+				return nil, errResourceCatalogUnavailable
+			}
+		}
+		return next(ctx, method, request)
+	}
+}
+
+func (s *Server) ensurePageResources(ctx context.Context) error {
+	s.resourceMu.Lock()
+	defer s.resourceMu.Unlock()
+	if s.resourcesLoaded {
+		return nil
+	}
+	return s.reloadPageResourcesLocked(ctx)
+}
+
 func (s *Server) refreshPageResources(ctx context.Context) {
-	documentCatalog, _, err := catalog.Scan(ctx, s.service.Repo, false)
-	if err != nil {
-		s.logger.Error("Lore resource catalog unavailable", "code", "catalog_scan_failed")
+	s.resourceMu.Lock()
+	defer s.resourceMu.Unlock()
+	if !s.resourcesLoaded {
 		return
+	}
+	if err := s.reloadPageResourcesLocked(ctx); err != nil {
+		s.logResourceCatalogUnavailable()
+	}
+}
+
+func (s *Server) reloadPageResourcesLocked(ctx context.Context) error {
+	documentCatalog, err := s.resourceScan(ctx, s.service.Repo)
+	if err != nil {
+		s.resourcesLoaded = false
+		return err
 	}
 	desired := make(map[string]pageResource)
 	for _, document := range documentCatalog.Documents {
@@ -61,8 +109,6 @@ func (s *Server) refreshPageResources(ctx context.Context) {
 			size:        int64(len(document.Data)),
 		}
 	}
-	s.resourceMu.Lock()
-	defer s.resourceMu.Unlock()
 	for uri := range s.pageResources {
 		if _, exists := desired[uri]; !exists {
 			s.mcp.RemoveResources(uri)
@@ -82,6 +128,12 @@ func (s *Server) refreshPageResources(ctx context.Context) {
 		}, s.readResource)
 	}
 	s.pageResources = desired
+	s.resourcesLoaded = true
+	return nil
+}
+
+func (s *Server) logResourceCatalogUnavailable() {
+	s.logger.Error("Lore resource catalog unavailable", "code", "catalog_scan_failed")
 }
 
 func (s *Server) readResource(ctx context.Context, request *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {

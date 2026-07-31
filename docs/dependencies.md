@@ -1,6 +1,6 @@
 # Lore v0.4 dependency and security audit
 
-Audit date: 2026-07-29.
+Audit date: 2026-07-30.
 
 Lore builds with Go 1.26, uses the official Go MCP SDK, and embeds a pure-Go
 SQLite/FTS5 implementation. The installed binary does not require a system
@@ -13,6 +13,7 @@ SQLite library, C toolchain, database server, LLM SDK, or application server.
 | `github.com/modelcontextprotocol/go-sdk` | `v1.7.0` | Apache-2.0/MIT transition notice | MCP protocol, schemas, stdio, and stateless Streamable HTTP |
 | `github.com/oklog/ulid/v2` | `v2.1.2` | Apache-2.0 | Source, transaction, index-build, and request identifiers |
 | `go.yaml.in/yaml/v4` | `v4.0.0-rc.6` | Apache-2.0 | Strict repository/server configuration and Markdown frontmatter |
+| `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | Concurrency-safe per-principal HTTP token buckets |
 | `modernc.org/sqlite` | `v1.54.0` | BSD-3-Clause | Pure-Go SQLite and FTS5 |
 
 The MCP SDK license file records its ongoing transition from MIT to
@@ -35,7 +36,6 @@ there.
 | `golang.org/x/oauth2` | `v0.35.0` | BSD-3-Clause | MCP SDK remote-auth protocol support |
 | `golang.org/x/sync` | `v0.21.0` | BSD-3-Clause | MCP/SQLite transitive synchronization |
 | `golang.org/x/sys` | `v0.46.0` | BSD-3-Clause | Platform system calls |
-| `golang.org/x/time` | `v0.15.0` | BSD-3-Clause | MCP SDK rate-control support |
 | `modernc.org/libc` | `v1.74.1` | BSD-3-Clause plus documented third-party notices | Pure-Go libc layer |
 | `modernc.org/mathutil` | `v1.7.1` | BSD-3-Clause | SQLite numeric transitive support |
 | `modernc.org/memory` | `v1.11.0` | BSD-3-Clause plus bundled component notices | SQLite memory transitive support |

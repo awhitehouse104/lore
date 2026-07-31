@@ -8,6 +8,9 @@ transport:
   request_max_bytes: 8388608
   response_max_bytes: 8388608
   max_concurrent_requests: 8
+  rate_limit:
+    requests_per_minute: 600
+    burst_requests: 128
   request_timeout: 60s
   shutdown_timeout: 15s
   allowed_origins: []

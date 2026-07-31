@@ -17,6 +17,9 @@ import (
 	"time"
 
 	"lore/internal/core"
+	"lore/internal/repository"
+	"lore/internal/search"
+	"lore/internal/transaction"
 )
 
 func TestVersionJSON(t *testing.T) {
@@ -274,6 +277,30 @@ Project Foo should remain deployable without Kubernetes.
 	}
 	if searched.SchemaVersion != 1 || len(searched.Results) != 1 || searched.Results[0].Path != "pages/project-foo.md" {
 		t.Fatalf("search result: %+v", searched)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{
+		"search", "deplyable", "Kubernets", "--matching", "auto", "--repo", root, "--json",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("fuzzy search returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var fuzzy struct {
+		Matching      string `json:"matching"`
+		FuzzyExpanded bool   `json:"fuzzy_expanded"`
+		Results       []struct {
+			ID           string              `json:"id"`
+			FuzzyMatches []search.FuzzyMatch `json:"fuzzy_matches"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &fuzzy); err != nil {
+		t.Fatal(err)
+	}
+	if fuzzy.Matching != "auto" || !fuzzy.FuzzyExpanded || len(fuzzy.Results) != 1 ||
+		fuzzy.Results[0].ID != "page_project_foo" || len(fuzzy.Results[0].FuzzyMatches) != 2 {
+		t.Fatalf("fuzzy search result: %+v", fuzzy)
 	}
 
 	stdout.Reset()
@@ -555,6 +582,172 @@ func TestCommitTransactionJSON(t *testing.T) {
 	}
 }
 
+func TestTransactionPruneJSON(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := filepath.Join(t.TempDir(), "knowledge")
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	page := `---
+id: page_cli_prune
+title: CLI Prune
+kind: topic
+created: "2026-07-28"
+updated: "2026-07-28"
+status: active
+sensitivity: normal
+---
+CLI prune fixture.
+`
+	requestBytes, err := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"message":        "create: CLI prune",
+		"operations": []map[string]any{{
+			"op": "create_page", "path": "pages/cli-prune.md", "content": page,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(
+		context.Background(),
+		[]string{"--repo", root, "preview", "--json"},
+		bytes.NewReader(requestBytes),
+		&stdout,
+		&stderr,
+	); code != core.ExitOK {
+		t.Fatalf("preview returned %d: stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var preview core.PreviewResult
+	if err := json.Unmarshal(stdout.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(
+		context.Background(),
+		[]string{
+			"--repo", root, "commit", preview.TransactionID,
+			"--preview-digest", preview.PreviewDigest, "--json",
+		},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	); code != core.ExitOK {
+		t.Fatalf("commit returned %d: stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := transaction.NewStore(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.LoadState(preview.TransactionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.CommittedAt = "2020-01-01T00:00:00Z"
+	state.UpdatedAt = "2020-01-01T00:00:00Z"
+	if err := store.UpdateState(preview.TransactionID, state); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(
+		context.Background(),
+		[]string{
+			"--repo", root, "transaction", "prune",
+			"--older-than", "1h", "--dry-run", "--json",
+		},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	); code != core.ExitOK {
+		t.Fatalf("prune dry-run returned %d: stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var dryRun core.TransactionPruneResult
+	if err := json.Unmarshal(stdout.Bytes(), &dryRun); err != nil {
+		t.Fatal(err)
+	}
+	if !dryRun.DryRun || dryRun.Selected != 1 || dryRun.Pruned != 0 {
+		t.Fatalf("prune dry-run = %+v", dryRun)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(
+		context.Background(),
+		[]string{
+			"--repo", root, "transaction", "prune",
+			"--older-than=1h", "--json",
+		},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	); code != core.ExitOK {
+		t.Fatalf("prune returned %d: stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var pruned core.TransactionPruneResult
+	if err := json.Unmarshal(stdout.Bytes(), &pruned); err != nil {
+		t.Fatal(err)
+	}
+	if pruned.DryRun || pruned.Pruned != 1 || pruned.FilesRemoved != 3 ||
+		len(pruned.Transactions) != 1 || pruned.Transactions[0].ArtifactState != "pruned" {
+		t.Fatalf("prune result = %+v", pruned)
+	}
+}
+
+func TestTransactionPruneAgeParsingAndRequiredFlag(t *testing.T) {
+	tests := []struct {
+		value string
+		want  time.Duration
+		ok    bool
+	}{
+		{value: "1h", want: time.Hour, ok: true},
+		{value: "30d", want: 30 * 24 * time.Hour, ok: true},
+		{value: "4w", want: 4 * 7 * 24 * time.Hour, ok: true},
+		{value: "0d"},
+		{value: "-1d"},
+		{value: "1m"},
+		{value: "1.5d"},
+		{value: "forever"},
+	}
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			got, err := parsePruneAge(test.value)
+			if (err == nil) != test.ok || got != test.want {
+				t.Fatalf("parsePruneAge(%q) = %s, %v", test.value, got, err)
+			}
+		})
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Run(
+		context.Background(),
+		[]string{"transaction", "prune", "--json"},
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if code != core.ExitUsage || !strings.Contains(stdout.String(), `"code":"older_than_required"`) {
+		t.Fatalf("missing older-than = code %d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+}
+
 func TestRecoveryStatusJSONWithoutActiveJournal(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
 	var stdout, stderr bytes.Buffer
@@ -577,6 +770,76 @@ func TestRecoveryStatusJSONWithoutActiveJournal(t *testing.T) {
 	if result.Active || result.RecommendedAction != "none" {
 		t.Fatalf("result = %+v", result)
 	}
+}
+
+func TestRecoveryFailuresPreserveExitCodesAndPrivateJSON(t *testing.T) {
+	t.Run("actions without active recovery", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "knowledge")
+		var stdout, stderr bytes.Buffer
+		if code := Run(t.Context(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+			t.Fatalf("init returned %d: %s", code, stderr.String())
+		}
+		for _, action := range []string{"--rollback", "--finalize"} {
+			stdout.Reset()
+			stderr.Reset()
+			code := Run(
+				t.Context(),
+				[]string{"recover", "--repo", root, action, "--json"},
+				strings.NewReader(""),
+				&stdout,
+				&stderr,
+			)
+			var envelope core.ErrorEnvelope
+			if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+				t.Fatalf("%s response is not JSON: %q: %v", action, stdout.String(), err)
+			}
+			if code != core.ExitUsage || envelope.Error == nil ||
+				envelope.Error.Code != "no_active_recovery" || stderr.Len() != 0 {
+				t.Fatalf("%s = code %d envelope=%+v stderr=%q", action, code, envelope, stderr.String())
+			}
+		}
+	})
+
+	t.Run("malformed journal", func(t *testing.T) {
+		const secret = "seeded-secret-recovery-body"
+		root := filepath.Join(t.TempDir(), "knowledge")
+		var stdout, stderr bytes.Buffer
+		if code := Run(t.Context(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+			t.Fatalf("init returned %d: %s", code, stderr.String())
+		}
+		active := filepath.Join(root, ".lore", "recovery", "active")
+		if err := os.MkdirAll(filepath.Join(active, "originals"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(active, "journal.json"),
+			[]byte(`{"unexpected":"`+secret+`"}`+"\n"),
+			0o600,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		stdout.Reset()
+		stderr.Reset()
+		code := Run(
+			t.Context(),
+			[]string{"recover", "--repo", root, "--json"},
+			strings.NewReader(""),
+			&stdout,
+			&stderr,
+		)
+		var envelope core.ErrorEnvelope
+		if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+			t.Fatalf("response is not JSON: %q: %v", stdout.String(), err)
+		}
+		if code != core.ExitRuntime || envelope.Error == nil ||
+			envelope.Error.Code != "recovery_integrity_failed" || stderr.Len() != 0 {
+			t.Fatalf("result = code %d envelope=%+v stderr=%q", code, envelope, stderr.String())
+		}
+		if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
+			t.Fatal("recovery failure output leaked journal content")
+		}
+	})
 }
 
 func TestIndexBuildAndStatusJSON(t *testing.T) {

@@ -1,0 +1,53 @@
+# Requires Caddy 2.10 or newer for request_body max_size.
+# Replace this host before validating or installing the file.
+{
+	# Reverse-proxy runtime errors can otherwise contain request metadata.
+	# Removing the complete request object still preserves the operational error.
+	log default {
+		format filter {
+			request delete
+			wrap json
+		}
+	}
+
+	servers :443 {
+		timeouts {
+			read_header 10s
+			read_body 65s
+			write 70s
+			idle 60s
+		}
+		max_header_size 16KiB
+	}
+}
+
+lore.example.com {
+	# Access logging is deliberately not enabled. Never log MCP bodies or enable
+	# the global log_credentials option around Lore. If source attribution is
+	# justified, use the separate Caddyfile-auth-observability example.
+	header {
+		Cache-Control "private, no-store"
+		Pragma "no-cache"
+		X-Content-Type-Options "nosniff"
+	}
+
+	# This exact matcher keeps Lore's unauthenticated health endpoints local.
+	@mcp path /mcp
+	handle @mcp {
+		request_body {
+			max_size 8MiB
+		}
+
+		# Caddy preserves Authorization by default. Do not replace or remove it.
+		reverse_proxy 127.0.0.1:8787 {
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 65s
+			}
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

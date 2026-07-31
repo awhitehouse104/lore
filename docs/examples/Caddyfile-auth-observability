@@ -1,0 +1,89 @@
+# Optional public-edge observability example. This records source IP addresses,
+# timestamps, and HTTP status codes for exact /mcp requests. Treat the log as
+# personal data, keep its retention short, and use the default Caddyfile when
+# source-address logging is not justified.
+#
+# Requires Caddy 2.10 or newer for request_body max_size.
+# Replace this host before validating or installing the file.
+{
+	# Keep Caddy's separate runtime/error stream free of request metadata. The
+	# explicitly minimized access logger below owns source attribution.
+	log default {
+		format filter {
+			request delete
+			wrap json
+		}
+	}
+
+	servers :443 {
+		timeouts {
+			read_header 10s
+			read_body 65s
+			write 70s
+			idle 60s
+		}
+		max_header_size 16KiB
+	}
+}
+
+lore.example.com {
+	# Caddy sees the public peer; loopback Lore does not. This opt-in access log
+	# removes headers and variable request metadata before writing JSON. It logs
+	# successful and denied /mcp requests because status is known only after
+	# request routing. Do not enable the global log_credentials option.
+	log lore_auth {
+		output file /var/log/caddy/lore-auth.json {
+			mode 0600
+			roll_size 10MiB
+			roll_keep 7
+			roll_keep_for 168h
+		}
+		format filter {
+			request>remote_port delete
+			request>client_ip delete
+			request>proto delete
+			request>method delete
+			request>host delete
+			request>uri replace /mcp
+			request>headers delete
+			request>tls delete
+			bytes_read delete
+			user_id delete
+			duration delete
+			size delete
+			resp_headers delete
+			wrap json
+		}
+	}
+
+	# Avoid recording scans and unrelated paths. The access log above still
+	# records both successful and denied requests to this exact MCP path.
+	@not_mcp not path /mcp
+	log_skip @not_mcp
+
+	header {
+		Cache-Control "private, no-store"
+		Pragma "no-cache"
+		X-Content-Type-Options "nosniff"
+	}
+
+	@mcp path /mcp
+	handle @mcp {
+		request_body {
+			max_size 8MiB
+		}
+
+		# Caddy preserves Authorization for Lore but removes it from this access
+		# log with request>headers delete above.
+		reverse_proxy 127.0.0.1:8787 {
+			transport http {
+				dial_timeout 3s
+				response_header_timeout 65s
+			}
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

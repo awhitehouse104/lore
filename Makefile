@@ -1,4 +1,4 @@
-.PHONY: fmt vet test test-race build check
+.PHONY: fmt vet test test-race build check eval-retrieval
 
 VERSION ?= 0.4.0-dev
 COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
@@ -25,3 +25,6 @@ check:
 	go vet ./...
 	go test ./...
 	go build ./cmd/lore
+
+eval-retrieval:
+	go run ./cmd/lore-retrieval-eval

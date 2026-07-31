@@ -2,10 +2,13 @@ package index
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 
+	"lore/internal/catalog"
 	"lore/internal/docs"
 	"lore/internal/search"
 )
@@ -79,7 +82,7 @@ func (m *Manager) IndexCandidates(ctx context.Context, request search.CandidateR
 		return batch, classifyRuntime("index_metadata_failed", "could not read index metadata", err)
 	}
 	schemaVersion, err := metadataSchemaVersion(metadata)
-	if err != nil || schemaVersion != SchemaVersion || metadata["build_complete"] != "true" {
+	if err != nil || schemaVersion != IndexSchemaVersion || metadata["build_complete"] != "true" {
 		return batch, newError(ErrorRuntime, "index_incompatible", "the index is incomplete or incompatible", err)
 	}
 	snapshot, err := m.currentSnapshot(ctx, false)
@@ -113,6 +116,75 @@ func (m *Manager) IndexCandidates(ctx context.Context, request search.CandidateR
 		}
 	}
 
+	filterSQL, filterArguments, allowed, err := candidateFilters(request)
+	if err != nil {
+		return batch, err
+	}
+	if !allowed {
+		return search.CandidateBatch{Documents: []search.Candidate{}}, nil
+	}
+	if err := db.QueryRowContext(
+		ctx,
+		"SELECT count(*) FROM documents AS d WHERE 1=1"+filterSQL,
+		filterArguments...,
+	).Scan(&batch.CorpusSize); err != nil {
+		return batch, newError(ErrorRuntime, "index_search_failed", "could not count the filtered search corpus", err)
+	}
+	batch.DocumentFrequency = make(map[string]int, len(request.QueryTokens))
+	for _, token := range request.QueryTokens {
+		if token == "" {
+			continue
+		}
+		frequencyArguments := append([]any{token}, filterArguments...)
+		var frequency int
+		if err := db.QueryRowContext(
+			ctx,
+			`SELECT count(*)
+FROM document_terms AS t
+JOIN documents AS d ON d.rowid=t.document_rowid
+WHERE t.term=?`+filterSQL,
+			frequencyArguments...,
+		).Scan(&frequency); err != nil {
+			return batch, newError(ErrorRuntime, "index_search_failed", "could not compute lexical document frequency", err)
+		}
+		batch.DocumentFrequency[token] = frequency
+	}
+	plan, err := search.PlanFuzzyExpansion(request.QueryTokens, request.Matching, batch.DocumentFrequency)
+	if err != nil {
+		return batch, err
+	}
+	if plan.Truncated {
+		batch.Warnings = append(batch.Warnings, catalog.Warning{
+			Code:    "fuzzy_token_limit",
+			Path:    ".lore/index.sqlite",
+			Message: "automatic fuzzy matching considered the eight longest eligible query terms",
+		})
+	}
+	if len(plan.Targets) > 0 {
+		vocabulary, limitReached, err := indexedFuzzyVocabulary(ctx, db, plan, filterSQL, filterArguments)
+		if err != nil {
+			return batch, err
+		}
+		if limitReached {
+			if search.NormalizeMatching(request.Matching) == search.MatchingFuzzy {
+				return batch, &search.MatchingError{
+					Code:    "fuzzy_vocabulary_limit",
+					Message: fmt.Sprintf("filtered fuzzy vocabulary exceeds the supported bound of %d terms", search.MaximumFuzzyVocabularyTerms),
+				}
+			}
+			batch.Warnings = append(batch.Warnings, catalog.Warning{
+				Code:    "fuzzy_vocabulary_limit",
+				Path:    ".lore/index.sqlite",
+				Message: "automatic fuzzy expansion was skipped because the filtered vocabulary exceeded its work bound",
+			})
+		} else {
+			batch.Expansions = search.SelectFuzzyExpansions(plan, vocabulary)
+			for _, expansion := range batch.Expansions {
+				batch.DocumentFrequency[expansion.DocumentTerm] = expansion.DocumentFrequency
+			}
+		}
+	}
+
 	query := strings.Builder{}
 	query.WriteString(`
 SELECT d.path, d.document_id, d.document_type, d.title, d.kind, d.sensitivity,
@@ -120,55 +192,10 @@ SELECT d.path, d.document_id, d.document_type, d.title, d.kind, d.sensitivity,
 FROM documents_fts
 JOIN documents AS d ON d.rowid=documents_fts.rowid
 WHERE documents_fts MATCH ?`)
-	arguments := []any{request.MatchExpression}
-	switch request.Scope {
-	case search.ScopePages:
-		query.WriteString(" AND d.document_type='page'")
-	case search.ScopeSources:
-		query.WriteString(" AND d.document_type='source'")
-	case "", search.ScopeAll:
-	default:
-		return batch, newError(ErrorUsage, "invalid_scope", "index candidate scope is invalid", nil)
-	}
-	if request.Kind != "" {
-		query.WriteString(" AND d.kind=?")
-		arguments = append(arguments, request.Kind)
-	}
-	tags := append([]string(nil), request.Tags...)
-	sort.Strings(tags)
-	for _, tag := range tags {
-		query.WriteString(" AND EXISTS (SELECT 1 FROM json_each(d.tags_json) WHERE value=?)")
-		arguments = append(arguments, tag)
-	}
-	paths := append([]string(nil), request.Paths...)
-	sort.Strings(paths)
-	if len(paths) > 0 {
-		query.WriteString(" AND (")
-		for index, path := range paths {
-			if index > 0 {
-				query.WriteString(" OR ")
-			}
-			path = strings.TrimSuffix(path, "/")
-			query.WriteString("(d.path=? OR d.path LIKE ? ESCAPE '\\')")
-			arguments = append(arguments, path, escapeLike(path)+"/%")
-		}
-		query.WriteByte(')')
-	}
-	sensitivities := append([]string(nil), request.AllowedSensitivities...)
-	sort.Strings(sensitivities)
-	if len(sensitivities) == 0 {
-		return search.CandidateBatch{Documents: []search.Candidate{}}, nil
-	}
-	query.WriteString(" AND d.sensitivity IN (")
-	for index := range sensitivities {
-		if index > 0 {
-			query.WriteByte(',')
-		}
-		query.WriteByte('?')
-		arguments = append(arguments, sensitivities[index])
-	}
-	query.WriteByte(')')
-	query.WriteString(" ORDER BY bm25(documents_fts, 8.0, 4.0, 3.0, 1.0, 1.0), d.path LIMIT ?")
+	query.WriteString(filterSQL)
+	matchExpression := search.ExtendMatchExpression(request.MatchExpression, batch.Expansions)
+	arguments := append([]any{matchExpression}, filterArguments...)
+	query.WriteString(" ORDER BY bm25(documents_fts, 8.0, 4.0, 3.0, 2.0, 1.0, 1.0), d.path LIMIT ?")
 	arguments = append(arguments, request.Limit+1)
 
 	rows, err := db.QueryContext(ctx, query.String(), arguments...)
@@ -227,6 +254,110 @@ WHERE documents_fts MATCH ?`)
 	}
 	batch.Documents = candidates
 	return batch, nil
+}
+
+func indexedFuzzyVocabulary(
+	ctx context.Context,
+	db interface {
+		QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	},
+	plan search.FuzzyPlan,
+	filterSQL string,
+	filterArguments []any,
+) ([]search.VocabularyTerm, bool, error) {
+	lengths := search.FuzzyCandidateLengths(plan)
+	query := strings.Builder{}
+	query.WriteString(`
+SELECT t.term, count(*)
+FROM document_terms AS t
+JOIN documents AS d ON d.rowid=t.document_rowid
+WHERE t.rune_length IN (`)
+	arguments := make([]any, 0, len(lengths)+len(filterArguments)+1)
+	for index, length := range lengths {
+		if index > 0 {
+			query.WriteByte(',')
+		}
+		query.WriteByte('?')
+		arguments = append(arguments, length)
+	}
+	query.WriteByte(')')
+	query.WriteString(filterSQL)
+	query.WriteString(" GROUP BY t.term ORDER BY t.term LIMIT ?")
+	arguments = append(arguments, filterArguments...)
+	arguments = append(arguments, search.MaximumFuzzyVocabularyTerms+1)
+	rows, err := db.QueryContext(ctx, query.String(), arguments...)
+	if err != nil {
+		return nil, false, newError(ErrorRuntime, "index_search_failed", "could not read the filtered fuzzy vocabulary", err)
+	}
+	defer rows.Close()
+	vocabulary := make([]search.VocabularyTerm, 0)
+	for rows.Next() {
+		var term search.VocabularyTerm
+		if err := rows.Scan(&term.Term, &term.DocumentFrequency); err != nil {
+			return nil, false, newError(ErrorRuntime, "index_search_failed", "could not decode the filtered fuzzy vocabulary", err)
+		}
+		vocabulary = append(vocabulary, term)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, newError(ErrorRuntime, "index_search_failed", "could not read the filtered fuzzy vocabulary", err)
+	}
+	if len(vocabulary) > search.MaximumFuzzyVocabularyTerms {
+		return nil, true, nil
+	}
+	return vocabulary, false, nil
+}
+
+func candidateFilters(request search.CandidateRequest) (string, []any, bool, error) {
+	query := strings.Builder{}
+	arguments := []any{}
+	switch request.Scope {
+	case search.ScopePages:
+		query.WriteString(" AND d.document_type='page'")
+	case search.ScopeSources:
+		query.WriteString(" AND d.document_type='source'")
+	case "", search.ScopeAll:
+	default:
+		return "", nil, false, newError(ErrorUsage, "invalid_scope", "index candidate scope is invalid", nil)
+	}
+	if request.Kind != "" {
+		query.WriteString(" AND d.kind=?")
+		arguments = append(arguments, request.Kind)
+	}
+	tags := append([]string(nil), request.Tags...)
+	sort.Strings(tags)
+	for _, tag := range tags {
+		query.WriteString(" AND EXISTS (SELECT 1 FROM json_each(d.tags_json) WHERE value=?)")
+		arguments = append(arguments, tag)
+	}
+	paths := append([]string(nil), request.Paths...)
+	sort.Strings(paths)
+	if len(paths) > 0 {
+		query.WriteString(" AND (")
+		for index, path := range paths {
+			if index > 0 {
+				query.WriteString(" OR ")
+			}
+			path = strings.TrimSuffix(path, "/")
+			query.WriteString("(d.path=? OR d.path LIKE ? ESCAPE '\\')")
+			arguments = append(arguments, path, escapeLike(path)+"/%")
+		}
+		query.WriteByte(')')
+	}
+	sensitivities := append([]string(nil), request.AllowedSensitivities...)
+	sort.Strings(sensitivities)
+	if len(sensitivities) == 0 {
+		return "", nil, false, nil
+	}
+	query.WriteString(" AND d.sensitivity IN (")
+	for index := range sensitivities {
+		if index > 0 {
+			query.WriteByte(',')
+		}
+		query.WriteByte('?')
+		arguments = append(arguments, sensitivities[index])
+	}
+	query.WriteByte(')')
+	return query.String(), arguments, true, nil
 }
 
 func escapeLike(value string) string {

@@ -22,18 +22,24 @@ import (
 )
 
 const (
-	DefaultPath                        = "/etc/lore/mcp.yaml"
-	DefaultListen                      = "127.0.0.1:8787"
-	DefaultEndpoint                    = "/mcp"
-	DefaultRequestMaxBytes       int64 = 8 * 1024 * 1024
-	DefaultResponseMaxBytes      int64 = 8 * 1024 * 1024
-	DefaultMaxConcurrentRequests       = 8
-	DefaultRequestTimeout              = 60 * time.Second
-	DefaultShutdownTimeout             = 15 * time.Second
-	MaximumConfigBytes           int64 = 1 * 1024 * 1024
-	MaximumRequestBytes          int64 = 64 * 1024 * 1024
-	MaximumResponseBytes         int64 = 64 * 1024 * 1024
-	MaximumConcurrentRequests          = 64
+	DefaultPath                             = "/etc/lore/mcp.yaml"
+	DefaultListen                           = "127.0.0.1:8787"
+	DefaultEndpoint                         = "/mcp"
+	DefaultRequestMaxBytes            int64 = 8 * 1024 * 1024
+	DefaultResponseMaxBytes           int64 = 8 * 1024 * 1024
+	DefaultMaxConcurrentRequests            = 8
+	DefaultRateLimitRequestsPerMinute       = 600
+	DefaultRateLimitBurstRequests           = 128
+	DefaultRequestTimeout                   = 60 * time.Second
+	DefaultShutdownTimeout                  = 15 * time.Second
+	MaximumConfigBytes                int64 = 1 * 1024 * 1024
+	MaximumRequestBytes               int64 = 64 * 1024 * 1024
+	MaximumResponseBytes              int64 = 64 * 1024 * 1024
+	MaximumConcurrentRequests               = 64
+	MaximumRateLimitRequestsPerMinute       = 60_000
+	MaximumRateLimitBurstRequests           = 4_096
+	MaximumAggregateRequestBytes      int64 = 64 * 1024 * 1024
+	MaximumAggregateResponseBytes     int64 = 64 * 1024 * 1024
 )
 
 type Duration time.Duration
@@ -70,14 +76,20 @@ type Config struct {
 }
 
 type TransportConfig struct {
-	RequestMaxBytes           int64    `yaml:"request_max_bytes"`
-	ResponseMaxBytes          int64    `yaml:"response_max_bytes"`
-	MaxConcurrentRequests     int      `yaml:"max_concurrent_requests"`
-	RequestTimeout            Duration `yaml:"request_timeout"`
-	ShutdownTimeout           Duration `yaml:"shutdown_timeout"`
-	AllowedOrigins            []string `yaml:"allowed_origins"`
-	TrustForwardedHeaders     bool     `yaml:"trust_forwarded_headers"`
-	AllowPlaintextNonLoopback bool     `yaml:"allow_plaintext_non_loopback"`
+	RequestMaxBytes           int64           `yaml:"request_max_bytes"`
+	ResponseMaxBytes          int64           `yaml:"response_max_bytes"`
+	MaxConcurrentRequests     int             `yaml:"max_concurrent_requests"`
+	RateLimit                 RateLimitConfig `yaml:"rate_limit"`
+	RequestTimeout            Duration        `yaml:"request_timeout"`
+	ShutdownTimeout           Duration        `yaml:"shutdown_timeout"`
+	AllowedOrigins            []string        `yaml:"allowed_origins"`
+	TrustForwardedHeaders     bool            `yaml:"trust_forwarded_headers"`
+	AllowPlaintextNonLoopback bool            `yaml:"allow_plaintext_non_loopback"`
+}
+
+type RateLimitConfig struct {
+	RequestsPerMinute int `yaml:"requests_per_minute"`
+	BurstRequests     int `yaml:"burst_requests"`
 }
 
 type AuthConfig struct {
@@ -103,9 +115,13 @@ func Defaults() Config {
 		Listen:   DefaultListen,
 		Endpoint: DefaultEndpoint,
 		Transport: TransportConfig{
-			RequestMaxBytes:           DefaultRequestMaxBytes,
-			ResponseMaxBytes:          DefaultResponseMaxBytes,
-			MaxConcurrentRequests:     DefaultMaxConcurrentRequests,
+			RequestMaxBytes:       DefaultRequestMaxBytes,
+			ResponseMaxBytes:      DefaultResponseMaxBytes,
+			MaxConcurrentRequests: DefaultMaxConcurrentRequests,
+			RateLimit: RateLimitConfig{
+				RequestsPerMinute: DefaultRateLimitRequestsPerMinute,
+				BurstRequests:     DefaultRateLimitBurstRequests,
+			},
 			RequestTimeout:            Duration(DefaultRequestTimeout),
 			ShutdownTimeout:           Duration(DefaultShutdownTimeout),
 			AllowedOrigins:            []string{},
@@ -199,6 +215,29 @@ func (c *Config) validateAndLoad() error {
 	if c.Transport.MaxConcurrentRequests < 1 || c.Transport.MaxConcurrentRequests > MaximumConcurrentRequests {
 		return fmt.Errorf("transport.max_concurrent_requests must be between 1 and %d", MaximumConcurrentRequests)
 	}
+	if c.Transport.RateLimit.RequestsPerMinute < 1 ||
+		c.Transport.RateLimit.RequestsPerMinute > MaximumRateLimitRequestsPerMinute {
+		return fmt.Errorf(
+			"transport.rate_limit.requests_per_minute must be between 1 and %d",
+			MaximumRateLimitRequestsPerMinute,
+		)
+	}
+	if c.Transport.RateLimit.BurstRequests < 1 ||
+		c.Transport.RateLimit.BurstRequests > MaximumRateLimitBurstRequests {
+		return fmt.Errorf(
+			"transport.rate_limit.burst_requests must be between 1 and %d",
+			MaximumRateLimitBurstRequests,
+		)
+	}
+	if c.Transport.RateLimit.BurstRequests < c.Transport.MaxConcurrentRequests {
+		return fmt.Errorf("transport.rate_limit.burst_requests must be at least transport.max_concurrent_requests")
+	}
+	if exceedsAggregateLimit(c.Transport.RequestMaxBytes, c.Transport.MaxConcurrentRequests, MaximumAggregateRequestBytes) {
+		return fmt.Errorf("transport.request_max_bytes multiplied by transport.max_concurrent_requests must not exceed %d", MaximumAggregateRequestBytes)
+	}
+	if exceedsAggregateLimit(c.Transport.ResponseMaxBytes, c.Transport.MaxConcurrentRequests, MaximumAggregateResponseBytes) {
+		return fmt.Errorf("transport.response_max_bytes multiplied by transport.max_concurrent_requests must not exceed %d", MaximumAggregateResponseBytes)
+	}
 	if value := c.Transport.RequestTimeout.Value(); value < time.Second || value > 5*time.Minute {
 		return fmt.Errorf("transport.request_timeout must be between 1s and 5m")
 	}
@@ -280,6 +319,10 @@ func (c *Config) validateAndLoad() error {
 		}
 	}
 	return nil
+}
+
+func exceedsAggregateLimit(perRequest int64, concurrent int, maximum int64) bool {
+	return concurrent < 1 || perRequest > maximum/int64(concurrent)
 }
 
 func (c *Config) validateListen() error {

@@ -369,6 +369,110 @@ func TestLintMalformedRecoveryJournalIsError(t *testing.T) {
 	}
 }
 
+func TestLintReportsInterruptedAndMalformedTransactionPruning(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("content")
+	diffBytes := []byte("diff")
+	lintBytes := []byte("{}\n")
+	proposal := transaction.Proposal{
+		SchemaVersion: transaction.SchemaVersion,
+		TransactionID: "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		CreatedAt:     "2026-07-28T20:00:00Z",
+		BaseCommit:    "0123456789012345678901234567890123456789",
+		BaseBranch:    "main",
+		Actor:         transaction.DefaultActor,
+		Message:       "create: retention lint",
+		Operations: []transaction.EffectiveOperation{{
+			Op:                     transaction.OperationCreatePage,
+			Path:                   "pages/retention-lint.md",
+			ResultingContentSHA256: transaction.Digest(content),
+			ContentFile:            "content/000.md",
+		}},
+		ChangedPaths: []string{"pages/retention-lint.md"},
+		DiffSHA256:   transaction.Digest(diffBytes),
+		LintSHA256:   transaction.Digest(lintBytes),
+	}
+	store, err := transaction.NewStore(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, err := store.Save(transaction.Artifacts{
+		Proposal: proposal,
+		State: transaction.State{
+			SchemaVersion: transaction.SchemaVersion,
+			TransactionID: proposal.TransactionID,
+			Status:        transaction.StatusPreviewed,
+			UpdatedAt:     proposal.CreatedAt,
+		},
+		Diff: diffBytes, Lint: lintBytes, Contents: [][]byte{content},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := transaction.State{
+		SchemaVersion: transaction.SchemaVersion,
+		TransactionID: proposal.TransactionID,
+		Status:        transaction.StatusApplying,
+		UpdatedAt:     "2026-07-28T20:01:00Z",
+		PreviewDigest: digest,
+	}
+	if err := store.UpdateState(proposal.TransactionID, state); err != nil {
+		t.Fatal(err)
+	}
+	state.Status = transaction.StatusCommitted
+	state.Commit = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+	state.CommittedAt = "2026-07-28T20:02:00Z"
+	state.UpdatedAt = state.CommittedAt
+	if err := store.UpdateState(proposal.TransactionID, state); err != nil {
+		t.Fatal(err)
+	}
+	retention := transaction.RetentionReceipt{
+		SchemaVersion: transaction.SchemaVersion,
+		TransactionID: proposal.TransactionID,
+		PreviewDigest: digest,
+		Phase:         transaction.RetentionPruning,
+		StartedAt:     "2026-07-30T20:00:00Z",
+		Artifacts: []transaction.RetentionArtifact{
+			{Path: "content/000.md", SHA256: transaction.Digest(content), Bytes: int64(len(content))},
+			{Path: "diff.patch", SHA256: transaction.Digest(diffBytes), Bytes: int64(len(diffBytes))},
+			{Path: "lint.json", SHA256: transaction.Digest(lintBytes), Bytes: int64(len(lintBytes))},
+		},
+	}
+	retentionBytes, err := transaction.MarshalRetention(retention)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retentionPath := filepath.Join(root, ".lore", "transactions", proposal.TransactionID, "retention.json")
+	if err := os.WriteFile(retentionPath, retentionBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := lint.RunAt(context.Background(), repo, gitx.New(), time.Date(2026, 7, 30, 20, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !findingCodes(result)["transaction_prune_incomplete"] || !result.Valid {
+		t.Fatalf("interrupted prune findings = %+v", result.Findings)
+	}
+
+	if err := os.WriteFile(retentionPath, []byte("{bad"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err = lint.RunAt(context.Background(), repo, gitx.New(), time.Date(2026, 7, 30, 20, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !findingCodes(result)["transaction_artifact_invalid"] || !result.Valid {
+		t.Fatalf("malformed retention findings = %+v", result.Findings)
+	}
+}
+
 func TestLintDerivedIndexWarningsDoNotInvalidateCanonicalRepository(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
 	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {

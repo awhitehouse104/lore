@@ -23,7 +23,7 @@ func runIndex(ctx context.Context, args []string, global globalOptions, s stream
 	case "status":
 		return runIndexStatus(ctx, args[1:], global, s)
 	case "clear":
-		return runIndexClear(args[1:], global, s)
+		return runIndexClear(ctx, args[1:], global, s)
 	case "help", "--help", "-h":
 		printIndexUsage(s.out)
 		return core.ExitOK
@@ -69,7 +69,7 @@ func runIndexUpdate(ctx context.Context, args []string, global globalOptions, s 
 	return core.ExitOK
 }
 
-func runIndexClear(args []string, global globalOptions, s streams) int {
+func runIndexClear(ctx context.Context, args []string, global globalOptions, s streams) int {
 	repoPath := global.repo
 	jsonOutput := global.json || hasFlag(args, "--json")
 	if help, apiErr := parseIndexNoOptionFlags(args, "clear", &repoPath, &jsonOutput, s); help {
@@ -81,7 +81,7 @@ func runIndexClear(args []string, global globalOptions, s streams) int {
 	if apiErr != nil {
 		return emitError(s, jsonOutput, apiErr)
 	}
-	result, err := core.NewService(repo).IndexClear()
+	result, err := core.NewService(repo).IndexClear(ctx)
 	if err != nil {
 		return emitOperationError(s, jsonOutput, err)
 	}

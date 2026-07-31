@@ -146,6 +146,11 @@ func TestConcurrentMCPReadAndWriteHonorSingleWriterLock(t *testing.T) {
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
+	var releaseOnce sync.Once
+	releaseWriter := func() {
+		releaseOnce.Do(func() { close(blocker.release) })
+	}
+	defer releaseWriter()
 	service.Git = blocker
 	principal := testPrincipal(t, "writer", []auth.Permission{
 		auth.PermissionQuery,
@@ -176,19 +181,29 @@ func TestConcurrentMCPReadAndWriteHonorSingleWriterLock(t *testing.T) {
 		t.Fatal("first capture did not reach the blocked Git commit")
 	}
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	second, err := secondClient.CallTool(ctx, &mcp.CallToolParams{
-		Name: "lore_capture",
-		Arguments: map[string]any{
-			"kind":        "user_statement",
-			"origin":      "concurrency_test",
-			"text":        "second concurrent capture",
-			"sensitivity": "normal",
-		},
-	})
-	if err != nil || !second.IsError || !strings.Contains(callToolText(second), `"code":"locked"`) {
-		t.Fatalf("second capture = %+v, %v", second, err)
+	type callResult struct {
+		result *mcp.CallToolResult
+		err    error
+	}
+	secondDone := make(chan callResult, 1)
+	go func() {
+		result, err := secondClient.CallTool(ctx, &mcp.CallToolParams{
+			Name: "lore_capture",
+			Arguments: map[string]any{
+				"kind":        "user_statement",
+				"origin":      "concurrency_test",
+				"text":        "second concurrent capture",
+				"sensitivity": "normal",
+			},
+		})
+		secondDone <- callResult{result: result, err: err}
+	}()
+	select {
+	case second := <-secondDone:
+		t.Fatalf("second capture completed while the first held the lock: %+v, %v", second.result, second.err)
+	case <-time.After(100 * time.Millisecond):
 	}
 	search := decodeOutput[SearchOutput](t, callTool(t, secondClient, "lore_search", map[string]any{
 		"query":   "Project Foo deployable",
@@ -197,7 +212,7 @@ func TestConcurrentMCPReadAndWriteHonorSingleWriterLock(t *testing.T) {
 	if len(search.Results) != 1 || search.Results[0].ID != "page_project_foo" {
 		t.Fatalf("concurrent read = %+v", search.Results)
 	}
-	close(blocker.release)
+	releaseWriter()
 	select {
 	case err := <-firstDone:
 		if err != nil {
@@ -205,6 +220,14 @@ func TestConcurrentMCPReadAndWriteHonorSingleWriterLock(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("first capture deadlocked after release")
+	}
+	select {
+	case second := <-secondDone:
+		if second.err != nil || second.result.IsError {
+			t.Fatalf("queued second capture = %+v, %v", second.result, second.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second capture did not resume after release")
 	}
 }
 

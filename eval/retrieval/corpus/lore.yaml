@@ -1,0 +1,15 @@
+version: 1
+git:
+  auto_commit_captures: false
+  auto_push_captures: false
+  auto_push_transactions: false
+  remote: origin
+  require_push: false
+capture:
+  max_bytes: 4194304
+index:
+  backend: auto
+  auto_refresh_existing: true
+  candidate_multiplier: 20
+  minimum_candidates: 200
+  maximum_candidates: 2000

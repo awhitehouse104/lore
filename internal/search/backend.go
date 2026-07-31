@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -74,6 +75,8 @@ func (p AccessPolicy) Values() []string {
 type DetailedResponse struct {
 	Backend          Backend
 	BackendRequested Backend
+	Matching         MatchingMode
+	FuzzyExpanded    bool
 	IndexState       string
 	Results          []Result
 	Warnings         []catalog.Warning
@@ -104,17 +107,23 @@ type Candidate struct {
 
 type CandidateRequest struct {
 	MatchExpression      string
+	QueryTokens          []string
 	Scope                Scope
 	Kind                 string
 	Tags                 []string
 	Paths                []string
 	AllowedSensitivities []string
+	Matching             MatchingMode
 	Limit                int
 }
 
 type CandidateBatch struct {
-	Documents    []Candidate
-	LimitReached bool
+	Documents         []Candidate
+	CorpusSize        int
+	DocumentFrequency map[string]int
+	Expansions        []TermExpansion
+	Warnings          []catalog.Warning
+	LimitReached      bool
 }
 
 type IndexedBackend interface {
@@ -139,12 +148,14 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 	if err := ValidateQuery(query); err != nil {
 		return DetailedResponse{}, err
 	}
+	query.Matching = NormalizeMatching(query.Matching)
 	requested := query.Backend
 	if requested == "" {
 		requested = BackendAuto
 	}
 	response := DetailedResponse{
 		BackendRequested: requested,
+		Matching:         NormalizeMatching(query.Matching),
 		IndexState:       "",
 		Warnings:         []catalog.Warning{},
 	}
@@ -229,14 +240,20 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 	)
 	batch, err := h.Index.IndexCandidates(ctx, CandidateRequest{
 		MatchExpression:      expression,
+		QueryTokens:          tokens,
 		Scope:                query.Scope,
 		Kind:                 query.Kind,
 		Tags:                 query.Tags,
 		Paths:                query.Paths,
 		AllowedSensitivities: query.Access.Values(),
+		Matching:             NormalizeMatching(query.Matching),
 		Limit:                candidateLimit,
 	})
 	if err != nil {
+		var matchingErr *MatchingError
+		if errors.As(err, &matchingErr) {
+			return response, matchingErr
+		}
 		if ctx.Err() != nil {
 			return response, ctx.Err()
 		}
@@ -251,7 +268,14 @@ func (h HybridSearcher) SearchDetailed(ctx context.Context, repo *repository.Rep
 		return response, &BackendError{Kind: BackendErrorRuntime, Code: "index_search_failed", Message: "indexed candidate generation failed", Cause: err}
 	}
 	response.Backend = BackendIndex
-	response.Results = RankCandidates(batch.Documents, query)
+	response.Results = rankCandidates(batch.Documents, query, batch.CorpusSize, batch.DocumentFrequency, batch.Expansions)
+	for _, result := range response.Results {
+		if len(result.FuzzyMatches) > 0 {
+			response.FuzzyExpanded = true
+			break
+		}
+	}
+	response.Warnings = append(response.Warnings, batch.Warnings...)
 	if batch.LimitReached {
 		response.Warnings = append(response.Warnings, catalog.Warning{
 			Code:    "candidate_limit_reached",
@@ -275,6 +299,12 @@ func (h HybridSearcher) filesystem(
 	}
 	response.Backend = BackendFilesystem
 	response.Results = results
+	for _, result := range results {
+		if len(result.FuzzyMatches) > 0 {
+			response.FuzzyExpanded = true
+			break
+		}
+	}
 	response.Warnings = append(response.Warnings, warnings...)
 	return response, nil
 }
@@ -382,13 +412,37 @@ func fallbackWarning(state string) catalog.Warning {
 }
 
 func RankCandidates(candidates []Candidate, query Query) []Result {
+	return rankCandidates(candidates, query, len(candidates), nil, nil)
+}
+
+func rankCandidates(
+	candidates []Candidate,
+	query Query,
+	corpusSize int,
+	knownDocumentFrequency map[string]int,
+	expansions []TermExpansion,
+) []Result {
 	if query.Limit == 0 {
 		query.Limit = DefaultLimit
 	}
 	tokens := uniqueTokens(tokenize(query.Text))
 	phrase := strings.ToLower(strings.TrimSpace(query.Text))
-	results := make([]Result, 0, len(candidates))
+	type preparedCandidate struct {
+		candidate Candidate
+		document  *docs.Document
+		matches   map[string]bool
+	}
+	prepared := make([]preparedCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
+		if query.Scope == ScopePages && candidate.DocumentType != docs.TypePage {
+			continue
+		}
+		if query.Scope == ScopeSources && candidate.DocumentType != docs.TypeSource {
+			continue
+		}
+		if query.Kind != "" && candidate.Kind != query.Kind {
+			continue
+		}
 		if !query.Access.Allows(candidate.Sensitivity) {
 			continue
 		}
@@ -396,23 +450,71 @@ func RankCandidates(candidates []Candidate, query Query) []Result {
 			continue
 		}
 		document := candidateDocument(candidate)
+		prepared = append(prepared, preparedCandidate{
+			candidate: candidate,
+			document:  document,
+			matches:   matchedQueryTokens(document, tokens),
+		})
+	}
+	if corpusSize < len(prepared) {
+		corpusSize = len(prepared)
+	}
+	if corpusSize == 0 {
+		corpusSize = len(prepared)
+	}
+	documentFrequency := make(map[string]int, len(tokens))
+	for _, item := range prepared {
+		for token, matched := range item.matches {
+			if matched {
+				documentFrequency[token]++
+			}
+		}
+	}
+	for token, frequency := range knownDocumentFrequency {
+		documentFrequency[token] = frequency
+	}
+
+	results := make([]Result, 0, len(prepared))
+	for _, item := range prepared {
+		candidate := item.candidate
+		document := item.document
 		score := scoreDocument(document, phrase, tokens)
+		fuzzyScore, fuzzyMatches := scoreFuzzyDocument(document, tokens, item.matches, expansions)
+		score += fuzzyScore
+		combinedMatches := make(map[string]bool, len(item.matches))
+		matchFrequency := make(map[string]int, len(tokens))
+		fuzzyTerms := make(map[string]bool, len(fuzzyMatches))
+		for _, token := range tokens {
+			combinedMatches[token] = item.matches[token]
+			matchFrequency[token] = documentFrequency[token]
+		}
+		for _, match := range fuzzyMatches {
+			combinedMatches[match.QueryTerm] = true
+			fuzzyTerms[match.QueryTerm] = true
+			matchFrequency[match.QueryTerm] = documentFrequency[match.DocumentTerm]
+		}
+		score += lexicalRankingBonus(combinedMatches, fuzzyTerms, tokens, matchFrequency, corpusSize)
 		if score == 0 {
 			continue
 		}
-		lineStart, lineEnd, snippet := bestSnippetBody(candidate.Body, candidate.BodyLineStart, phrase, tokens)
+		snippetTokens := append([]string(nil), tokens...)
+		for _, match := range fuzzyMatches {
+			snippetTokens = append(snippetTokens, match.DocumentTerm)
+		}
+		lineStart, lineEnd, snippet := bestSnippetBody(candidate.Body, candidate.BodyLineStart, phrase, uniqueTokens(snippetTokens))
 		results = append(results, Result{
-			Score:       score,
-			Path:        candidate.Path,
-			URI:         fmt.Sprintf("lore://%s#L%d-L%d", candidate.Path, lineStart, lineEnd),
-			ResourceURI: resourceURI(candidate.DocumentType, candidate.DocumentID),
-			ID:          candidate.DocumentID,
-			Title:       candidate.Title,
-			Kind:        candidate.Kind,
-			LineStart:   lineStart,
-			LineEnd:     lineEnd,
-			Snippet:     snippet,
-			Revision:    candidate.Revision,
+			Score:        score,
+			Path:         candidate.Path,
+			URI:          fmt.Sprintf("lore://%s#L%d-L%d", candidate.Path, lineStart, lineEnd),
+			ResourceURI:  resourceURI(candidate.DocumentType, candidate.DocumentID),
+			ID:           candidate.DocumentID,
+			Title:        candidate.Title,
+			Kind:         candidate.Kind,
+			LineStart:    lineStart,
+			LineEnd:      lineEnd,
+			Snippet:      snippet,
+			Revision:     candidate.Revision,
+			FuzzyMatches: fuzzyMatches,
 		})
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -428,6 +530,160 @@ func RankCandidates(candidates []Candidate, query Query) []Result {
 		results[index].Rank = index + 1
 	}
 	return results
+}
+
+func matchedQueryTokens(document *docs.Document, queryTokens []string) map[string]bool {
+	documentTokens := tokenSet(DocumentTokens(
+		document.Title(),
+		document.Aliases(),
+		document.Tags(),
+		document.Kind(),
+		document.Body,
+	))
+	matches := make(map[string]bool, len(queryTokens))
+	for _, token := range queryTokens {
+		matches[token] = documentTokens[token]
+	}
+	return matches
+}
+
+// DocumentTokens returns the distinct exact tokens considered by Lore's
+// public lexical scorer. The derived index uses this function so corpus
+// statistics retain filesystem scoring semantics rather than FTS tokenizer
+// normalization.
+func DocumentTokens(title string, aliases, tags []string, kind string, body []byte) []string {
+	return uniqueTokens(tokenize(strings.Join([]string{
+		title,
+		strings.Join(aliases, " "),
+		strings.Join(tags, " "),
+		kind,
+		string(body),
+	}, " ")))
+}
+
+func lexicalRankingBonus(
+	matches map[string]bool,
+	fuzzyTerms map[string]bool,
+	queryTokens []string,
+	documentFrequency map[string]int,
+	corpusSize int,
+) int {
+	qualities := make([]int, 0, len(queryTokens))
+	score := 0
+	for _, token := range queryTokens {
+		if !matches[token] {
+			continue
+		}
+		quality := 2
+		if fuzzyTerms[token] {
+			quality = 1
+		}
+		qualities = append(qualities, quality)
+		score += 2 * quality * rarityWeight(corpusSize, documentFrequency[token])
+	}
+	for left := 0; left < len(qualities); left++ {
+		for right := left + 1; right < len(qualities); right++ {
+			if qualities[left] == 2 && qualities[right] == 2 {
+				score += 8
+			} else {
+				score += 4
+			}
+		}
+	}
+	if len(queryTokens) > 1 && len(qualities) == len(queryTokens) {
+		complete := 12
+		for _, quality := range qualities {
+			if quality == 1 {
+				complete = 6
+				break
+			}
+		}
+		score += complete
+	}
+	return score
+}
+
+func scoreFuzzyDocument(
+	document *docs.Document,
+	queryTokens []string,
+	exactMatches map[string]bool,
+	expansions []TermExpansion,
+) (int, []FuzzyMatch) {
+	byQuery := make(map[string][]TermExpansion)
+	for _, expansion := range expansions {
+		byQuery[expansion.QueryTerm] = append(byQuery[expansion.QueryTerm], expansion)
+	}
+	score := 0
+	matches := make([]FuzzyMatch, 0)
+	for _, queryToken := range queryTokens {
+		if exactMatches[queryToken] {
+			continue
+		}
+		bestScore := 0
+		var best TermExpansion
+		for _, expansion := range byQuery[queryToken] {
+			raw := tokenFieldScore(document, expansion.DocumentTerm)
+			if raw == 0 {
+				continue
+			}
+			weighted := raw * 3 / 5
+			if expansion.Distance > 1 {
+				weighted = raw * 2 / 5
+			}
+			if weighted == 0 {
+				weighted = 1
+			}
+			if weighted > bestScore ||
+				(weighted == bestScore && (best.DocumentTerm == "" || expansion.Distance < best.Distance)) ||
+				(weighted == bestScore && expansion.Distance == best.Distance && expansion.DocumentTerm < best.DocumentTerm) {
+				bestScore = weighted
+				best = expansion
+			}
+		}
+		if bestScore == 0 {
+			continue
+		}
+		score += bestScore
+		matches = append(matches, FuzzyMatch{
+			QueryTerm: queryToken, DocumentTerm: best.DocumentTerm, Distance: best.Distance,
+		})
+	}
+	return score, matches
+}
+
+func tokenFieldScore(document *docs.Document, token string) int {
+	score := 0
+	if containsToken(document.Title(), token) {
+		score += 25
+	}
+	if anyToken(lowerValues(document.Aliases()), token) {
+		score += 18
+	}
+	if anyToken(lowerValues(document.Tags()), token) {
+		score += 8
+	}
+	count := tokenCounts(tokenize(string(document.Body)))[token]
+	if count > bodyTokenCap {
+		count = bodyTokenCap
+	}
+	score += count * 3
+	if tokenSet(tokenize(document.Kind()))[token] {
+		score += 2
+	}
+	return score
+}
+
+func rarityWeight(corpusSize, documentFrequency int) int {
+	if corpusSize <= 0 || documentFrequency <= 0 {
+		return 1
+	}
+	weight := 1
+	ratio := corpusSize / documentFrequency
+	for ratio >= 2 && weight < 4 {
+		weight++
+		ratio /= 2
+	}
+	return weight
 }
 
 func candidateDocument(candidate Candidate) *docs.Document {

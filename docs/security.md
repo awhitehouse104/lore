@@ -50,7 +50,25 @@ printf '%s' "$PRIVATE_TEXT" | lore capture --kind note --origin terminal
 
 `--text` values can be exposed through shell history, audit tooling, terminal logs, or process listings. Input files have their own lifecycle and must be deleted or protected separately when appropriate.
 
-The advisory lock records only PID, hostname, command name, and start time. It does not contain source text.
+## Repository write serialization
+
+Operations that mutate canonical documents, transaction/recovery state, or
+derived index files share a Linux `flock` on the private persistent regular
+file `.lore/write.lock`. The kernel releases the lock when its descriptor
+closes, including after `SIGKILL`, OOM termination, or process failure. Writers
+retry with context-aware backoff for at most two seconds, then return a typed
+conflict.
+
+The lock file contains only schema version, PID, hostname, command name, and
+start time. It never contains source text. Metadata is diagnostic and may be
+unavailable during a race or malformed after external modification; kernel
+lock ownership remains authoritative. Lore therefore does not infer safety
+from PID liveness and never removes the regular lock file automatically.
+
+An old v0.4 `.lore/write.lock/` directory is treated as a legacy lock and is
+never broken automatically. If it persists after all v0.4 writers have
+stopped, verify the recorded owner has exited before removing that directory.
+Do not remove the regular post-v0.4 lock file during normal operation.
 
 ## Transaction privacy and integrity
 
@@ -61,9 +79,16 @@ also retain exact originals until rollback or finalize completes. Protect
 `.lore/` as carefully as canonical Markdown.
 
 Discard removes a preview's content, diff, and full lint payload while retaining
-a proposal/state receipt and lint summary. Committed transactions are not
-automatically pruned in v0.4. Deleting derived artifacts does not delete
-canonical Markdown or Git history.
+a proposal/state receipt and lint summary. Explicit local transaction pruning
+does the same for old committed payloads after proving that the exact commit is
+still reachable and matches every recorded path and blob hash. A durable
+retention receipt makes interrupted pruning resumable. Active recovery and all
+noncommitted states are protected.
+
+Pruning does not securely erase content. It does not delete canonical
+Markdown, rewrite or expire Git history, alter remotes, remove backups or
+snapshots, or guarantee physical-media erasure. There is no automatic
+repository retention policy.
 
 The transaction message becomes the Git commit subject. Never put raw private
 source text, medical detail, secrets, credentials, or other unnecessary
@@ -80,6 +105,27 @@ set, and committed blobs. SHA-256 protects integrity; it is not encryption.
 Lore never contacts a network service except when capture or transaction commit is explicitly configured or overridden to push. A Git remote is a separate disclosure boundary with its own authentication, server-side retention, replication, and access policy.
 
 `lore lint`, `search`, `read`, and `recent` do not contact remotes. `lore init` does not configure one.
+
+Git subprocesses run noninteractively with a sanitized environment and fixed
+deadlines: 30 seconds locally and two minutes for push, bounded further by any
+earlier caller deadline. Cancellation kills the Git process group so an SSH or
+credential child cannot remain after Git exits.
+
+Lore disables local repository hooks, filesystem-monitor commands, commit and
+push signing, automatic maintenance and garbage collection, editors, pagers,
+terminal prompts, and askpass programs. The external transport protocol is
+disabled. Managed or staged paths with an active Git `filter` attribute are
+rejected before status/add operations can invoke a clean or process filter.
+These safeguards prevent an untrusted knowledge repository from gaining
+execution through common Git extension points.
+
+The sanitized environment retains only the values needed for normal local
+operation and unattended SSH or HTTPS authentication, including home/path,
+proxy and CA settings, runtime directory, and `SSH_AUTH_SOCK`. Git credential
+helpers and configured SSH commands remain operator-controlled executable trust
+boundaries. Configure only trusted helpers and commands; Lore does not make
+arbitrary Git configuration safe. Server-side hooks are under the remote
+operator's authority and are unaffected by local hardening.
 
 Before enabling automatic push, verify that the destination is appropriate for
 all sensitivity values stored in the repository. v0.4 does not filter pushed
@@ -110,16 +156,35 @@ commit rechecks current sensitivities. Capture and commit idempotency records
 are principal-scoped and contain hashes plus minimal result metadata, never
 captured bodies or diffs.
 
-The built-in HTTP server is plaintext. Loopback is the safe default.
+The built-in HTTP server is plaintext. Loopback is the safe default. A private
+Tailscale Serve edge is the recommended remote posture: tailnet policy limits
+network reachability, Serve terminates HTTPS, and Lore still requires its own
+bearer token. Caddy on loopback is the documented custom-domain alternative.
+Neither proxy identity headers nor TLS replace Lore authorization.
 Non-loopback serving requires an explicit exact IP and an explicit override
-intended only for an encrypted, access-controlled private tailnet. For broader
-reachability, keep Lore on loopback behind a TLS/authenticated reverse proxy.
-Unspecified binds and public unauthenticated serving are unsupported.
+and is only an advanced fallback for an encrypted, access-controlled private
+tailnet. Unspecified binds and public unauthenticated serving are unsupported.
 
 Origin enforcement uses exact normalized HTTP(S) origins and never trusts
 forwarded headers. Request bytes, response bytes, concurrency, request time,
-and graceful shutdown are bounded. MCP responses and resources use private
-no-store/zero-TTL cache controls.
+per-principal request rate, and graceful shutdown are bounded. Authenticated
+rate-limit state is fixed at one bucket per configured principal and cannot
+grow from attacker-selected tokens. Health, origin denial, and authentication
+denial do not consume those buckets; unauthenticated source-rate enforcement
+belongs at the tailnet, firewall, or public edge. MCP responses and resources
+use private no-store/zero-TTL cache controls.
+
+Unauthenticated liveness is process-only. Readiness performs only a fixed set of
+repository identity, required-directory, and active-recovery path checks; it
+never scans content, invokes Git, or exposes the failing condition. Repository
+degradation and active recovery share one generic `503` body. Detailed recovery
+and lint diagnostics remain local operations.
+
+HTTP page-resource metadata is enumerated only when `resources/list` is
+requested and is not cached across stateless requests. This avoids making weak
+mtime, TTL, or Git-state invalidation part of sensitivity enforcement. Exact
+resource reads always resolve and authorize current Markdown independently of
+the previously listed descriptor.
 
 See [the MCP guide](mcp.md), [configuration reference](configuration.md), and
 [deployment guide](deployment.md).
@@ -128,8 +193,10 @@ See [the MCP guide](mcp.md), [configuration reference](configuration.md), and
 
 MCP audit events contain correlation ID, authenticated principal ID,
 transport, operation, outcome, duration, and safe aggregate metadata.
-Authentication denial uses a generic event without attempted token or identity
-details. Panic recovery returns a redacted internal error and records no
+Authentication denial uses a generic event with only `missing_credentials` or
+`invalid_credentials`; the public response remains identical. It records no
+direct or forwarded address, attempted token or identity, header, path, query,
+or body. Panic recovery returns a redacted internal error and records no
 request body.
 
 Logs and externally mapped errors exclude bearer tokens, queries, source
@@ -137,6 +204,14 @@ bodies, page content, snippets, diffs, transaction artifact bodies, and
 unauthorized titles or paths. The same standard must be maintained by reverse
 proxies, systemd, client debug logs, shell histories, and model transcripts.
 Do not enable HTTP body logging around Lore.
+
+With Tailscale Serve or Caddy, Lore's peer is the loopback proxy. Source-IP
+enforcement therefore belongs at the edge; banning from Lore audit events could
+block the proxy itself. The optional Caddy observability example is deliberately
+separate from the no-access-log default, deletes credentials and variable
+request metadata, and has short bounded retention. Its source IP, timestamp,
+and success/denial history remain personal metadata requiring an explicit
+retention decision.
 
 ## Derived index privacy and integrity
 
@@ -155,6 +230,14 @@ Indexes are repository-bound, Git-ignored, verified before installation, and
 never accepted after a stale Git snapshot. Incremental writes and FTS updates
 share one SQL transaction. Raw user queries are tokenized into quoted FTS
 terms and passed as a parameter; they never become SQL or FTS control syntax.
+
+Fuzzy vocabulary discovery applies the caller's sensitivity, scope, kind, tag,
+and path filters before computing document frequency or selecting corrections.
+Consequently, an inaccessible unique term cannot become a visible fuzzy
+correction or result. Expansion counts, term lengths, edit distance, and the
+filtered vocabulary work set are bounded. When automatic expansion exceeds
+that work bound Lore returns exact results with a warning; explicit fuzzy mode
+fails rather than publishing an arbitrary partial correction set.
 
 SQLite `secure_delete` and FTS5 secure-delete are enabled and checked by
 `lore index status --verify`. These settings reduce ordinary residual content
@@ -206,8 +289,9 @@ and blob hashes. Lore does not automatically resume an interrupted apply.
 - Use encrypted storage for sensitive repositories.
 - Review remotes before enabling push.
 - Use a query-only MCP principal unless mutation is required.
-- Keep HTTP on loopback behind TLS or on an independently secured private
-  tailnet.
+- Keep Lore on loopback behind Tailscale Serve by default; use the documented
+  Caddy edge only when a custom-domain client cannot join the tailnet.
+- Never expose Lore health paths through the remote edge.
 - Rotate bearer tokens and restart the service after suspected disclosure.
 - Run `lore lint` before knowledge commits.
 - Run `lore index status --verify` when diagnosing indexed search.

@@ -89,14 +89,14 @@ func TestPreviewCreateInspectAndDiscard(t *testing.T) {
 	if len(listed.Transactions) != 1 || listed.Transactions[0].TransactionID != fixedTransactionID {
 		t.Fatalf("listed = %+v", listed)
 	}
-	discarded, err := service.TransactionDiscard(fixedTransactionID)
+	discarded, err := service.TransactionDiscard(context.Background(), fixedTransactionID)
 	if err != nil {
 		t.Fatalf("TransactionDiscard: %v", err)
 	}
 	if discarded.Status != "discarded" {
 		t.Fatalf("discarded = %+v", discarded)
 	}
-	if _, err := service.TransactionDiscard(fixedTransactionID); err != nil {
+	if _, err := service.TransactionDiscard(context.Background(), fixedTransactionID); err != nil {
 		t.Fatalf("idempotent TransactionDiscard: %v", err)
 	}
 }
@@ -912,6 +912,7 @@ func TestRecoveryRollbackRefusesUnexpectedExternalEdit(t *testing.T) {
 func TestTransactionWritersRespectRepositoryLock(t *testing.T) {
 	repo := transactionTestRepository(t)
 	service := core.NewService(repo)
+	service.WriteLockWait = 0
 	now := time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)
 	service.Clock = fixedClock{value: now}
 	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
@@ -919,7 +920,7 @@ func TestTransactionWritersRespectRepositoryLock(t *testing.T) {
 	request := transactionRequest(t, "create: locked", []map[string]any{{
 		"op": "create_page", "path": "pages/locked.md", "content": string(page),
 	}})
-	handle, err := lock.Acquire(repo.Root, "test holder", now)
+	handle, err := lock.Acquire(context.Background(), repo.Root, "test holder", now, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -935,7 +936,7 @@ func TestTransactionWritersRespectRepositoryLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handle, err = lock.Acquire(repo.Root, "test holder", now)
+	handle, err = lock.Acquire(context.Background(), repo.Root, "test holder", now, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -948,6 +949,57 @@ func TestTransactionWritersRespectRepositoryLock(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "locked.md")); !os.IsNotExist(err) {
 		t.Fatalf("locked commit touched target: %v", err)
+	}
+}
+
+func TestContextCancellationInterruptsRepositoryWriterWaits(t *testing.T) {
+	repo := transactionTestRepository(t)
+	service := core.NewService(repo)
+	now := time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)
+	service.Clock = fixedClock{value: now}
+	handle, err := lock.Acquire(context.Background(), repo.Root, "test holder", now, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Release()
+
+	tests := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{
+			name: "index clear",
+			run: func(ctx context.Context) error {
+				_, err := service.IndexClear(ctx)
+				return err
+			},
+		},
+		{
+			name: "transaction discard",
+			run: func(ctx context.Context) error {
+				_, err := service.TransactionDiscard(ctx, fixedTransactionID)
+				return err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			result := make(chan error, 1)
+			go func() {
+				result <- test.run(ctx)
+			}()
+			time.Sleep(30 * time.Millisecond)
+			cancel()
+			select {
+			case err := <-result:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("writer error = %T %v, want context cancellation", err, err)
+				}
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("writer did not stop after context cancellation")
+			}
+		})
 	}
 }
 

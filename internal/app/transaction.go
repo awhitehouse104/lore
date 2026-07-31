@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"lore/internal/core"
 	"lore/internal/output"
@@ -269,7 +270,9 @@ func runTransaction(ctx context.Context, args []string, global globalOptions, s 
 	case "show":
 		return runTransactionShow(args[1:], global, s)
 	case "discard":
-		return runTransactionDiscard(args[1:], global, s)
+		return runTransactionDiscard(ctx, args[1:], global, s)
+	case "prune":
+		return runTransactionPrune(ctx, args[1:], global, s)
 	case "--help", "-h", "help":
 		printTransactionUsage(s.out)
 		return core.ExitOK
@@ -399,6 +402,9 @@ func runTransactionShow(args []string, global globalOptions, s streams) int {
 	fmt.Fprintf(s.out, "Diff SHA-256: %s\nLint SHA-256: %s\n", result.Proposal.DiffSHA256, result.Proposal.LintSHA256)
 	fmt.Fprintf(s.out, "Lint: %d error(s), %d warning(s)\n", result.Lint.Errors, result.Lint.Warnings)
 	fmt.Fprintf(s.out, "Changed paths: %s\n", strings.Join(result.Proposal.ChangedPaths, ", "))
+	if result.Retention != nil {
+		fmt.Fprintf(s.out, "Payload retention: %s\n", result.Retention.Phase)
+	}
 	if includeDiff && result.Diff != "" {
 		fmt.Fprintln(s.out)
 		_, _ = io.WriteString(s.out, result.Diff)
@@ -406,7 +412,7 @@ func runTransactionShow(args []string, global globalOptions, s streams) int {
 	return core.ExitOK
 }
 
-func runTransactionDiscard(args []string, global globalOptions, s streams) int {
+func runTransactionDiscard(ctx context.Context, args []string, global globalOptions, s streams) int {
 	repoPath := global.repo
 	jsonOutput := global.json || hasFlag(args, "--json")
 	var transactionID string
@@ -441,7 +447,7 @@ func runTransactionDiscard(args []string, global globalOptions, s streams) int {
 	if apiErr != nil {
 		return emitError(s, jsonOutput, apiErr)
 	}
-	result, err := core.NewService(repo).TransactionDiscard(transactionID)
+	result, err := core.NewService(repo).TransactionDiscard(ctx, transactionID)
 	if err != nil {
 		return emitOperationError(s, jsonOutput, err)
 	}
@@ -453,6 +459,146 @@ func runTransactionDiscard(args []string, global globalOptions, s streams) int {
 	}
 	fmt.Fprintf(s.out, "Discarded transaction %s\n", result.TransactionID)
 	return core.ExitOK
+}
+
+func runTransactionPrune(ctx context.Context, args []string, global globalOptions, s streams) int {
+	repoPath := global.repo
+	jsonOutput := global.json || hasFlag(args, "--json")
+	limit := core.DefaultTransactionPruneLimit
+	dryRun := false
+	var olderThan time.Duration
+	olderThanSet := false
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(s.out, "Usage: lore [--repo PATH] transaction prune --older-than AGE [--limit N] [--dry-run] [--json]")
+			return core.ExitOK
+		case arg == "--json":
+			jsonOutput = true
+		case arg == "--dry-run":
+			dryRun = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, apiErr := flagValue(args, index, "--repo")
+			if apiErr != nil {
+				return emitError(s, jsonOutput, apiErr)
+			}
+			repoPath, index = value, next
+		case arg == "--older-than" || strings.HasPrefix(arg, "--older-than="):
+			if olderThanSet {
+				return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "duplicate_flag", "--older-than may be specified only once"))
+			}
+			value, next, apiErr := flagValue(args, index, "--older-than")
+			if apiErr != nil {
+				return emitError(s, jsonOutput, apiErr)
+			}
+			parsed, err := parsePruneAge(value)
+			if err != nil {
+				return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "invalid_older_than", err.Error()))
+			}
+			olderThan = parsed
+			olderThanSet = true
+			index = next
+		case arg == "--limit" || strings.HasPrefix(arg, "--limit="):
+			value, next, apiErr := flagValue(args, index, "--limit")
+			if apiErr != nil {
+				return emitError(s, jsonOutput, apiErr)
+			}
+			parsed, err := strconv.Atoi(value)
+			if err != nil || parsed < 1 || parsed > core.MaximumTransactionPruneLimit {
+				return emitError(s, jsonOutput, core.NewError(
+					core.ExitUsage,
+					"invalid_limit",
+					fmt.Sprintf("--limit must be between 1 and %d", core.MaximumTransactionPruneLimit),
+				))
+			}
+			limit, index = parsed, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore transaction prune: unknown flag %q", arg)))
+			}
+			return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "unexpected_argument", "lore transaction prune does not accept positional arguments"))
+		}
+	}
+	if !olderThanSet {
+		return emitError(s, jsonOutput, core.NewError(core.ExitUsage, "older_than_required", "lore transaction prune requires --older-than"))
+	}
+	repo, apiErr := openRepository(repoPath)
+	if apiErr != nil {
+		return emitError(s, jsonOutput, apiErr)
+	}
+	result, err := core.NewService(repo).TransactionPrune(ctx, core.TransactionPruneOptions{
+		OlderThan: olderThan,
+		Limit:     limit,
+		DryRun:    dryRun,
+	})
+	if err != nil {
+		return emitOperationError(s, jsonOutput, err)
+	}
+	if jsonOutput {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write transaction prune output: %w", err))
+		}
+		return core.ExitOK
+	}
+	if result.DryRun {
+		fmt.Fprintf(
+			s.out,
+			"Would prune %d committed transaction(s) at or before %s.\n",
+			result.Selected,
+			result.Cutoff,
+		)
+		for _, item := range result.Transactions {
+			fmt.Fprintf(
+				s.out,
+				"%s  %s  %d file(s)  %d byte(s)\n",
+				item.TransactionID,
+				item.CommittedAt,
+				item.ReclaimableFiles,
+				item.ReclaimableBytes,
+			)
+		}
+		fmt.Fprintf(
+			s.out,
+			"Total reclaimable: %d file(s), %d byte(s).\n",
+			result.FilesReclaimable,
+			result.BytesReclaimable,
+		)
+	} else {
+		fmt.Fprintf(
+			s.out,
+			"Pruned %d committed transaction(s); removed %d file(s) and %d byte(s).\n",
+			result.Pruned,
+			result.FilesRemoved,
+			result.BytesRemoved,
+		)
+	}
+	if result.Remaining > 0 {
+		fmt.Fprintf(s.out, "%d eligible transaction(s) remain after the limit.\n", result.Remaining)
+	}
+	return core.ExitOK
+}
+
+func parsePruneAge(value string) (time.Duration, error) {
+	if len(value) < 2 {
+		return 0, fmt.Errorf("--older-than must be a positive whole number followed by h, d, or w")
+	}
+	var unit time.Duration
+	switch value[len(value)-1] {
+	case 'h':
+		unit = time.Hour
+	case 'd':
+		unit = 24 * time.Hour
+	case 'w':
+		unit = 7 * 24 * time.Hour
+	default:
+		return 0, fmt.Errorf("--older-than must use h, d, or w")
+	}
+	amount, err := strconv.ParseUint(value[:len(value)-1], 10, 64)
+	if err != nil || amount == 0 || amount > uint64(time.Duration(1<<63-1)/unit) {
+		return 0, fmt.Errorf("--older-than must be a positive whole number followed by h, d, or w")
+	}
+	return time.Duration(amount) * unit, nil
 }
 
 func listableStatus(status transaction.Status) bool {
@@ -471,5 +617,6 @@ func printTransactionUsage(w io.Writer) {
 Subcommands:
   list       list transaction metadata
   show       verify and inspect a transaction
-  discard    discard a previewed or failed transaction`)
+  discard    discard a previewed or failed transaction
+  prune      compact old committed transaction payloads`)
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"time"
+	"unicode/utf8"
 )
 
 func (m *Manager) Update(ctx context.Context) (result UpdateResult, returnErr error) {
@@ -81,7 +82,7 @@ func (m *Manager) Update(ctx context.Context) (result UpdateResult, returnErr er
 		return result, classifyRuntime("index_metadata_failed", "could not read index metadata", err)
 	}
 	schemaVersion, err := metadataSchemaVersion(metadata)
-	if err != nil || schemaVersion != SchemaVersion {
+	if err != nil || schemaVersion != IndexSchemaVersion {
 		return result, newError(ErrorRuntime, "index_incompatible", "the index schema is incompatible and must be rebuilt", err)
 	}
 	if metadata["repository_identity"] != snapshot.identity {
@@ -133,7 +134,7 @@ func (m *Manager) Update(ctx context.Context) (result UpdateResult, returnErr er
 	}
 
 	nextMetadata := map[string]string{
-		"index_schema_version": strconv.Itoa(SchemaVersion),
+		"index_schema_version": strconv.Itoa(IndexSchemaVersion),
 		"lore_version":         m.LoreVersion,
 		"repository_identity":  snapshot.identity,
 		"indexed_head":         snapshot.head,
@@ -238,6 +239,8 @@ type updateStatements struct {
 	deleteDocument *sql.Stmt
 	insertFTS      *sql.Stmt
 	deleteFTS      *sql.Stmt
+	insertTerm     *sql.Stmt
+	deleteTerms    *sql.Stmt
 }
 
 func prepareUpdateStatements(ctx context.Context, transaction *sql.Tx) (*updateStatements, error) {
@@ -253,10 +256,12 @@ func prepareUpdateStatements(ctx context.Context, transaction *sql.Tx) (*updateS
 		    content_sha256=?, created_at=NULLIF(?, ''), updated_at=NULLIF(?, ''), indexed_at=?
 		WHERE rowid=?`,
 		"DELETE FROM documents WHERE rowid=?",
-		`INSERT INTO documents_fts(rowid, title, aliases_text, tags_text, path, body)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		`INSERT INTO documents_fts(documents_fts, rowid, title, aliases_text, tags_text, path, body)
-		 VALUES ('delete', ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO documents_fts(rowid, title, aliases_text, tags_text, kind, path, body)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO documents_fts(documents_fts, rowid, title, aliases_text, tags_text, kind, path, body)
+		 VALUES ('delete', ?, ?, ?, ?, ?, ?, ?)`,
+		"INSERT INTO document_terms(document_rowid, term, rune_length) VALUES (?, ?, ?)",
+		"DELETE FROM document_terms WHERE document_rowid=?",
 	}
 	prepared := make([]*sql.Stmt, 0, len(queries))
 	for _, query := range queries {
@@ -275,6 +280,8 @@ func prepareUpdateStatements(ctx context.Context, transaction *sql.Tx) (*updateS
 		deleteDocument: prepared[2],
 		insertFTS:      prepared[3],
 		deleteFTS:      prepared[4],
+		insertTerm:     prepared[5],
+		deleteTerms:    prepared[6],
 	}, nil
 }
 
@@ -287,12 +294,17 @@ func (s *updateStatements) insert(ctx context.Context, document indexedDocument)
 	if err != nil {
 		return err
 	}
-	_, err = s.insertFTS.ExecContext(ctx, ftsValues(rowID, document)...)
-	return err
+	if _, err := s.insertFTS.ExecContext(ctx, ftsValues(rowID, document)...); err != nil {
+		return err
+	}
+	return s.insertTerms(ctx, rowID, document.LexicalTerms)
 }
 
 func (s *updateStatements) replace(ctx context.Context, old storedDocument, document indexedDocument) error {
 	if _, err := s.deleteFTS.ExecContext(ctx, ftsValues(old.RowID, old.indexedDocument)...); err != nil {
+		return err
+	}
+	if _, err := s.deleteTerms.ExecContext(ctx, old.RowID); err != nil {
 		return err
 	}
 	values := []any{
@@ -317,20 +329,36 @@ func (s *updateStatements) replace(ctx context.Context, old storedDocument, docu
 	if _, err := s.updateDocument.ExecContext(ctx, values...); err != nil {
 		return err
 	}
-	_, err := s.insertFTS.ExecContext(ctx, ftsValues(old.RowID, document)...)
-	return err
+	if _, err := s.insertFTS.ExecContext(ctx, ftsValues(old.RowID, document)...); err != nil {
+		return err
+	}
+	return s.insertTerms(ctx, old.RowID, document.LexicalTerms)
 }
 
 func (s *updateStatements) delete(ctx context.Context, document storedDocument) error {
 	if _, err := s.deleteFTS.ExecContext(ctx, ftsValues(document.RowID, document.indexedDocument)...); err != nil {
 		return err
 	}
+	if _, err := s.deleteTerms.ExecContext(ctx, document.RowID); err != nil {
+		return err
+	}
 	_, err := s.deleteDocument.ExecContext(ctx, document.RowID)
 	return err
 }
 
+func (s *updateStatements) insertTerms(ctx context.Context, rowID int64, terms []string) error {
+	for _, term := range terms {
+		if _, err := s.insertTerm.ExecContext(ctx, rowID, term, utf8.RuneCountInString(term)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *updateStatements) close() {
-	for _, statement := range []*sql.Stmt{s.insertDocument, s.updateDocument, s.deleteDocument, s.insertFTS, s.deleteFTS} {
+	for _, statement := range []*sql.Stmt{
+		s.insertDocument, s.updateDocument, s.deleteDocument, s.insertFTS, s.deleteFTS, s.insertTerm, s.deleteTerms,
+	} {
 		if statement != nil {
 			_ = statement.Close()
 		}
@@ -365,6 +393,7 @@ func ftsValues(rowID int64, document indexedDocument) []any {
 		document.Title,
 		document.AliasesText,
 		document.TagsText,
+		document.Kind,
 		document.Path,
 		document.Body,
 	}

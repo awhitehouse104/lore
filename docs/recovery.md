@@ -3,7 +3,7 @@
 Lore writes a durable journal before the first transaction file change. An
 active journal lives at `.lore/recovery/active/`, contains exact originals or
 explicit absence markers, and blocks capture, preview, commit, and transaction
-discard until it is resolved.
+discard or prune until it is resolved.
 
 Lore never automatically resumes an interrupted apply. The two explicit
 outcomes are exact rollback before a transaction Git commit or verified
@@ -11,7 +11,9 @@ finalization after that commit.
 
 The MCP gateway deliberately exposes no recovery mutation tool. An active
 journal keeps authorized search, read, resources, history, and inspection
-available but blocks capture, preview, commit, and transaction discard.
+available but blocks capture, preview, commit, and transaction discard or
+prune. HTTP liveness remains healthy, while the principal-independent readiness
+probe returns a generic `503` until recovery is resolved.
 Resolve recovery from a trusted local CLI session.
 
 ## Inspect first

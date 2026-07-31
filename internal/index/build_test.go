@@ -43,6 +43,13 @@ func TestProbeFTS5AndCreateSchema(t *testing.T) {
 	if tableCount != 3 {
 		t.Fatalf("schema table count = %d, want 3", tableCount)
 	}
+	var termTableCount int
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name='document_terms'").Scan(&termTableCount); err != nil {
+		t.Fatal(err)
+	}
+	if termTableCount != 1 {
+		t.Fatalf("exact lexical term table count = %d, want 1", termTableCount)
+	}
 }
 
 func TestBuildStatusForceAndFailedReplacement(t *testing.T) {
@@ -56,7 +63,7 @@ func TestBuildStatusForceAndFailedReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	if result.IndexState != StateUncertified || result.DocumentCount != 1 || result.PageCount != 1 {
+	if result.SchemaVersion != SchemaVersion || result.IndexState != StateUncertified || result.DocumentCount != 1 || result.PageCount != 1 {
 		t.Fatalf("unexpected build result: %+v", result)
 	}
 	indexPath := filepath.Join(repo.Root, filepath.FromSlash(RelativeIndexPath))
@@ -71,7 +78,7 @@ func TestBuildStatusForceAndFailedReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	if status.IndexState != StateUncertified || !status.ManifestMatches || status.Verification != "full" ||
+	if status.IndexSchemaVersion != IndexSchemaVersion || status.IndexState != StateUncertified || !status.ManifestMatches || status.Verification != "full" ||
 		!status.RepositoryIdentityMatches || !status.SecureDelete || !status.FTS5SecureDelete {
 		t.Fatalf("unexpected status: %+v", status)
 	}

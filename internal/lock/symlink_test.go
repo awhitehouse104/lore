@@ -1,6 +1,7 @@
 package lock
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,7 +18,7 @@ func TestAcquireRejectsSymlinkRuntimeDirectory(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, ".lore")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Acquire(root, "capture", time.Now()); err == nil {
+	if _, err := Acquire(context.Background(), root, "capture", time.Now(), 0); err == nil {
 		t.Fatal("Acquire unexpectedly accepted a symlink .lore directory")
 	}
 }

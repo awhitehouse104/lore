@@ -1,0 +1,22 @@
+[lore-caddy]
+
+# Review the log, thresholds, firewall backend, and recovery access before
+# changing this to true. This jail is for the public Caddy topology only.
+enabled = false
+filter = lore-caddy
+logpath = /var/log/caddy/lore-auth.json
+backend = auto
+usedns = no
+port = https
+protocol = tcp
+
+# A bad agent configuration can retry quickly. These deliberately forgiving
+# defaults treat Fail2ban as a runaway-source fuse, not a password-strength
+# control; Lore bearer tokens already contain at least 256 bits.
+maxretry = 30
+findtime = 5m
+bantime = 15m
+
+# Add any operator-required trusted addresses here; a per-jail value replaces
+# the inherited list.
+ignoreip = 127.0.0.0/8 ::1

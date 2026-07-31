@@ -3,9 +3,13 @@ package index
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
+
+	"lore/internal/search"
 )
 
 type sqlRunner interface {
@@ -65,8 +69,8 @@ func verifyDatabase(
 	if err != nil {
 		return verificationResult{}, err
 	}
-	if schemaVersion != SchemaVersion {
-		return verificationResult{}, fmt.Errorf("index schema version %d is incompatible with supported version %d", schemaVersion, SchemaVersion)
+	if schemaVersion != IndexSchemaVersion {
+		return verificationResult{}, fmt.Errorf("index schema version %d is incompatible with supported version %d", schemaVersion, IndexSchemaVersion)
 	}
 	complete := metadata["build_complete"] == "true"
 	if complete != expectedComplete {
@@ -82,6 +86,34 @@ func verifyDatabase(
 	}
 	if expectedDocuments >= 0 && result.documentCount != expectedDocuments {
 		return verificationResult{}, fmt.Errorf("index contains %d documents; expected %d", result.documentCount, expectedDocuments)
+	}
+	var documentsWithoutTerms int
+	if err := runner.QueryRowContext(ctx, `
+SELECT count(*)
+FROM documents AS d
+WHERE NOT EXISTS (SELECT 1 FROM document_terms AS t WHERE t.document_rowid=d.rowid)
+`).Scan(&documentsWithoutTerms); err != nil {
+		return verificationResult{}, fmt.Errorf("verify exact lexical terms: %w", err)
+	}
+	if documentsWithoutTerms != 0 {
+		return verificationResult{}, fmt.Errorf("index contains %d document(s) without exact lexical terms", documentsWithoutTerms)
+	}
+	var orphanTerms int
+	if err := runner.QueryRowContext(ctx, `
+SELECT count(*)
+FROM document_terms AS t
+LEFT JOIN documents AS d ON d.rowid=t.document_rowid
+WHERE d.rowid IS NULL
+`).Scan(&orphanTerms); err != nil {
+		return verificationResult{}, fmt.Errorf("verify exact lexical term ownership: %w", err)
+	}
+	if orphanTerms != 0 {
+		return verificationResult{}, fmt.Errorf("index contains %d orphan exact lexical term(s)", orphanTerms)
+	}
+	if full {
+		if err := verifyExactTermContents(ctx, runner); err != nil {
+			return verificationResult{}, err
+		}
 	}
 	if err := runner.QueryRowContext(ctx, "SELECT count(*) FROM documents WHERE document_type='page'").Scan(&result.pageCount); err != nil {
 		return verificationResult{}, fmt.Errorf("count indexed pages: %w", err)
@@ -134,4 +166,86 @@ func verifyDatabase(
 		result.ftsSecureDelete = parsed == 1
 	}
 	return result, nil
+}
+
+func verifyExactTermContents(ctx context.Context, runner sqlRunner) error {
+	documentRows, err := runner.QueryContext(ctx, `
+SELECT rowid, title, aliases_json, tags_json, kind, body
+FROM documents
+ORDER BY rowid
+`)
+	if err != nil {
+		return fmt.Errorf("read documents for exact lexical term verification: %w", err)
+	}
+	expected := map[int64]map[string]struct{}{}
+	for documentRows.Next() {
+		var rowID int64
+		var title, aliasesJSON, tagsJSON, kind, body string
+		if err := documentRows.Scan(&rowID, &title, &aliasesJSON, &tagsJSON, &kind, &body); err != nil {
+			_ = documentRows.Close()
+			return fmt.Errorf("decode document for exact lexical term verification: %w", err)
+		}
+		var aliases, tags []string
+		if err := json.Unmarshal([]byte(aliasesJSON), &aliases); err != nil {
+			_ = documentRows.Close()
+			return fmt.Errorf("decode aliases for exact lexical term verification: %w", err)
+		}
+		if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+			_ = documentRows.Close()
+			return fmt.Errorf("decode tags for exact lexical term verification: %w", err)
+		}
+		terms := search.DocumentTokens(title, aliases, tags, kind, []byte(body))
+		expected[rowID] = make(map[string]struct{}, len(terms))
+		for _, term := range terms {
+			expected[rowID][term] = struct{}{}
+		}
+	}
+	if err := documentRows.Err(); err != nil {
+		_ = documentRows.Close()
+		return fmt.Errorf("read documents for exact lexical term verification: %w", err)
+	}
+	if err := documentRows.Close(); err != nil {
+		return fmt.Errorf("close documents after exact lexical term verification: %w", err)
+	}
+
+	termRows, err := runner.QueryContext(ctx, "SELECT document_rowid, term, rune_length FROM document_terms ORDER BY document_rowid, term")
+	if err != nil {
+		return fmt.Errorf("read exact lexical terms for verification: %w", err)
+	}
+	for termRows.Next() {
+		var rowID int64
+		var term string
+		var runeLength int
+		if err := termRows.Scan(&rowID, &term, &runeLength); err != nil {
+			_ = termRows.Close()
+			return fmt.Errorf("decode exact lexical term for verification: %w", err)
+		}
+		terms, exists := expected[rowID]
+		if !exists {
+			_ = termRows.Close()
+			return fmt.Errorf("exact lexical term references an unknown document")
+		}
+		if _, exists := terms[term]; !exists {
+			_ = termRows.Close()
+			return fmt.Errorf("index contains an unexpected exact lexical term")
+		}
+		if runeLength != utf8.RuneCountInString(term) {
+			_ = termRows.Close()
+			return fmt.Errorf("index contains an incorrect exact lexical term length")
+		}
+		delete(terms, term)
+	}
+	if err := termRows.Err(); err != nil {
+		_ = termRows.Close()
+		return fmt.Errorf("read exact lexical terms for verification: %w", err)
+	}
+	if err := termRows.Close(); err != nil {
+		return fmt.Errorf("close exact lexical terms after verification: %w", err)
+	}
+	for _, terms := range expected {
+		if len(terms) != 0 {
+			return fmt.Errorf("index is missing one or more exact lexical terms")
+		}
+	}
+	return nil
 }

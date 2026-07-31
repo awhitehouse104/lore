@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -108,7 +109,7 @@ func (m *Manager) Build(ctx context.Context, options BuildOptions) (result Build
 		return result, classifyRuntime("index_schema_failed", "could not create the index schema", err)
 	}
 	metadata := map[string]string{
-		"index_schema_version": strconv.Itoa(SchemaVersion),
+		"index_schema_version": strconv.Itoa(IndexSchemaVersion),
 		"lore_version":         m.LoreVersion,
 		"repository_identity":  snapshot.identity,
 		"indexed_head":         snapshot.head,
@@ -244,13 +245,21 @@ INSERT INTO documents(
 	}
 	defer documentStatement.Close()
 	ftsStatement, err := transaction.PrepareContext(ctx, `
-INSERT INTO documents_fts(rowid, title, aliases_text, tags_text, path, body)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO documents_fts(rowid, title, aliases_text, tags_text, kind, path, body)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		return fmt.Errorf("prepare FTS insert: %w", err)
 	}
 	defer ftsStatement.Close()
+	termStatement, err := transaction.PrepareContext(ctx, `
+INSERT INTO document_terms(document_rowid, term, rune_length)
+VALUES (?, ?, ?)
+`)
+	if err != nil {
+		return fmt.Errorf("prepare exact lexical term insert: %w", err)
+	}
+	defer termStatement.Close()
 	for _, document := range documents {
 		result, err := documentStatement.ExecContext(
 			ctx,
@@ -285,10 +294,16 @@ VALUES (?, ?, ?, ?, ?, ?)
 			document.Title,
 			document.AliasesText,
 			document.TagsText,
+			document.Kind,
 			document.Path,
 			document.Body,
 		); err != nil {
 			return fmt.Errorf("insert FTS document %s: %w", document.Path, err)
+		}
+		for _, term := range document.LexicalTerms {
+			if _, err := termStatement.ExecContext(ctx, rowID, term, utf8.RuneCountInString(term)); err != nil {
+				return fmt.Errorf("insert exact lexical terms for %s: %w", document.Path, err)
+			}
 		}
 	}
 	return nil

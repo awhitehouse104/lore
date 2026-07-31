@@ -46,7 +46,7 @@ func TestScoringComponents(t *testing.T) {
 			}},
 			phrase: "project foo",
 			tokens: []string{"project", "foo"},
-			want:   12,
+			want:   28,
 		},
 		{
 			name:   "body phrase and occurrences",

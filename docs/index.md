@@ -77,6 +77,24 @@ All sensitivity values may exist in the local index. The local CLI includes all
 three by default. Repeat `--include-sensitivity` to construct a narrower
 request policy before candidate rows leave the index package.
 
+The public Go ranker is shared by both backends. Indexed search obtains the
+size of the authorized, filtered corpus and exact per-query-token document
+frequencies from a derived term table populated with Lore's Unicode tokenizer.
+That table deliberately does not use FTS diacritic normalization. `kind` is an
+FTS candidate field, so a kind-only match is discoverable by both backends.
+These details preserve public scores and ordering even when the FTS candidate
+set is bounded.
+
+Search matching is separate from backend selection. Default `matching=auto`
+expands only eligible out-of-vocabulary terms; `lexical` disables expansion and
+`fuzzy` expands all eligible terms. Indexed expansion reads only exact terms
+within the possible Unicode-rune-length range for the supported edit distance,
+then applies the same bounded Damerau-Levenshtein implementation and scoring
+used by filesystem search. This exhaustive length-bounded approach does not
+depend on a trigram heuristic that could silently omit a valid correction.
+Scope, kind, tag, path, and sensitivity filters are applied before vocabulary
+statistics or corrections are returned from the index package.
+
 ## Files, identity, and permissions
 
 Known derived files are:
@@ -135,6 +153,34 @@ lore --repo PATH index build
 
 Never edit `.lore/index.sqlite` with SQL. It is not a repair surface, and an
 in-place schema migration is intentionally unsupported in v0.4.
+
+The current derived index application schema is version `3`. It retains
+indexed `kind` candidates and exact lexical term statistics and adds the exact
+Unicode rune length needed for bounded fuzzy vocabulary lookup. A schema
+version `1` or `2` index is safely reported as `incompatible`; clear and
+rebuild it. This does not change Lore's repository configuration or public
+JSON schema version, which remain version `1`.
+
+## Retrieval-quality evaluation
+
+Search behavior has a deterministic repository-owned evaluation harness:
+
+```bash
+make eval-retrieval
+```
+
+The harness stages the synthetic Markdown corpus under `eval/retrieval/` in a
+temporary directory, builds a disposable index, and runs every graded case
+through both forced filesystem search and the production `auto` path. It
+reports hit rates, reciprocal rank, recall, nDCG, zero-result cases,
+authorization violations, and exact result parity. It then compares the full
+report with `eval/retrieval/baseline.json`; an intentional search change must
+be reviewed before replacing that baseline.
+
+The suite is a regression and design instrument, not a claim about retrieval
+quality in a user's real repository. Add sanitized cases derived from actual
+agent failures as Lore is exercised. See `eval/retrieval/README.md` for the
+case schema and baseline workflow.
 
 ## Reproducible build benchmark
 

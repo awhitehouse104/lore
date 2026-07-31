@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,29 +30,31 @@ const (
 )
 
 type Query struct {
-	Text    string
-	Scope   Scope
-	Kind    string
-	Tags    []string
-	Paths   []string
-	Limit   int
-	Backend Backend
-	Access  AccessPolicy
+	Text     string
+	Scope    Scope
+	Kind     string
+	Tags     []string
+	Paths    []string
+	Limit    int
+	Backend  Backend
+	Matching MatchingMode
+	Access   AccessPolicy
 }
 
 type Result struct {
-	Rank        int    `json:"rank"`
-	Score       int    `json:"score"`
-	Path        string `json:"path"`
-	URI         string `json:"uri"`
-	ResourceURI string `json:"resource_uri"`
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	Kind        string `json:"kind"`
-	LineStart   int    `json:"line_start"`
-	LineEnd     int    `json:"line_end"`
-	Snippet     string `json:"snippet"`
-	Revision    string `json:"revision"`
+	Rank         int          `json:"rank"`
+	Score        int          `json:"score"`
+	Path         string       `json:"path"`
+	URI          string       `json:"uri"`
+	ResourceURI  string       `json:"resource_uri"`
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Kind         string       `json:"kind"`
+	LineStart    int          `json:"line_start"`
+	LineEnd      int          `json:"line_end"`
+	Snippet      string       `json:"snippet"`
+	Revision     string       `json:"revision"`
+	FuzzyMatches []FuzzyMatch `json:"fuzzy_matches,omitempty"`
 }
 
 type Searcher interface {
@@ -72,15 +73,13 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 	if query.Limit == 0 {
 		query.Limit = DefaultLimit
 	}
-	tokens := tokenize(query.Text)
-	unique := uniqueTokens(tokens)
-	phrase := strings.ToLower(strings.TrimSpace(query.Text))
+	query.Matching = NormalizeMatching(query.Matching)
 
 	documentCatalog, warnings, err := catalog.Scan(ctx, repo, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	results := make([]Result, 0)
+	candidates := make([]Candidate, 0, len(documentCatalog.Documents))
 	for _, document := range documentCatalog.Documents {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
@@ -100,38 +99,27 @@ func (FilesystemLexicalSearcher) Search(ctx context.Context, repo *repository.Re
 		if !query.Access.Allows(document.Sensitivity()) {
 			continue
 		}
-		score := scoreDocument(document, phrase, unique)
-		if score == 0 {
-			continue
-		}
-		lineStart, lineEnd, snippet := bestSnippet(document, phrase, unique)
-		results = append(results, Result{
-			Score:       score,
-			Path:        document.Path,
-			URI:         fmt.Sprintf("lore://%s#L%d-L%d", document.Path, lineStart, lineEnd),
-			ResourceURI: resourceURI(document.Type, document.ID()),
-			ID:          document.ID(),
-			Title:       document.Title(),
-			Kind:        document.Kind(),
-			LineStart:   lineStart,
-			LineEnd:     lineEnd,
-			Snippet:     snippet,
-			Revision:    docs.Revision(document.Data),
+		candidates = append(candidates, Candidate{
+			Path:          document.Path,
+			DocumentID:    document.ID(),
+			DocumentType:  document.Type,
+			Title:         document.Title(),
+			Kind:          document.Kind(),
+			Sensitivity:   document.Sensitivity(),
+			Aliases:       document.Aliases(),
+			Tags:          document.Tags(),
+			Body:          document.Body,
+			BodyLineStart: bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1,
+			Revision:      docs.Revision(document.Data),
 		})
 	}
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
-		}
-		return results[i].Path < results[j].Path
-	})
-	if len(results) > query.Limit {
-		results = results[:query.Limit]
+	tokens := uniqueTokens(tokenize(query.Text))
+	documentFrequency, expansions, fuzzyWarnings, err := prepareFuzzyExpansion(candidates, tokens, query.Matching)
+	if err != nil {
+		return nil, nil, err
 	}
-	for index := range results {
-		results[index].Rank = index + 1
-	}
-	return results, warnings, nil
+	warnings = append(warnings, fuzzyWarnings...)
+	return rankCandidates(candidates, query, len(candidates), documentFrequency, expansions), warnings, nil
 }
 
 func resourceURI(documentType docs.Type, id string) string {
@@ -151,6 +139,26 @@ func ValidateQuery(query Query) error {
 	case "", BackendAuto, BackendIndex, BackendFilesystem:
 	default:
 		return fmt.Errorf("search backend must be auto, index, or filesystem")
+	}
+	switch query.Matching {
+	case "", MatchingAuto, MatchingLexical, MatchingFuzzy:
+	default:
+		return fmt.Errorf("search matching must be auto, lexical, or fuzzy")
+	}
+	if NormalizeMatching(query.Matching) == MatchingFuzzy {
+		eligible := 0
+		for _, token := range uniqueTokens(tokenize(query.Text)) {
+			length := utf8.RuneCountInString(token)
+			if length >= MinimumFuzzyTokenRunes && length <= MaximumFuzzyTokenRunes {
+				eligible++
+			}
+		}
+		if eligible > MaximumFuzzyQueryTokens {
+			return &MatchingError{
+				Code:    "fuzzy_query_too_broad",
+				Message: fmt.Sprintf("fuzzy matching supports at most %d eligible query terms", MaximumFuzzyQueryTokens),
+			}
+		}
 	}
 	if err := query.Access.Validate(); err != nil {
 		return err
@@ -242,6 +250,9 @@ func scoreDocument(document *docs.Document, phrase string, queryTokens []string)
 		}
 		if anyToken(aliases, token) {
 			score += 18
+		}
+		if anyToken(tags, token) {
+			score += 8
 		}
 	}
 	if phrase != "" && anyContains(tags, phrase) {

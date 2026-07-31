@@ -81,7 +81,7 @@ func (m *Manager) Status(ctx context.Context, full bool) (status Status, returnE
 	status.IndexedBranch = metadata["indexed_branch"]
 	status.IndexedAt = metadata["indexed_at"]
 	status.IndexBuildID = metadata["index_build_id"]
-	if schemaVersion != SchemaVersion {
+	if schemaVersion != IndexSchemaVersion {
 		status.IndexState = StateIncompatible
 		status.Warnings = append(status.Warnings, Warning{Code: "index_schema_incompatible", Message: "the index schema is incompatible and must be rebuilt"})
 		return status, nil

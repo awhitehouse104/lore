@@ -8,8 +8,11 @@ Type=simple
 User=lore
 Group=lore
 ExecStart=/usr/local/bin/lore mcp serve --config /etc/lore/mcp.yaml
+# Process failures restart automatically; monitor /health/ready separately.
 Restart=on-failure
 RestartSec=3
+MemoryHigh=384M
+MemoryMax=512M
 StateDirectory=lore
 Environment=HOME=/var/lib/lore
 NoNewPrivileges=true

@@ -1,13 +1,19 @@
 package mcpserver
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"lore/internal/auth"
+	"lore/internal/catalog"
+	"lore/internal/repository"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -61,6 +67,180 @@ func TestAuthorizedResourceListingTemplatesAndReads(t *testing.T) {
 	if err != nil || len(source.Contents) != 1 ||
 		!strings.Contains(source.Contents[0].Text, "Normal evidence for transaction authorization.") {
 		t.Fatalf("exact source resource = %+v, %v", source, err)
+	}
+}
+
+func TestHTTPResourceEnumerationIsLazy(t *testing.T) {
+	service := newTestService(t)
+	principal := httpQueryPrincipal(t, "remote_reader", []string{"normal"})
+	var scans atomic.Int32
+	scanner := func(ctx context.Context, repo *repository.Repository) (catalog.Catalog, error) {
+		scans.Add(1)
+		return scanResourceCatalog(ctx, repo)
+	}
+	server := newWithResourceScanner(t.Context(), service, principal, nil, scanner)
+	if scans.Load() != 0 {
+		t.Fatal("HTTP server construction scanned the resource catalog")
+	}
+	client := connectClientToServer(t, server)
+	if scans.Load() != 0 {
+		t.Fatal("HTTP discovery scanned the resource catalog")
+	}
+	capabilities := client.InitializeResult().Capabilities
+	if capabilities.Resources == nil || capabilities.Resources.ListChanged {
+		t.Fatalf("HTTP resource capabilities = %+v", capabilities.Resources)
+	}
+	if _, err := client.ListTools(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ListResourceTemplates(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "lore://pages/page_project_foo"}); err != nil {
+		t.Fatal(err)
+	}
+	if scans.Load() != 0 {
+		t.Fatalf("unrelated HTTP operations performed %d resource scan(s)", scans.Load())
+	}
+
+	first, err := client.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Resources) != 1 || scans.Load() != 1 {
+		t.Fatalf("first resource list = %d resources, %d scans", len(first.Resources), scans.Load())
+	}
+	second, err := client.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Resources) != 1 || scans.Load() != 1 {
+		t.Fatalf("second resource list = %d resources, %d scans", len(second.Resources), scans.Load())
+	}
+}
+
+func TestHTTPCommitSkipsUnloadedResourceRefresh(t *testing.T) {
+	service := newTestService(t)
+	principal, err := auth.NewPrincipal(
+		"remote_curator",
+		auth.TransportHTTP,
+		[]auth.Permission{auth.PermissionQuery, auth.PermissionCurate},
+		[]string{"normal"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scans atomic.Int32
+	scanner := func(ctx context.Context, repo *repository.Repository) (catalog.Catalog, error) {
+		scans.Add(1)
+		return scanResourceCatalog(ctx, repo)
+	}
+	client := connectClientToServer(t, newWithResourceScanner(t.Context(), service, principal, nil, scanner))
+	preview := decodeOutput[PreviewOutput](t, callTool(t, client, "lore_preview", map[string]any{
+		"schema_version": 1,
+		"message":        "create: lazy resource",
+		"operations": []any{map[string]any{
+			"op":   "create_page",
+			"path": "pages/lazy-resource.md",
+			"content": `---
+id: page_lazy_resource
+title: Lazy Resource
+kind: topic
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: normal
+---
+Lazy resource registration.
+`,
+		}},
+	}))
+	_ = callTool(t, client, "lore_commit", map[string]any{
+		"transaction_id": preview.TransactionID,
+		"preview_digest": preview.PreviewDigest,
+	})
+	if scans.Load() != 0 {
+		t.Fatalf("HTTP commit performed %d unloaded resource scan(s)", scans.Load())
+	}
+	list, err := client.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scans.Load() != 1 {
+		t.Fatalf("post-commit resource list performed %d scans", scans.Load())
+	}
+	found := false
+	for _, resource := range list.Resources {
+		if resource.URI == "lore://pages/page_lazy_resource" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("committed page absent from lazy resource list: %+v", list.Resources)
+	}
+}
+
+func TestConcurrentHTTPResourceListsShareOneServerScan(t *testing.T) {
+	service := newTestService(t)
+	principal := httpQueryPrincipal(t, "remote_reader", []string{"normal"})
+	var scans atomic.Int32
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var enteredOnce sync.Once
+	scanner := func(ctx context.Context, repo *repository.Repository) (catalog.Catalog, error) {
+		scans.Add(1)
+		enteredOnce.Do(func() { close(entered) })
+		select {
+		case <-ctx.Done():
+			return catalog.Catalog{}, ctx.Err()
+		case <-release:
+			return scanResourceCatalog(ctx, repo)
+		}
+	}
+	client := connectClientToServer(t, newWithResourceScanner(t.Context(), service, principal, nil, scanner))
+	results := make(chan error, 2)
+	go func() {
+		_, err := client.ListResources(t.Context(), nil)
+		results <- err
+	}()
+	<-entered
+	go func() {
+		_, err := client.ListResources(t.Context(), nil)
+		results <- err
+	}()
+	close(release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scans.Load() != 1 {
+		t.Fatalf("concurrent resource lists performed %d scans", scans.Load())
+	}
+}
+
+func TestLazyResourceScanFailureIsGenericAndRetryable(t *testing.T) {
+	service := newTestService(t)
+	principal := httpQueryPrincipal(t, "remote_reader", []string{"normal"})
+	var scans atomic.Int32
+	const secret = "catalog-path-secret"
+	scanner := func(context.Context, *repository.Repository) (catalog.Catalog, error) {
+		scans.Add(1)
+		return catalog.Catalog{}, errors.New(secret)
+	}
+	client := connectClientToServer(t, newWithResourceScanner(t.Context(), service, principal, nil, scanner))
+	if _, err := client.ListTools(t.Context(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := int32(1); attempt <= 2; attempt++ {
+		_, err := client.ListResources(t.Context(), nil)
+		if err == nil || !strings.Contains(err.Error(), errResourceCatalogUnavailable.Error()) ||
+			strings.Contains(err.Error(), secret) {
+			t.Fatalf("attempt %d error = %v", attempt, err)
+		}
+		if scans.Load() != attempt {
+			t.Fatalf("attempt %d scan count = %d", attempt, scans.Load())
+		}
 	}
 }
 
@@ -157,10 +337,21 @@ func TestSearchReturnsExactResourceURI(t *testing.T) {
 
 func TestResourceListRefreshesAfterCommittedPageMutation(t *testing.T) {
 	service := newTestService(t)
-	client := connectClientToServer(t, New(service, fullPrincipal(t), nil))
+	var scans atomic.Int32
+	scanner := func(ctx context.Context, repo *repository.Repository) (catalog.Catalog, error) {
+		scans.Add(1)
+		return scanResourceCatalog(ctx, repo)
+	}
+	client := connectClientToServer(t, newWithResourceScanner(t.Context(), service, fullPrincipal(t), nil, scanner))
+	if scans.Load() != 1 {
+		t.Fatalf("stdio construction scans = %d, want 1", scans.Load())
+	}
 	before, err := client.ListResources(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if scans.Load() != 1 {
+		t.Fatalf("warm stdio resource list scans = %d, want 1", scans.Load())
 	}
 	preview := decodeOutput[PreviewOutput](t, callTool(t, client, "lore_preview", map[string]any{
 		"schema_version": 1,
@@ -185,6 +376,9 @@ Refresh resource listing.
 		"transaction_id": preview.TransactionID,
 		"preview_digest": preview.PreviewDigest,
 	})
+	if scans.Load() != 2 {
+		t.Fatalf("stdio post-commit resource scans = %d, want 2", scans.Load())
+	}
 	after, err := client.ListResources(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -201,4 +395,13 @@ Refresh resource listing.
 	if !found {
 		t.Fatalf("committed page absent from resources: %+v", after.Resources)
 	}
+}
+
+func httpQueryPrincipal(t *testing.T, id string, sensitivities []string) auth.Principal {
+	t.Helper()
+	principal, err := auth.NewPrincipal(id, auth.TransportHTTP, []auth.Permission{auth.PermissionQuery}, sensitivities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return principal
 }

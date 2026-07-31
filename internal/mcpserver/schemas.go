@@ -23,25 +23,28 @@ const (
 )
 
 type SearchInput struct {
-	Query   string   `json:"query"`
-	Limit   int      `json:"limit,omitempty"`
-	Types   []string `json:"types,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Paths   []string `json:"paths,omitempty"`
-	Backend string   `json:"backend,omitempty"`
+	Query    string   `json:"query"`
+	Limit    int      `json:"limit,omitempty"`
+	Types    []string `json:"types,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Paths    []string `json:"paths,omitempty"`
+	Backend  string   `json:"backend,omitempty"`
+	Matching string   `json:"matching,omitempty"`
 }
 
 type SearchOutput struct {
-	SchemaVersion    int               `json:"schema_version"`
-	Status           string            `json:"status"`
-	RequestID        string            `json:"request_id"`
-	Operation        string            `json:"operation"`
-	Query            string            `json:"query"`
-	Backend          search.Backend    `json:"backend"`
-	BackendRequested search.Backend    `json:"backend_requested"`
-	IndexState       string            `json:"index_state"`
-	Results          []search.Result   `json:"results"`
-	Warnings         []catalog.Warning `json:"warnings"`
+	SchemaVersion    int                 `json:"schema_version"`
+	Status           string              `json:"status"`
+	RequestID        string              `json:"request_id"`
+	Operation        string              `json:"operation"`
+	Query            string              `json:"query"`
+	Backend          search.Backend      `json:"backend"`
+	BackendRequested search.Backend      `json:"backend_requested"`
+	Matching         search.MatchingMode `json:"matching"`
+	FuzzyExpanded    bool                `json:"fuzzy_expanded"`
+	IndexState       string              `json:"index_state"`
+	Results          []search.Result     `json:"results"`
+	Warnings         []catalog.Warning   `json:"warnings"`
 }
 
 type ReadInput struct {

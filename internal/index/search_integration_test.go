@@ -33,11 +33,15 @@ func TestIndexedAndFilesystemSearchParityFixtures(t *testing.T) {
 	})
 	writeFixturePage(t, repo.Root, fixturePage{
 		Path: "pages/needle-b.md", ID: "page_needle_b", Title: "Needle",
-		Kind: "note", Sensitivity: "sensitive", Body: "needle repeated needle",
+		Kind: "note", Sensitivity: "sensitive", Body: "needle repeated needle heliotrope",
 	})
 	writeFixturePage(t, repo.Root, fixturePage{
 		Path: "pages/pathonly-marker.md", ID: "page_path_marker", Title: "Unrelated",
-		Kind: "note", Sensitivity: "normal", Body: "nothing relevant",
+		Kind: "policy", Sensitivity: "normal", Body: "nothing relevant",
+	})
+	writeFixturePage(t, repo.Root, fixturePage{
+		Path: "pages/unaccented-cafe.md", ID: "page_unaccented_cafe", Title: "Unrelated Cafe",
+		Kind: "note", Sensitivity: "normal", Body: "cafe notes without an accent",
 	})
 	writeFixtureSource(t, repo.Root)
 	runGit(t, repo.Root, "init", "-b", "main")
@@ -65,6 +69,8 @@ func TestIndexedAndFilesystemSearchParityFixtures(t *testing.T) {
 	}
 	fixtures := []search.Query{
 		{Text: "Project Foo", Scope: search.ScopePages, Limit: 20, Access: all},
+		{Text: "projet foo", Scope: search.ScopePages, Limit: 20, Matching: search.MatchingAuto, Access: all},
+		{Text: "projet foo", Scope: search.ScopePages, Limit: 20, Matching: search.MatchingLexical, Access: all},
 		{Text: "Launch Codename", Scope: search.ScopePages, Limit: 20, Access: all},
 		{Text: "deployment", Scope: search.ScopePages, Limit: 20, Access: all},
 		{Text: "deployable without", Scope: search.ScopePages, Limit: 20, Access: all},
@@ -77,8 +83,11 @@ func TestIndexedAndFilesystemSearchParityFixtures(t *testing.T) {
 		{Text: "source evidence", Scope: search.ScopeSources, Limit: 20, Access: all},
 		{Text: "needle", Scope: search.ScopePages, Kind: "note", Limit: 20, Access: normal},
 		{Text: "pathonly", Scope: search.ScopePages, Limit: 20, Access: all},
+		{Text: "policy", Scope: search.ScopePages, Limit: 20, Access: all},
 		{Text: "deployment", Scope: search.ScopeAll, Tags: []string{"deployment"}, Paths: []string{"pages/"}, Limit: 20, Access: all},
 		{Text: "needle", Scope: search.ScopePages, Paths: []string{"pages/needle-a.md"}, Limit: 20, Access: all},
+		{Text: "heliotropd", Scope: search.ScopePages, Limit: 20, Matching: search.MatchingAuto, Access: normal},
+		{Text: "heliotropd", Scope: search.ScopePages, Limit: 20, Matching: search.MatchingAuto, Access: all},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.Text+"/"+string(fixture.Scope), func(t *testing.T) {
@@ -99,6 +108,20 @@ func TestIndexedAndFilesystemSearchParityFixtures(t *testing.T) {
 			}
 			if indexed.Backend != search.BackendIndex || len(indexed.Warnings) != 0 {
 				t.Fatalf("indexed metadata = %+v", indexed)
+			}
+			if fixture.Text == "projet foo" && fixture.Matching == search.MatchingAuto {
+				if len(indexed.Results) == 0 || indexed.Results[0].ID != "page_project_foo" || len(indexed.Results[0].FuzzyMatches) == 0 {
+					t.Fatalf("indexed fuzzy correction = %+v", indexed.Results)
+				}
+			}
+			if fixture.Text == "heliotropd" {
+				if fixture.Access.Allows("sensitive") {
+					if len(indexed.Results) != 1 || indexed.Results[0].ID != "page_needle_b" {
+						t.Fatalf("authorized indexed fuzzy result = %+v", indexed.Results)
+					}
+				} else if len(indexed.Results) != 0 {
+					t.Fatalf("normal-only indexed fuzzy result exposed sensitive vocabulary: %+v", indexed.Results)
+				}
 			}
 		})
 	}

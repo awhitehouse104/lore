@@ -124,7 +124,7 @@ lore --repo PATH capture --kind note --origin import \
 ```bash
 lore --repo PATH search 'Project Foo'
 lore --repo PATH search deployment --scope pages --kind project \
-  --backend auto --include-sensitivity normal --limit 25 --json
+  --backend auto --matching auto --include-sensitivity normal --limit 25 --json
 ```
 
 Search is deterministic Unicode-aware lexical ranking over current Markdown.
@@ -132,7 +132,29 @@ The default `auto` backend uses a fresh compatible index when it can preserve
 the filesystem semantics and otherwise falls back safely. `index` requires a
 usable index; `filesystem` bypasses it. Results contain evidence metadata, a
 best-line snippet, Lore URI, line range, score, and SHA-256 revision. Search
-never synthesizes an answer or mutates canonical knowledge.
+rewards exact phrases, exact metadata/body terms, rarer terms, and distinct
+query-term coverage while bounding repeated body occurrences. It never
+synthesizes an answer or mutates canonical knowledge.
+
+The default adaptive matching mode typo-expands only longer query terms absent
+from the authorized filtered corpus. `--matching lexical` disables expansion;
+`--matching fuzzy` expands every eligible term for a deliberate broader pass.
+Fuzzy results identify the exact correction and edit distance so an agent can
+judge the evidence rather than treating a silent spell correction as fact.
+
+Agents should treat retrieval as a short loop: start with automatic matching,
+inspect snippets and read likely documents, then retry weak searches with a few
+distinctive terms learned from the evidence and useful metadata filters. Use
+explicit fuzzy matching for uncertain spelling and lexical matching for exact
+verification; never infer absence from one zero-result query. An authorized
+local agent may also search the authoritative `pages/` and `sources/` Markdown
+with `rg` when that is simpler than an API round trip.
+
+The repository includes a deterministic agent-retrieval evaluation corpus,
+graded query suite, and checked-in behavioral baseline. Run
+`make eval-retrieval` before and after changing search. See
+[`eval/retrieval/README.md`](eval/retrieval/README.md) for metrics, fixture
+conventions, and the intentional baseline-update workflow.
 
 ### Read
 
@@ -177,9 +199,17 @@ Commit subjects are retained in Git. Keep transaction `message` values short and
 lore --repo PATH transaction list [--status STATUS] [--limit N] [--json]
 lore --repo PATH transaction show TRANSACTION_ID [--diff] [--json]
 lore --repo PATH transaction discard TRANSACTION_ID [--json]
+lore --repo PATH transaction prune \
+  --older-than 30d [--limit N] [--dry-run] [--json]
 ```
 
 Inspection verifies stored hashes before returning metadata. Discard is allowed only for previewed or failed transactions; it removes content, diff, and full lint artifacts while retaining a metadata receipt and lint summary.
+
+Prune is an explicit local maintenance operation for old committed
+transactions. It proves that each commit remains reachable with the exact
+recorded paths and bytes, then removes content, diff, and full lint payloads
+while retaining proposal, state, and retention receipts. Start with
+`--dry-run`; there is no repository-configured automatic retention policy.
 
 ### Recovery
 
@@ -286,6 +316,14 @@ index:
 
 Unknown configuration keys are rejected. Capture and transaction commits preserve unrelated staged or working-tree changes. A transaction push failure never rolls back its local commit. Optional push failure is a warning; when `require_push` is true, it returns exit code 3 while reporting that the canonical update is safely committed locally.
 
+Git invocations are noninteractive and sanitized, with 30-second local and
+two-minute push deadlines. Lore disables repository hooks and other common
+execution extensions and rejects active Git content filters on managed paths.
+Configure an unlocked SSH deploy key or agent, or a trusted noninteractive
+HTTPS credential helper, before enabling push. See
+[configuration.md](docs/configuration.md#git) for the supported environment
+and authentication contract.
+
 The `index` block is optional and receives the displayed defaults. Existing
 v0.2 repositories therefore work without configuration edits. Strict v0.2
 binaries reject the new block; omit it during mixed-version use. The complete
@@ -293,9 +331,11 @@ field and bound reference is in [configuration.md](docs/configuration.md).
 
 HTTP MCP configuration is deliberately separate from `lore.yaml`; a knowledge
 repository cannot grant itself network access or permissions. Start with
-[the loopback example](docs/examples/mcp-loopback.yaml) or
-[private-tailnet example](docs/examples/mcp-tailnet.yaml), and read the
-[deployment guide](docs/deployment.md) before serving remotely.
+[the Tailscale Serve example](docs/examples/mcp-tailscale-serve.yaml) for the
+recommended private deployment, or the
+[loopback example](docs/examples/mcp-loopback.yaml) with the
+[Caddyfile](docs/examples/Caddyfile) for a custom domain. Read the
+[deployment guide](docs/deployment.md) before enabling either edge.
 
 ## Backup and security
 
@@ -313,13 +353,14 @@ Lore v0.4 intentionally has no semantic/vector search, authoritative database,
 arbitrary file-write command, page delete/rename, source-body edit, automatic
 synthesis, URL fetching, import pipeline, web interface, server-side LLM call,
 OAuth provider, multi-repository routing, encryption, secret manager, or
-transaction pruning. The HTTP gateway has configured principals, not a general
-multi-user account system. Hosted ChatGPT availability is not promised because
-its networking, authentication, connector, and workspace support are
-independent of Lore.
+automatic transaction-retention policy. The HTTP gateway has configured
+principals, not a general multi-user account system. Hosted ChatGPT
+availability is not promised because its networking, authentication,
+connector, and workspace support are independent of Lore.
 
 Transaction artifacts and the search index are derived state and can contain
-private document bytes. Committed transaction artifacts have no automatic
-retention policy. Markdown and Git remain authoritative. See the [v0.4 release
+private document bytes. Use explicit transaction pruning to compact old
+committed payloads; it is not secure erasure and does not alter Git or backups.
+Markdown and Git remain authoritative. See the [v0.4 release
 notes](docs/release-notes-v0.4.0.md), [MCP guide](docs/mcp.md), and
 [dependency audit](docs/dependencies.md).

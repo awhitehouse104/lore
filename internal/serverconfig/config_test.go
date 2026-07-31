@@ -27,6 +27,8 @@ func TestParseValidConfigurationAndDefaults(t *testing.T) {
 	if config.Transport.RequestMaxBytes != DefaultRequestMaxBytes ||
 		config.Transport.ResponseMaxBytes != DefaultResponseMaxBytes ||
 		config.Transport.MaxConcurrentRequests != DefaultMaxConcurrentRequests ||
+		config.Transport.RateLimit.RequestsPerMinute != DefaultRateLimitRequestsPerMinute ||
+		config.Transport.RateLimit.BurstRequests != DefaultRateLimitBurstRequests ||
 		config.Transport.RequestTimeout.Value() != DefaultRequestTimeout ||
 		config.Transport.ShutdownTimeout.Value() != DefaultShutdownTimeout {
 		t.Fatalf("transport defaults = %+v", config.Transport)
@@ -136,6 +138,9 @@ func TestTransportEndpointOriginAndListenValidation(t *testing.T) {
 		{"request_max_bytes: 8388608", "request_max_bytes: 100"},
 		{"response_max_bytes: 8388608", "response_max_bytes: 100"},
 		{"max_concurrent_requests: 8", "max_concurrent_requests: 0"},
+		{"requests_per_minute: 600", "requests_per_minute: 0"},
+		{"burst_requests: 128", "burst_requests: 0"},
+		{"burst_requests: 128", "burst_requests: 7"},
 		{"request_timeout: 60s", "request_timeout: 500ms"},
 		{"shutdown_timeout: 15s", "shutdown_timeout: 3m"},
 		{"trust_forwarded_headers: false", "trust_forwarded_headers: true"},
@@ -174,6 +179,136 @@ func TestTransportEndpointOriginAndListenValidation(t *testing.T) {
 	}
 }
 
+func TestTransportRateLimitDefaultsAndBounds(t *testing.T) {
+	repo, tokenFile, _ := configFixture(t)
+	base := validConfig(repo, tokenFile, "")
+	block := `  rate_limit:
+    requests_per_minute: 600
+    burst_requests: 128
+`
+	withoutBlock := strings.Replace(base, block, "", 1)
+	config, err := Parse([]byte(withoutBlock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Transport.RateLimit.RequestsPerMinute != DefaultRateLimitRequestsPerMinute ||
+		config.Transport.RateLimit.BurstRequests != DefaultRateLimitBurstRequests {
+		t.Fatalf("omitted rate limit defaults = %+v", config.Transport.RateLimit)
+	}
+	partial := strings.Replace(base, "    requests_per_minute: 600\n", "", 1)
+	config, err = Parse([]byte(partial))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Transport.RateLimit.RequestsPerMinute != DefaultRateLimitRequestsPerMinute ||
+		config.Transport.RateLimit.BurstRequests != DefaultRateLimitBurstRequests {
+		t.Fatalf("partial rate limit defaults = %+v", config.Transport.RateLimit)
+	}
+
+	maximum := strings.Replace(
+		base,
+		"requests_per_minute: 600",
+		fmt.Sprintf("requests_per_minute: %d", MaximumRateLimitRequestsPerMinute),
+		1,
+	)
+	maximum = strings.Replace(
+		maximum,
+		"burst_requests: 128",
+		fmt.Sprintf("burst_requests: %d", MaximumRateLimitBurstRequests),
+		1,
+	)
+	if _, err := Parse([]byte(maximum)); err != nil {
+		t.Fatalf("maximum rate limit: %v", err)
+	}
+
+	for _, replacement := range [][2]string{
+		{
+			"requests_per_minute: 600",
+			fmt.Sprintf("requests_per_minute: %d", MaximumRateLimitRequestsPerMinute+1),
+		},
+		{
+			"burst_requests: 128",
+			fmt.Sprintf("burst_requests: %d", MaximumRateLimitBurstRequests+1),
+		},
+	} {
+		data := strings.Replace(base, replacement[0], replacement[1], 1)
+		if _, err := Parse([]byte(data)); err == nil {
+			t.Fatalf("rate limit replacement %q unexpectedly succeeded", replacement[1])
+		}
+	}
+}
+
+func TestTransportAggregatePayloadLimits(t *testing.T) {
+	repo, tokenFile, _ := configFixture(t)
+	base := validConfig(repo, tokenFile, "")
+	tests := []struct {
+		name        string
+		requestMax  string
+		responseMax string
+		concurrent  string
+		wantError   string
+	}{
+		{
+			name:        "defaults at aggregate boundaries",
+			requestMax:  "8388608",
+			responseMax: "8388608",
+			concurrent:  "8",
+		},
+		{
+			name:        "single maximum-size request",
+			requestMax:  "67108864",
+			responseMax: "67108864",
+			concurrent:  "1",
+		},
+		{
+			name:        "maximum concurrency with one MiB payloads",
+			requestMax:  "1048576",
+			responseMax: "1048576",
+			concurrent:  "64",
+		},
+		{
+			name:        "aggregate request bytes exceed boundary",
+			requestMax:  "8388609",
+			responseMax: "8388608",
+			concurrent:  "8",
+			wantError:   "transport.request_max_bytes multiplied by transport.max_concurrent_requests",
+		},
+		{
+			name:        "aggregate response bytes exceed boundary",
+			requestMax:  "8388608",
+			responseMax: "8388609",
+			concurrent:  "8",
+			wantError:   "transport.response_max_bytes multiplied by transport.max_concurrent_requests",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			data := strings.Replace(base, "request_max_bytes: 8388608", "request_max_bytes: "+test.requestMax, 1)
+			data = strings.Replace(data, "response_max_bytes: 8388608", "response_max_bytes: "+test.responseMax, 1)
+			data = strings.Replace(data, "max_concurrent_requests: 8", "max_concurrent_requests: "+test.concurrent, 1)
+			_, err := Parse([]byte(data))
+			if test.wantError == "" {
+				if err != nil {
+					t.Fatalf("Parse: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Parse error = %v, want containing %q", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestAggregateLimitCheckDoesNotMultiply(t *testing.T) {
+	if !exceedsAggregateLimit(int64(^uint64(0)>>1), 2, MaximumAggregateResponseBytes) {
+		t.Fatal("maximum int64 per-request value unexpectedly fit the aggregate limit")
+	}
+	if exceedsAggregateLimit(MaximumAggregateResponseBytes/2, 2, MaximumAggregateResponseBytes) {
+		t.Fatal("exact aggregate boundary unexpectedly exceeded the limit")
+	}
+}
+
 func TestLoadRejectsSymlinkConfiguration(t *testing.T) {
 	repo, tokenFile, _ := configFixture(t)
 	target := filepath.Join(t.TempDir(), "mcp.yaml")
@@ -198,6 +333,9 @@ transport:
   request_max_bytes: 8388608
   response_max_bytes: 8388608
   max_concurrent_requests: 8
+  rate_limit:
+    requests_per_minute: 600
+    burst_requests: 128
   request_timeout: 60s
   shutdown_timeout: 15s
   allowed_origins: []

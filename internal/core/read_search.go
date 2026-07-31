@@ -35,13 +35,15 @@ type ReadResult struct {
 }
 
 type SearchResult struct {
-	SchemaVersion    int               `json:"schema_version"`
-	Query            string            `json:"query"`
-	Backend          search.Backend    `json:"backend"`
-	BackendRequested search.Backend    `json:"backend_requested"`
-	IndexState       string            `json:"index_state"`
-	Results          []search.Result   `json:"results"`
-	Warnings         []catalog.Warning `json:"warnings"`
+	SchemaVersion    int                 `json:"schema_version"`
+	Query            string              `json:"query"`
+	Backend          search.Backend      `json:"backend"`
+	BackendRequested search.Backend      `json:"backend_requested"`
+	Matching         search.MatchingMode `json:"matching"`
+	FuzzyExpanded    bool                `json:"fuzzy_expanded"`
+	IndexState       string              `json:"index_state"`
+	Results          []search.Result     `json:"results"`
+	Warnings         []catalog.Warning   `json:"warnings"`
 }
 
 func ParseLineRange(value string) (LineRange, error) {
@@ -162,6 +164,12 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 		}
 	}
 	if err := search.ValidateQuery(query); err != nil {
+		var matchingErr *search.MatchingError
+		if errors.As(err, &matchingErr) {
+			apiErr := NewError(ExitUsage, matchingErr.Code, matchingErr.Message)
+			apiErr.Cause = matchingErr
+			return SearchResult{}, apiErr
+		}
 		apiErr := NewError(ExitValidation, "invalid_search", err.Error())
 		apiErr.Cause = err
 		return SearchResult{}, apiErr
@@ -177,8 +185,25 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 		if detailed.BackendRequested == "" {
 			detailed.BackendRequested = search.BackendAuto
 		}
+		detailed.Matching = search.NormalizeMatching(query.Matching)
+		for _, result := range detailed.Results {
+			if len(result.FuzzyMatches) > 0 {
+				detailed.FuzzyExpanded = true
+				break
+			}
+		}
 	}
 	if err != nil {
+		var matchingErr *search.MatchingError
+		if errors.As(err, &matchingErr) {
+			exitCode := ExitRuntime
+			if matchingErr.Code == "fuzzy_query_too_broad" {
+				exitCode = ExitUsage
+			}
+			apiErr := NewError(exitCode, matchingErr.Code, matchingErr.Message)
+			apiErr.Cause = matchingErr
+			return SearchResult{}, apiErr
+		}
 		var backendErr *search.BackendError
 		if errors.As(err, &backendErr) {
 			exitCode := ExitRuntime
@@ -202,6 +227,8 @@ func (s *Service) Search(ctx context.Context, query search.Query) (SearchResult,
 		Query:            query.Text,
 		Backend:          detailed.Backend,
 		BackendRequested: detailed.BackendRequested,
+		Matching:         detailed.Matching,
+		FuzzyExpanded:    detailed.FuzzyExpanded,
 		IndexState:       detailed.IndexState,
 		Results:          detailed.Results,
 		Warnings:         detailed.Warnings,

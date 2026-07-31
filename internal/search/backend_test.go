@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -75,6 +76,91 @@ func TestCandidateLimit(t *testing.T) {
 		if got := CandidateLimit(test.limit, test.multiplier, test.minimum, test.maximum); got != test.want {
 			t.Fatalf("CandidateLimit(%+v) = %d", test, got)
 		}
+	}
+}
+
+func TestLexicalRankingRewardsCoverageAndRarity(t *testing.T) {
+	candidates := []Candidate{
+		{
+			Path: "pages/repeated.md", DocumentID: "page_repeated", DocumentType: docs.TypePage,
+			Title: "Repeated", Kind: "note", Sensitivity: "normal",
+			Body: []byte("alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha"), BodyLineStart: 10,
+		},
+		{
+			Path: "pages/covered.md", DocumentID: "page_covered", DocumentType: docs.TypePage,
+			Title: "Covered", Kind: "note", Sensitivity: "normal",
+			Body: []byte("alpha has a gap before beta"), BodyLineStart: 10,
+		},
+	}
+	results := RankCandidates(candidates, Query{
+		Text: "alpha beta", Scope: ScopePages, Limit: 10, Access: AllAccessPolicy(),
+	})
+	if len(results) != 2 || results[0].ID != "page_covered" {
+		t.Fatalf("coverage did not outrank repeated single-term use: %+v", results)
+	}
+
+	rarityCandidates := []Candidate{
+		{
+			Path: "pages/common.md", DocumentID: "page_common", DocumentType: docs.TypePage,
+			Title: "Common", Kind: "note", Sensitivity: "normal", Body: []byte("common"), BodyLineStart: 10,
+		},
+		{
+			Path: "pages/rare.md", DocumentID: "page_rare", DocumentType: docs.TypePage,
+			Title: "Rare", Kind: "note", Sensitivity: "normal", Body: []byte("zephyr"), BodyLineStart: 10,
+		},
+		{
+			Path: "pages/common-two.md", DocumentID: "page_common_two", DocumentType: docs.TypePage,
+			Title: "Other", Kind: "note", Sensitivity: "normal", Body: []byte("common"), BodyLineStart: 10,
+		},
+		{
+			Path: "pages/common-three.md", DocumentID: "page_common_three", DocumentType: docs.TypePage,
+			Title: "Another", Kind: "note", Sensitivity: "normal", Body: []byte("common"), BodyLineStart: 10,
+		},
+	}
+	rarityResults := RankCandidates(rarityCandidates, Query{
+		Text: "common zephyr", Scope: ScopePages, Limit: 10, Access: AllAccessPolicy(),
+	})
+	var commonScore, rareScore int
+	for _, result := range rarityResults {
+		switch result.ID {
+		case "page_common_two":
+			commonScore = result.Score
+		case "page_rare":
+			rareScore = result.Score
+		}
+	}
+	if rareScore <= commonScore {
+		t.Fatalf("rare exact token score %d did not exceed common exact token score %d", rareScore, commonScore)
+	}
+}
+
+func TestLexicalRankingScoresSeparateTagTokens(t *testing.T) {
+	results := RankCandidates([]Candidate{{
+		Path: "pages/tags.md", DocumentID: "page_tags", DocumentType: docs.TypePage,
+		Title: "Tags", Kind: "note", Sensitivity: "normal",
+		Tags: []string{"security", "deployment"}, BodyLineStart: 10,
+	}}, Query{
+		Text: "security deployment", Scope: ScopePages, Limit: 10, Access: AllAccessPolicy(),
+	})
+	if len(results) != 1 || results[0].Score != 44 {
+		t.Fatalf("separate tag token score = %+v, want 44", results)
+	}
+}
+
+func TestKnownCorpusFrequencyKeepsBoundedCandidateScoresStable(t *testing.T) {
+	candidates := make([]Candidate, 20)
+	for index := range candidates {
+		candidates[index] = Candidate{
+			Path: fmt.Sprintf("pages/common-%02d.md", index), DocumentID: fmt.Sprintf("page_common_%02d", index),
+			DocumentType: docs.TypePage, Title: "Common", Kind: "note", Sensitivity: "normal",
+			Body: []byte("common evidence"), BodyLineStart: 10,
+		}
+	}
+	query := Query{Text: "common", Scope: ScopePages, Limit: 10, Access: AllAccessPolicy()}
+	bounded := rankCandidates(candidates, query, 60, map[string]int{"common": 60}, nil)
+	uncorrected := rankCandidates(candidates, query, 60, nil, nil)
+	if len(bounded) == 0 || len(uncorrected) == 0 || bounded[0].Score != 142 || uncorrected[0].Score <= bounded[0].Score {
+		t.Fatalf("bounded score=%+v uncorrected=%+v", bounded, uncorrected)
 	}
 }
 
@@ -162,6 +248,9 @@ func TestHybridCandidateRankingSensitivityAndBoundWarning(t *testing.T) {
 	}
 	if len(indexed.request.AllowedSensitivities) != 1 || indexed.request.AllowedSensitivities[0] != "normal" {
 		t.Fatalf("candidate access = %v", indexed.request.AllowedSensitivities)
+	}
+	if indexed.request.Matching != MatchingAuto {
+		t.Fatalf("candidate matching = %q", indexed.request.Matching)
 	}
 }
 

@@ -4,17 +4,21 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"lore/internal/audit"
 	"lore/internal/auth"
 	"lore/internal/serverconfig"
 
@@ -43,6 +47,14 @@ func TestHTTPModernStatelessAuthenticationAndPerPrincipalDiscovery(t *testing.T)
 	if got := toolNames(queryTools.Tools); strings.Join(got, ",") != "lore_read,lore_search" {
 		t.Fatalf("query tools = %v", got)
 	}
+	queryResources, err := querySession.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queryResources.Resources) != 1 ||
+		queryResources.Resources[0].URI != "lore://pages/page_project_foo" {
+		t.Fatalf("query resources = %+v", queryResources.Resources)
+	}
 	if queryRoundTripper.sawSessionID {
 		t.Fatal("stateless HTTP response exposed an MCP session ID")
 	}
@@ -69,6 +81,85 @@ func TestHTTPModernStatelessAuthenticationAndPerPrincipalDiscovery(t *testing.T)
 	}))
 	if len(localOnlyOutput.Results) != 0 {
 		t.Fatalf("local-only knowledge crossed HTTP: %+v", localOnlyOutput.Results)
+	}
+}
+
+func TestHTTPResourceReclassificationIsFreshAcrossRequests(t *testing.T) {
+	service := newTestService(t)
+	token := encodedHTTPToken("resources")
+	principal := httpPrincipal(t, "remote_reader", []auth.Permission{auth.PermissionQuery})
+	config := testHTTPConfig([]auth.BearerPrincipal{bearerEntry(t, principal, token)})
+	session, _ := connectHTTPClient(t, NewHTTPService(service, config, slog.New(slog.DiscardHandler)).Handler(), token, "")
+
+	before, err := session.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Resources) != 1 || before.Resources[0].URI != "lore://pages/page_project_foo" {
+		t.Fatalf("resources before reclassification = %+v", before.Resources)
+	}
+	pagePath := filepath.Join(service.Repo.Root, "pages", "project-foo.md")
+	data, err := os.ReadFile(pagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = []byte(strings.Replace(string(data), "sensitivity: normal", "sensitivity: sensitive", 1))
+	if err := os.WriteFile(pagePath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := session.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Resources) != 0 {
+		t.Fatalf("resources after reclassification = %+v", after.Resources)
+	}
+	if _, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "lore://pages/page_project_foo"}); err == nil {
+		t.Fatal("reclassified resource remained readable")
+	}
+}
+
+func TestHTTPResourcePaginationAcrossStatelessRequests(t *testing.T) {
+	service := newTestService(t)
+	for index := 0; index < 100; index++ {
+		data := fmt.Appendf(nil, `---
+id: page_http_bulk_%03d
+title: HTTP Bulk %03d
+kind: topic
+created: "2026-07-29"
+updated: "2026-07-29"
+status: active
+sensitivity: normal
+---
+HTTP pagination page.
+`, index, index)
+		path := filepath.Join(service.Repo.Root, "pages", fmt.Sprintf("http-bulk-%03d.md", index))
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token := encodedHTTPToken("pagination")
+	principal := httpPrincipal(t, "remote_reader", []auth.Permission{auth.PermissionQuery})
+	config := testHTTPConfig([]auth.BearerPrincipal{bearerEntry(t, principal, token)})
+	session, _ := connectHTTPClient(t, NewHTTPService(service, config, slog.New(slog.DiscardHandler)).Handler(), token, "")
+
+	first, err := session.ListResources(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Resources) != 100 || first.NextCursor == "" {
+		t.Fatalf("first HTTP resource page = count %d cursor %q", len(first.Resources), first.NextCursor)
+	}
+	second, err := session.ListResources(t.Context(), &mcp.ListResourcesParams{Cursor: first.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Resources) != 1 || second.NextCursor != "" {
+		t.Fatalf("second HTTP resource page = count %d cursor %q", len(second.Resources), second.NextCursor)
+	}
+	if first.Resources[len(first.Resources)-1].URI >= second.Resources[0].URI {
+		t.Fatal("HTTP resource pagination order changed across stateless requests")
 	}
 }
 
@@ -172,6 +263,105 @@ func TestHTTPOriginBodyLimitsHealthAndPrivacyHeaders(t *testing.T) {
 	}
 }
 
+func TestHTTPReadinessReportsRecoveryWithoutAffectingLiveness(t *testing.T) {
+	service := newTestService(t)
+	token := encodedHTTPToken("readiness")
+	config := testHTTPConfig([]auth.BearerPrincipal{
+		bearerEntry(t, httpPrincipal(t, "remote_reader", []auth.Permission{auth.PermissionQuery}), token),
+	})
+	gateway := NewHTTPService(service, config, slog.New(slog.DiscardHandler))
+
+	assertHealthResponse(t, gateway.Handler(), "/health/live", http.StatusOK, "{\"status\":\"ok\"}\n")
+	assertHealthResponse(t, gateway.Handler(), "/health/ready", http.StatusOK, "{\"status\":\"ok\"}\n")
+
+	active := filepath.Join(service.Repo.Root, ".lore", "recovery", "active")
+	if err := os.MkdirAll(active, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	assertHealthResponse(t, gateway.Handler(), "/health/live", http.StatusOK, "{\"status\":\"ok\"}\n")
+	recoveryBody := assertHealthResponse(
+		t,
+		gateway.Handler(),
+		"/health/ready",
+		http.StatusServiceUnavailable,
+		"{\"status\":\"unavailable\"}\n",
+	)
+
+	if err := os.Remove(active); err != nil {
+		t.Fatal(err)
+	}
+	assertHealthResponse(t, gateway.Handler(), "/health/ready", http.StatusOK, "{\"status\":\"ok\"}\n")
+
+	if err := os.Rename(
+		filepath.Join(service.Repo.Root, "pages"),
+		filepath.Join(service.Repo.Root, "pages-unavailable"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	assertHealthResponse(t, gateway.Handler(), "/health/live", http.StatusOK, "{\"status\":\"ok\"}\n")
+	degradedBody := assertHealthResponse(
+		t,
+		gateway.Handler(),
+		"/health/ready",
+		http.StatusServiceUnavailable,
+		"{\"status\":\"unavailable\"}\n",
+	)
+	if recoveryBody != degradedBody {
+		t.Fatalf("readiness failure bodies differ: %q != %q", recoveryBody, degradedBody)
+	}
+}
+
+func TestHTTPReadinessRejectsUnsupportedMethodsBeforeCheckingRepository(t *testing.T) {
+	checker := &countingReadinessChecker{}
+	handler := exactRouteHandler("/mcp", http.NotFoundHandler(), checker)
+	request := httptest.NewRequest(http.MethodPost, "/health/ready", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
+		t.Fatalf("unsupported readiness method = %d, headers=%v", response.Code, response.Header())
+	}
+	if checker.calls != 0 {
+		t.Fatalf("unsupported readiness method ran %d repository checks", checker.calls)
+	}
+}
+
+type countingReadinessChecker struct {
+	calls int
+}
+
+func (c *countingReadinessChecker) Check() error {
+	c.calls++
+	return nil
+}
+
+func assertHealthResponse(t *testing.T, handler http.Handler, path string, status int, body string) string {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != status || response.Body.String() != body {
+		t.Fatalf("%s response = %d %q, want %d %q", path, response.Code, response.Body.String(), status, body)
+	}
+	if response.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("%s content type = %q", path, response.Header().Get("Content-Type"))
+	}
+	if response.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("%s cache control = %q", path, response.Header().Get("Cache-Control"))
+	}
+	for _, forbidden := range []string{
+		"knowledge",
+		"remote_reader",
+		"recovery",
+		"pages",
+		"commit",
+	} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("%s leaked metadata in %q", path, response.Body.String())
+		}
+	}
+	return response.Body.String()
+}
+
 func TestConcurrencyTimeoutAndResponseLimitMiddleware(t *testing.T) {
 	entered := make(chan struct{}, 2)
 	release := make(chan struct{})
@@ -221,6 +411,160 @@ func TestConcurrencyTimeoutAndResponseLimitMiddleware(t *testing.T) {
 	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "12345") {
 		t.Fatalf("response limit = %d %q", response.Code, response.Body.String())
 	}
+}
+
+func TestResponseLimitRejectsStreaming(t *testing.T) {
+	buffered := newBufferedResponseWriter(1024)
+	if _, ok := any(buffered).(http.Flusher); ok {
+		t.Fatal("buffered response writer must not advertise streaming support")
+	}
+
+	handler := responseLimitMiddleware(1024, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		writer.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(writer, "data: private-event\n\n")
+	}))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("streaming response status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if strings.Contains(response.Body.String(), "private-event") {
+		t.Fatalf("streaming response body was published: %q", response.Body.String())
+	}
+	if contentType := response.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/plain") {
+		t.Fatalf("streaming rejection content type = %q", contentType)
+	}
+	if cacheControl := response.Header().Get("Cache-Control"); cacheControl != "private, no-store" {
+		t.Fatalf("streaming rejection cache control = %q", cacheControl)
+	}
+}
+
+func TestBoundedRequestAppliesLimitBeforeTimeoutBuffer(t *testing.T) {
+	writeResult := make(chan error, 1)
+	handler := boundedRequestMiddleware(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_, err := io.WriteString(writer, "12345")
+		writeResult <- err
+	}), time.Second, 4)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
+	if err := <-writeResult; !errors.Is(err, errResponseTooLarge) {
+		t.Fatalf("upstream write error = %v, want %v", err, errResponseTooLarge)
+	}
+	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), "12345") {
+		t.Fatalf("bounded request response = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestProtectedEndpointHoldsConcurrencySlotDuringResponsePublication(t *testing.T) {
+	token := encodedHTTPToken("publication")
+	principal := httpPrincipal(t, "remote_reader", []auth.Permission{auth.PermissionQuery})
+	entries := []auth.BearerPrincipal{bearerEntry(t, principal, token)}
+	config := testHTTPConfig(entries)
+	config.Transport.MaxConcurrentRequests = 1
+	config.Transport.RequestTimeout = serverconfig.Duration(5 * time.Second)
+	config.Transport.ResponseMaxBytes = 1024
+
+	entered := make(chan struct{}, 2)
+	protocolHandler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if got, ok := auth.PrincipalFromContext(request.Context()); !ok || got.ID != principal.ID {
+			t.Errorf("protocol principal = %+v, present=%t", got, ok)
+		}
+		entered <- struct{}{}
+		_, _ = io.WriteString(writer, "bounded response")
+	})
+	handler := protectedEndpointHandler(
+		config,
+		auth.NewBearerAuthenticator(entries),
+		audit.New(slog.New(slog.DiscardHandler)),
+		newPrincipalRateLimiter(entries, config.Transport.RateLimit, time.Now),
+		protocolHandler,
+	)
+
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseResponse := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseResponse)
+	firstResponse := newBlockingResponseWriter(release)
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		handler.ServeHTTP(firstResponse, authorizedRequest(token))
+	}()
+
+	select {
+	case <-firstResponse.writeStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first response did not begin publication")
+	}
+	select {
+	case <-entered:
+	default:
+		t.Fatal("first request published without entering the protocol handler")
+	}
+
+	secondResponse := httptest.NewRecorder()
+	handler.ServeHTTP(secondResponse, authorizedRequest(token))
+	if secondResponse.Code != http.StatusTooManyRequests || secondResponse.Header().Get("Retry-After") == "" {
+		t.Fatalf("request during response publication = %d, headers=%v", secondResponse.Code, secondResponse.Header())
+	}
+	select {
+	case <-entered:
+		t.Fatal("second request entered the protocol handler while the first response was publishing")
+	default:
+	}
+
+	releaseResponse()
+	select {
+	case <-firstDone:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not finish after response publication resumed")
+	}
+	if firstResponse.status != http.StatusOK {
+		t.Fatalf("first response status = %d", firstResponse.status)
+	}
+}
+
+func authorizedRequest(token string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	return request
+}
+
+type blockingResponseWriter struct {
+	header       http.Header
+	status       int
+	writeStarted chan struct{}
+	release      <-chan struct{}
+	writeOnce    sync.Once
+}
+
+func newBlockingResponseWriter(release <-chan struct{}) *blockingResponseWriter {
+	return &blockingResponseWriter{
+		header:       make(http.Header),
+		writeStarted: make(chan struct{}),
+		release:      release,
+	}
+}
+
+func (w *blockingResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *blockingResponseWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *blockingResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	w.writeOnce.Do(func() { close(w.writeStarted) })
+	<-w.release
+	return len(data), nil
 }
 
 func TestHTTPServiceGracefulShutdownAllowsActiveRequest(t *testing.T) {

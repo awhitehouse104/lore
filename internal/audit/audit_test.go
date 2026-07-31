@@ -22,9 +22,11 @@ func TestRecorderEmitsOnlySanitizedMetadata(t *testing.T) {
 		ErrorID:      secret,
 		WarningCodes: []string{"index_stale", secret, "index_stale"},
 	})
-	recorder.AuthenticationDenied("http")
+	denialSecret := "seeded_secret_token"
+	recorder.AuthenticationDenied("http", AuthenticationDenialMissingCredentials)
+	recorder.AuthenticationDenied("http", AuthenticationDenialReason(denialSecret))
 	logged := output.String()
-	if strings.Contains(logged, secret) {
+	if strings.Contains(logged, secret) || strings.Contains(logged, denialSecret) {
 		t.Fatalf("audit log leaked seeded secret: %s", logged)
 	}
 	for _, expected := range []string{
@@ -34,6 +36,8 @@ func TestRecorderEmitsOnlySanitizedMetadata(t *testing.T) {
 		`"operation":"unknown"`,
 		`"duration_ms":42`,
 		`"event":"mcp_authentication"`,
+		`"reason":"missing_credentials"`,
+		`"reason":"invalid_credentials"`,
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Errorf("audit log missing %s: %s", expected, logged)

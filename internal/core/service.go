@@ -19,6 +19,8 @@ import (
 	"lore/internal/transaction"
 )
 
+const DefaultWriteLockWait = 2 * time.Second
+
 type Clock interface {
 	Now() time.Time
 }
@@ -61,18 +63,20 @@ type Service struct {
 	Actor            string
 	TxHooks          TransactionHooks
 	IndexMaintenance IndexMaintenance
+	WriteLockWait    time.Duration
 }
 
 func NewService(repo *repository.Repository) *Service {
 	service := &Service{
-		Repo:    repo,
-		Git:     gitx.New(),
-		Clock:   RealClock{},
-		IDs:     id.CryptoGenerator{},
-		History: gitx.New(),
-		TxGit:   gitx.New(),
-		TxIDs:   transaction.CryptoIDGenerator{},
-		Actor:   transaction.DefaultActor,
+		Repo:          repo,
+		Git:           gitx.New(),
+		Clock:         RealClock{},
+		IDs:           id.CryptoGenerator{},
+		History:       gitx.New(),
+		TxGit:         gitx.New(),
+		TxIDs:         transaction.CryptoIDGenerator{},
+		Actor:         transaction.DefaultActor,
+		WriteLockWait: DefaultWriteLockWait,
 	}
 	manager := service.indexManager()
 	service.IndexMaintenance = manager
@@ -146,33 +150,14 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 	}
 
 	now := s.Clock.Now().UTC()
-	handle, err := lock.Acquire(s.Repo.Root, "capture", now)
-	if err != nil {
-		var contention *lock.ContentionError
-		if errors.As(err, &contention) {
-			return result, &APIError{
-				Code:    "repository_locked",
-				Message: contention.Error(),
-				Details: map[string]any{
-					"lock_path":       lock.ManualRecoveryPath(s.Repo.Root),
-					"pid":             contention.Metadata.PID,
-					"hostname":        contention.Metadata.Hostname,
-					"command":         contention.Metadata.Command,
-					"started_at":      contention.Metadata.StartedAt,
-					"manual_recovery": "verify that the owning process has exited, then remove the lock directory manually",
-				},
-				ExitCode: ExitConflict,
-				Cause:    err,
-			}
-		}
-		apiErr := NewError(ExitRuntime, "lock_failed", "could not acquire repository write lock")
-		apiErr.Cause = err
+	handle, apiErr := s.acquireWriteLock(ctx, "capture", now)
+	if apiErr != nil {
 		return result, apiErr
 	}
 	defer func() {
 		if releaseErr := handle.Release(); releaseErr != nil && returnErr == nil {
 			apiErr := NewError(ExitRuntime, "lock_release_failed", "capture completed but the repository write lock could not be released")
-			apiErr.Details = map[string]any{"lock_path": lock.ManualRecoveryPath(s.Repo.Root)}
+			apiErr.Details = map[string]any{"lock_path": lock.Path(s.Repo.Root)}
 			apiErr.Cause = releaseErr
 			returnErr = apiErr
 		}

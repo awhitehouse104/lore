@@ -55,6 +55,7 @@ type TransactionSummary struct {
 	ChangedPaths  []string           `json:"changed_paths"`
 	Operations    int                `json:"operations"`
 	Commit        string             `json:"commit,omitempty"`
+	ArtifactState string             `json:"artifact_state"`
 }
 
 type TransactionListResult struct {
@@ -63,12 +64,13 @@ type TransactionListResult struct {
 }
 
 type TransactionShowResult struct {
-	SchemaVersion int                  `json:"schema_version"`
-	Proposal      transaction.Proposal `json:"proposal"`
-	State         transaction.State    `json:"state"`
-	PreviewDigest string               `json:"preview_digest"`
-	Lint          lint.Result          `json:"lint"`
-	Diff          string               `json:"diff,omitempty"`
+	SchemaVersion int                           `json:"schema_version"`
+	Proposal      transaction.Proposal          `json:"proposal"`
+	State         transaction.State             `json:"state"`
+	PreviewDigest string                        `json:"preview_digest"`
+	Lint          lint.Result                   `json:"lint"`
+	Diff          string                        `json:"diff,omitempty"`
+	Retention     *transaction.RetentionReceipt `json:"retention,omitempty"`
 }
 
 type TransactionDiscardResult struct {
@@ -107,14 +109,14 @@ func (s *Service) preview(ctx context.Context, requestBytes []byte, access *sear
 	}
 
 	now := s.Clock.Now().UTC()
-	handle, apiErr := acquireWriteLock(s.Repo, "preview", now)
+	handle, apiErr := s.acquireWriteLock(ctx, "preview", now)
 	if apiErr != nil {
 		return result, apiErr
 	}
 	defer func() {
 		if releaseErr := handle.Release(); releaseErr != nil && returnErr == nil {
 			apiErr := NewError(ExitRuntime, "lock_release_failed", "preview completed but the repository write lock could not be released")
-			apiErr.Details = map[string]any{"lock_path": lock.ManualRecoveryPath(s.Repo.Root)}
+			apiErr.Details = map[string]any{"lock_path": lock.Path(s.Repo.Root)}
 			apiErr.Cause = releaseErr
 			returnErr = apiErr
 		}
@@ -538,7 +540,7 @@ func (s *Service) TransactionShow(transactionID string, includeDiff bool) (Trans
 		return result, transactionRuntimeError("transaction_integrity_failed", fmt.Sprintf("transaction %s failed integrity verification", transactionID), err)
 	}
 	var lintResult lint.Result
-	if artifacts.State.Status == transaction.StatusDiscarded {
+	if artifacts.State.Status == transaction.StatusDiscarded || artifacts.Retention != nil {
 		lintResult = lint.Result{
 			SchemaVersion: SchemaVersion,
 			Valid:         artifacts.State.Lint.Valid,
@@ -557,6 +559,7 @@ func (s *Service) TransactionShow(transactionID string, includeDiff bool) (Trans
 		State:         artifacts.State,
 		PreviewDigest: artifacts.PreviewDigest,
 		Lint:          lintResult,
+		Retention:     artifacts.Retention,
 	}
 	if includeDiff {
 		result.Diff = string(artifacts.Diff)
@@ -599,8 +602,8 @@ func (s *Service) TransactionShowOwned(ctx context.Context, transactionID string
 	return result, nil
 }
 
-func (s *Service) TransactionDiscard(transactionID string) (result TransactionDiscardResult, returnErr error) {
-	return s.transactionDiscard(context.Background(), transactionID, nil)
+func (s *Service) TransactionDiscard(ctx context.Context, transactionID string) (result TransactionDiscardResult, returnErr error) {
+	return s.transactionDiscard(ctx, transactionID, nil)
 }
 
 func (s *Service) TransactionDiscardOwned(ctx context.Context, transactionID string, access search.AccessPolicy) (result TransactionDiscardResult, returnErr error) {
@@ -612,7 +615,7 @@ func (s *Service) TransactionDiscardOwned(ctx context.Context, transactionID str
 
 func (s *Service) transactionDiscard(ctx context.Context, transactionID string, access *search.AccessPolicy) (result TransactionDiscardResult, returnErr error) {
 	now := s.Clock.Now().UTC()
-	handle, apiErr := acquireWriteLock(s.Repo, "transaction discard", now)
+	handle, apiErr := s.acquireWriteLock(ctx, "transaction discard", now)
 	if apiErr != nil {
 		return result, apiErr
 	}
@@ -680,8 +683,8 @@ func (s *Service) requireNoRecovery() *APIError {
 	return nil
 }
 
-func acquireWriteLock(repo *repository.Repository, command string, now time.Time) (*lock.Handle, *APIError) {
-	handle, err := lock.Acquire(repo.Root, command, now)
+func (s *Service) acquireWriteLock(ctx context.Context, command string, now time.Time) (*lock.Handle, *APIError) {
+	handle, err := lock.Acquire(ctx, s.Repo.Root, command, now, s.WriteLockWait)
 	if err == nil {
 		return handle, nil
 	}
@@ -689,12 +692,19 @@ func acquireWriteLock(repo *repository.Repository, command string, now time.Time
 	if errors.As(err, &contention) {
 		apiErr := NewError(ExitConflict, "repository_locked", contention.Error())
 		apiErr.Details = map[string]any{
-			"lock_path":       lock.ManualRecoveryPath(repo.Root),
-			"pid":             contention.Metadata.PID,
-			"hostname":        contention.Metadata.Hostname,
-			"command":         contention.Metadata.Command,
-			"started_at":      contention.Metadata.StartedAt,
-			"manual_recovery": "verify that the owning process has exited, then remove the lock directory manually",
+			"lock_path": lock.Path(s.Repo.Root),
+			"waited_ms": contention.Waited.Milliseconds(),
+			"retryable": !contention.LegacyDirectory,
+		}
+		if contention.MetadataAvailable {
+			apiErr.Details["pid"] = contention.Metadata.PID
+			apiErr.Details["hostname"] = contention.Metadata.Hostname
+			apiErr.Details["command"] = contention.Metadata.Command
+			apiErr.Details["started_at"] = contention.Metadata.StartedAt
+		}
+		if contention.LegacyDirectory {
+			apiErr.Details["legacy_lock"] = true
+			apiErr.Details["manual_recovery"] = "stop all Lore v0.4 writers, verify the recorded owner has exited, then remove the legacy lock directory and retry"
 		}
 		apiErr.Cause = err
 		return nil, apiErr
@@ -744,6 +754,12 @@ func lintWarningsWithout(result lint.Result, excludedCodes ...string) []string {
 }
 
 func transactionSummary(artifacts transaction.Artifacts) TransactionSummary {
+	artifactState := "retained"
+	if artifacts.State.Status == transaction.StatusDiscarded {
+		artifactState = "discarded"
+	} else if artifacts.Retention != nil {
+		artifactState = string(artifacts.Retention.Phase)
+	}
 	return TransactionSummary{
 		TransactionID: artifacts.Proposal.TransactionID,
 		Status:        artifacts.State.Status,
@@ -757,6 +773,7 @@ func transactionSummary(artifacts transaction.Artifacts) TransactionSummary {
 		ChangedPaths:  append([]string(nil), artifacts.Proposal.ChangedPaths...),
 		Operations:    len(artifacts.Proposal.Operations),
 		Commit:        artifacts.State.Commit,
+		ArtifactState: artifactState,
 	}
 }
 

@@ -28,12 +28,14 @@ import (
 )
 
 type Server struct {
-	service       *core.Service
-	principal     auth.Principal
-	mcp           *mcp.Server
-	logger        *slog.Logger
-	resourceMu    sync.Mutex
-	pageResources map[string]pageResource
+	service         *core.Service
+	principal       auth.Principal
+	mcp             *mcp.Server
+	logger          *slog.Logger
+	resourceMu      sync.Mutex
+	resourceScan    resourceCatalogScanner
+	resourcesLoaded bool
+	pageResources   map[string]pageResource
 }
 
 func New(service *core.Service, principal auth.Principal, logger *slog.Logger) *Server {
@@ -41,8 +43,15 @@ func New(service *core.Service, principal auth.Principal, logger *slog.Logger) *
 }
 
 func NewWithContext(ctx context.Context, service *core.Service, principal auth.Principal, logger *slog.Logger) *Server {
+	return newWithResourceScanner(ctx, service, principal, logger, scanResourceCatalog)
+}
+
+func newWithResourceScanner(ctx context.Context, service *core.Service, principal auth.Principal, logger *slog.Logger, scanner resourceCatalogScanner) *Server {
 	if service == nil {
 		panic("nil Lore service")
+	}
+	if scanner == nil {
+		panic("nil Lore resource scanner")
 	}
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
@@ -54,7 +63,14 @@ func NewWithContext(ctx context.Context, service *core.Service, principal auth.P
 		service:       &serviceCopy,
 		principal:     principal,
 		logger:        logger,
+		resourceScan:  scanner,
 		pageResources: make(map[string]pageResource),
+	}
+	capabilities := &mcp.ServerCapabilities{}
+	if principal.Transport == auth.TransportHTTP && principal.Has(auth.PermissionQuery) {
+		// Stateless JSON HTTP cannot deliver resource-list notifications. This
+		// also prevents lazy per-request registration from scheduling them.
+		capabilities.Resources = &mcp.ResourceCapabilities{ListChanged: false}
 	}
 	server.mcp = mcp.NewServer(
 		&mcp.Implementation{Name: "lore", Version: version.Version},
@@ -62,7 +78,7 @@ func NewWithContext(ctx context.Context, service *core.Service, principal auth.P
 			Instructions: "Query and inspect the configured Lore Markdown knowledge repository through typed operations.",
 			Logger:       logger,
 			PageSize:     100,
-			Capabilities: &mcp.ServerCapabilities{},
+			Capabilities: capabilities,
 		},
 	)
 	server.addTools()
@@ -122,14 +138,19 @@ func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input Searc
 	if backend == "" {
 		backend = search.BackendAuto
 	}
+	matching := search.MatchingMode(input.Matching)
+	if matching == "" {
+		matching = search.MatchingAuto
+	}
 	result, err := s.service.Search(ctx, search.Query{
-		Text:    input.Query,
-		Scope:   scope,
-		Tags:    input.Tags,
-		Paths:   input.Paths,
-		Limit:   limit,
-		Backend: backend,
-		Access:  s.principal.AccessPolicy(),
+		Text:     input.Query,
+		Scope:    scope,
+		Tags:     input.Tags,
+		Paths:    input.Paths,
+		Limit:    limit,
+		Backend:  backend,
+		Matching: matching,
+		Access:   s.principal.AccessPolicy(),
 	})
 	if err != nil {
 		callResult, toolErr := mappedToolError(err, requestID)
@@ -143,6 +164,8 @@ func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input Searc
 		Query:            result.Query,
 		Backend:          result.Backend,
 		BackendRequested: result.BackendRequested,
+		Matching:         result.Matching,
+		FuzzyExpanded:    result.FuzzyExpanded,
 		IndexState:       result.IndexState,
 		Results:          result.Results,
 		Warnings:         safeSearchWarnings(result.Warnings),
@@ -272,7 +295,7 @@ func (s *Server) indexStatus(ctx context.Context, _ *mcp.CallToolRequest, _ Inde
 		RequestID:          requestID,
 		Operation:          "lore_index_status",
 		IndexState:         result.IndexState,
-		SchemaCompatible:   result.IndexSchemaVersion == 0 || result.IndexSchemaVersion == loreindex.SchemaVersion,
+		SchemaCompatible:   result.IndexSchemaVersion == 0 || result.IndexSchemaVersion == loreindex.IndexSchemaVersion,
 		IndexSchemaVersion: result.IndexSchemaVersion,
 		IndexedHead:        result.IndexedHead,
 		CurrentHead:        result.CurrentHead,
@@ -741,12 +764,13 @@ func searchTool() *mcp.Tool {
 		InputSchema: objectSchema(
 			[]string{"query"},
 			map[string]any{
-				"query":   map[string]any{"type": "string", "minLength": 1, "maxLength": 4096},
-				"limit":   map[string]any{"type": "integer", "minimum": 1, "maximum": maximumSearchLimit, "default": search.DefaultLimit},
-				"types":   map[string]any{"type": "array", "maxItems": 2, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"page", "source"}}},
-				"tags":    stringArraySchema(20, 128),
-				"paths":   stringArraySchema(20, 1024),
-				"backend": map[string]any{"type": "string", "enum": []string{"auto", "index", "filesystem"}, "default": "auto"},
+				"query":    map[string]any{"type": "string", "minLength": 1, "maxLength": 4096},
+				"limit":    map[string]any{"type": "integer", "minimum": 1, "maximum": maximumSearchLimit, "default": search.DefaultLimit},
+				"types":    map[string]any{"type": "array", "maxItems": 2, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"page", "source"}}},
+				"tags":     stringArraySchema(20, 128),
+				"paths":    stringArraySchema(20, 1024),
+				"backend":  map[string]any{"type": "string", "enum": []string{"auto", "index", "filesystem"}, "default": "auto"},
+				"matching": map[string]any{"type": "string", "enum": []string{"auto", "lexical", "fuzzy"}, "default": "auto"},
 			},
 		),
 	}

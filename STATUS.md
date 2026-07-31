@@ -5,6 +5,285 @@
 Lore v0.4.0 — released from the final status commit tagged `v0.4.0`.
 Milestones 1–5 and the complete release matrix are finished.
 
+## Post-v0.4 maintenance
+
+- **Review backlog item 1 — deterministic MCP test clock:** completed
+  2026-07-30. The shared MCP integration fixture now uses an explicit fixed UTC
+  clock aligned with its dated documents, removing a wall-clock-dependent
+  `updated_too_old` failure in the transaction authorization test without
+  changing production behavior. The focused test passed 20 consecutive runs;
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 2 — current development instructions:** completed
+  2026-07-30. Root `AGENTS.md` now treats the released v0.4 CLI, disposable
+  index, stdio MCP, and stateless HTTP MCP gateway as the architecture baseline
+  while requiring explicit scope for genuinely new architectural surfaces.
+  Generated knowledge-repository agent rules were audited and remain current;
+  their focused initialization test and the full vet, test, race-test, and
+  build checks passed.
+- **Review backlog item 3 — crash-safe repository write lock:** completed
+  2026-07-30. The removable lock directory is now a persistent private regular
+  file protected by Linux `flock`, so descriptor closure on normal exit,
+  `SIGKILL`, or OOM termination releases ownership without operator cleanup.
+  Writers use a deterministic two-second, context-cancellable exponential
+  retry window; contention retains typed, body-free diagnostics. Migration
+  waits for a live v0.4 directory-lock writer to finish, fails closed on a
+  persistent legacy directory, and prevents mixed-version double ownership.
+  Subprocess-death, live-contention, cancellation, malformed-metadata,
+  symlink/non-regular-path, upgrade, core error-shape, and queued MCP-writer
+  tests pass. `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 4 — hardened Git subprocess execution:** completed
+  2026-07-30. Every Git invocation now uses one noninteractive runner with a
+  deterministic environment allowlist, command-line hardening, 30-second local
+  and two-minute push deadlines, earlier-caller deadline precedence, and Linux
+  process-group termination on cancellation. Repository hooks, filesystem
+  monitors, signing, automatic maintenance, external transports, editors,
+  pagers, prompts, and askpass programs are disabled. Active Git content
+  filters on managed or staged paths are rejected before status/add can execute
+  them. Unattended pushes retain explicitly documented support for narrow SSH
+  deploy keys or agents and trusted noninteractive HTTPS credential helpers.
+  Adversarial tests cover hooks, signing, fsmonitor, filters, environment
+  leakage, askpass, credential helpers, local/network/caller timeouts,
+  cancellation, and surviving child processes. `go vet ./...`,
+  `go test ./...`, `go test -race ./...`, and `go build ./cmd/lore` all passed.
+- **Review backlog item 5 — safe transaction-artifact retention:** completed
+  2026-07-30. Added the explicit local `lore transaction prune` command with a
+  required whole-hour/day/week age, bounded oldest-first selection, exact UTC
+  cutoff, dry-run, and deterministic schema-v1 reporting. Only committed
+  transactions are eligible, using immutable `committed_at`; active recovery
+  and every noncommitted state are protected. Prune holds the repository write
+  lock, preflights every selection before removal, requires the recorded commit
+  to remain reachable, verifies its exact path set and blob hashes, then
+  revalidates each transaction immediately before compaction. A private
+  two-phase `retention.json` receipt binds an exact sorted payload manifest and
+  makes cancellation or interruption resumable while preserving proposal/state
+  receipts, local inspection, and repeated-commit idempotency. Removal is
+  limited to hash-verified regular content, diff, and lint files; strict
+  layouts, no-follow reads, symlink rejection, and lint findings fail closed.
+  No repository retention config, MCP mutation, bundled timer, or secure-erasure
+  claim was added. Store, core, CLI, Git-proof, cutoff/limit, recovery/lock,
+  authorization, lint, cancellation, interruption, malformed-layout, and
+  symlink tests pass. `go vet ./...`, `go test ./...`,
+  `go test -race ./...`, and `go build ./cmd/lore` all passed.
+- **Review backlog item 6 — bounded HTTP memory envelope:** completed
+  2026-07-30. External configuration now caps both configured in-flight
+  request capacity and response capacity at 64 MiB using overflow-safe
+  cross-field validation while preserving the 8 MiB/eight-request defaults.
+  Lore's bounded writer now runs before the standard-library timeout buffer,
+  preventing that inner buffer from growing past the response cap.
+  Whole-response publication no longer advertises flushing and rejects SSE
+  bodies, making Lore's finite stateless-JSON transport assumption executable.
+  The deployment guide distinguishes payload capacity from process RSS, and
+  the sample systemd unit adds 384 MiB `MemoryHigh` and 512 MiB `MemoryMax`
+  starting limits for modest default deployments. Boundary, overflow, and SSE
+  regression tests pass; `go vet ./...`, `go test ./...`,
+  `go test -race ./...`, and `go build ./cmd/lore` all passed. The sample unit
+  parsed under `systemd-analyze verify` with only the expected absent
+  `/usr/local/bin/lore` deployment-path warning.
+- **Review backlog item 7 — lazy HTTP resource enumeration:** completed
+  2026-07-30. Query-capable stateless servers now register only their stable
+  page/source templates during construction and enumerate concrete authorized
+  pages immediately before `resources/list`. Discovery, initialization, tool
+  and template listing, exact resource reads, and unrelated tool calls no
+  longer pay a resource-registration catalog scan. HTTP uses no cross-request
+  resource metadata cache, so external sensitivity reclassification is visible
+  on the next list; exact reads continue to reauthorize current Markdown.
+  HTTP accurately advertises no resource-list notifications, scan failures are
+  generic and retryable, concurrent lists on one server share one load, and
+  stateless commits skip their previously wasted post-success refresh. Stdio
+  retains eager startup enumeration and refreshes loaded resources after
+  commit. On the development host, five-iteration 1,000/10,000-document
+  benchmarks held HTTP server construction roughly flat at 0.52/0.48 ms,
+  measured intentional cold-registry enumeration at 14.6/120.6 ms, and measured
+  warm stdio registry checks at 60/70 ns. Focused tests passed 20 consecutive
+  runs; `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 8 — meaningful bounded readiness:** completed
+  2026-07-30. Liveness remains process-only and performs no repository I/O.
+  Readiness now verifies the startup repository identity and configuration,
+  five required real directories, and absence of active recovery using a fixed
+  set of symlink-rejecting metadata/open checks. It never scans or parses managed
+  Markdown, reparses YAML, invokes Git, inspects the index, contacts a remote,
+  or acquires the write lock. Repository degradation, configuration drift, and
+  active or malformed recovery state return the same metadata-free
+  `503 {"status":"unavailable"}` while liveness stays healthy; resolving
+  recovery restores readiness without restart. Configuration changes require a
+  restart so the running service and readiness baseline agree. Root/config
+  replacement, required-path damage, recovery lifecycle, privacy equivalence,
+  document-scan exclusion, and method-ordering tests pass. Focused tests passed
+  20 consecutive runs; `go vet ./...`, `go test ./...`,
+  `go test -race ./...`, and `go build ./cmd/lore` all passed.
+- **Review backlog item 9 — safe remote deployment examples:** completed
+  2026-07-30. Tailscale Serve over Lore's loopback listener is now the
+  recommended private topology, with a query-only/normal-only principal,
+  least-privilege TCP-443 grant and policy tests, exact `/mcp` publication,
+  persistent Serve setup, and explicit prohibition on Funnel. A separate
+  Caddy 2.10+ custom-domain example preserves bearer authorization, limits
+  request bodies and connection phases consistently with Lore's defaults,
+  omits access/body/credential logging, routes only `/mcp`, and leaves health
+  endpoints local. The deployment guide now distinguishes both trust
+  boundaries; covers DNS, certificates, firewalls, identity headers,
+  restarts, direct-bind fallback risk, and post-reboot smoke checks; and keeps
+  public reachability non-default. The Lore configurations passed strict
+  config validation, the Caddyfile passed Caddy 2.11.4 validation, and the
+  full vet, test, race-test, and build checks passed.
+- **Review backlog item 10 — bounded authenticated request rate:** completed
+  2026-07-30. Each configured HTTP principal now receives an independent
+  in-memory token bucket admitting 128 immediate requests and sustaining 600
+  requests per minute by default. Admission occurs after exact-origin and
+  constant-time bearer authentication but before shared concurrency, MCP
+  parsing, or repository work. Bucket state is fixed at configured principals;
+  health, origin denials, and invalid tokens neither allocate nor consume it.
+  Exhaustion returns deterministic private/no-store HTTP `429` with an integer
+  `Retry-After`. Strict configuration supports deliberately higher or lower
+  limits, requires a burst at least as large as configured concurrency, and
+  preserves defaults when the new block is omitted. Expensive-operation
+  weighting was deliberately deferred: the generous method-agnostic fuse
+  protects tight loops without coupling admission to MCP bodies or constraining
+  ordinary agent workflows. Isolation, refill, full-default-burst, concurrent
+  safety, bounded-state, origin/authentication/health exclusion,
+  response-privacy, configuration-boundary, and normal protocol tests pass.
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 11 — privacy-safe authentication-denial
+  observability:** completed 2026-07-30. Lore denial warnings now distinguish
+  only `missing_credentials` from `invalid_credentials` while preserving an
+  identical public `401` and excluding direct/forwarded addresses, attempted
+  identities, tokens and hashes, headers, targets, queries, and bodies. Source
+  attribution remains at the edge: the default private and public examples
+  retain no access log, while a separate opt-in Caddy example emits a minimized
+  private rolling record containing only fixed logger fields, timestamp, direct
+  source IP, constant `/mcp`, and status. It skips unrelated paths and never
+  trusts forwarded identity. A disabled-by-default Fail2ban jail consumes only
+  that Caddy record, uses IP-only targets and forgiving 30-in-five-minute/
+  15-minute-ban defaults, and documents proxy, retention, recovery, and
+  self-ban hazards. Seeded-secret, reason-shape, response-equivalence, and
+  existing audit tests pass. The Caddyfile validated and its runtime output
+  matched the documented minimized shape under Caddy 2.11.4. Both Caddy
+  examples also remove request metadata from the separate runtime-error stream,
+  including during seeded upstream failure. The filter matched only IPv4/IPv6
+  Caddy `401` fixtures and the enabled jail configuration parsed under upstream
+  Fail2ban 1.1.0. `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 15 — focused failure-path coverage:** completed
+  2026-07-30 without a percentage-driven sweep. Recovery-store tests now reject
+  active-path and artifact symlinks, modified originals, unknown journal
+  fields, and trailing JSON values; a failed journal creation proves it leaves
+  neither published nor temporary state. End-to-end CLI tests preserve stable
+  exit codes for missing recovery actions, map malformed journals to the
+  generic runtime error, and prove private journal content stays out of JSON
+  and stderr. The earlier operational items already cover Git
+  prompt/hook/timeout/process-group behavior, dead lock owners and bounded
+  waiting, prune interruption and malformed artifacts, external-edit recovery
+  conflicts, and graceful HTTP shutdown. Filesystem permission and disk-full
+  injection remain intentionally deferred until a portable deterministic
+  harness exists. Focused recovery/app tests and the full vet, test, race-test,
+  and build checks passed.
+- **Review backlog item 16, phase 1 — measured retrieval baseline:** completed
+  2026-07-31 without changing production search behavior. Added a strict,
+  repository-owned agent-retrieval harness with an 18-document synthetic
+  Markdown corpus and 49 graded cases covering direct terms, noisy natural
+  questions, morphology, typos, vocabulary mismatch, multi-term ranking,
+  metadata filters, sources, and sensitivity boundaries. Each run stages the
+  corpus privately, builds a disposable index without depending on developer
+  Git state, evaluates forced filesystem and production `auto` search, and
+  reports hit@1/3/5/10, MRR, recall@5, nDCG@10, result volume, zero results,
+  forbidden results, effective backend use, and exact parity. A checked-in
+  deterministic JSON baseline is enforced by `go test ./...`; the developer
+  command prints weak cases and requires an explicit reviewed baseline update.
+  The initial production-auto baseline is 63.3% hit@1, 69.4% hit@5, 0.650 MRR,
+  and zero forbidden results. Direct, metadata, source, multi-term, and
+  authorization cases are perfect; typo and vocabulary-mismatch cases are
+  zero, morphology is 33.3% hit@5, and noisy natural questions are 90% hit@5.
+  The harness also found one pre-existing non-top-result parity gap: filesystem
+  scoring can return kind-only matches that FTS candidate generation cannot
+  discover because `kind` is absent from the FTS table. Lexical, fuzzy,
+  result-evidence, and agent-search-loop improvements remain the next phase.
+- **Review backlog item 16, phase 2 — lexical ranking quality:** completed
+  2026-07-31. The shared deterministic scorer now gives exact token credit to
+  individual tags, rewards distinct query-term coverage, and applies bounded
+  corpus-rarity bonuses computed only over authorized documents remaining
+  after scope, kind, tag, and path filters. Exact phrase/title boosts remain
+  dominant and repeated body occurrences remain capped. Filesystem search now
+  feeds the same candidate ranker used by indexed search. Derived index schema
+  version 2 adds `kind` to FTS candidates and an indexed exact-term table
+  populated by Lore's Unicode tokenizer; this supplies corpus-wide frequency
+  data even when FTS candidates are capped and avoids FTS diacritic
+  normalization changing public scores. Existing schema-version-1 indexes are
+  intentionally incompatible and require a disposable rebuild; public JSON
+  and repository configuration remain schema version 1. Focused tests cover
+  coverage versus repetition, rarity, separate tag tokens, capped candidates,
+  kind-only discovery, and accent-sensitive backend parity. On the unchanged
+  49-case suite, hit@1 held at 63.3%, hit@5 improved from 69.4% to 75.5%, MRR
+  from 0.650 to 0.679, nDCG@10 from 0.660 to 0.698, and zero-result cases fell
+  from 11 to 10. Morphology hit@5 rose from 33.3% to 50.0% and vocabulary
+  mismatch from 0% to 33.3%; fuzzy typos remain 0%. Forbidden results remain
+  zero and filesystem/production-auto parity improved from 48/49 to 49/49.
+  Fuzzy candidate generation, richer result evidence, and agent search-loop
+  guidance remain separate follow-on work.
+- **Review backlog item 16, phase 3 — adaptive fuzzy matching:** completed
+  2026-07-31. Search now defaults to backend-independent `matching=auto`, which
+  keeps exact lexical behavior and typo-expands only authorized,
+  already-filtered out-of-vocabulary query terms of at least six Unicode
+  characters, up to a length bound of 24. Callers can select `lexical` for
+  strict exact-token behavior or `fuzzy` to expand all eligible terms from
+  four through 24 characters. Expansion
+  uses deterministic bounded Unicode Damerau-Levenshtein distance, minimum
+  similarity thresholds, at most eight query terms, and at most four
+  corrections per term. Exact evidence remains stronger, fuzzy phrase scoring
+  is excluded, and every returned correction includes its query term,
+  document term, and edit distance. Filters are applied before vocabulary
+  construction, preventing unauthorized terms from appearing in corrections
+  or frequency statistics. Derived index schema version 3 adds exact Unicode
+  rune lengths to the term table; schema versions 1 and 2 require the normal
+  disposable rebuild. A 100,000-term filtered-vocabulary work bound makes
+  automatic search fall back to exact results with a warning and makes
+  explicit fuzzy search fail instead of silently returning partial evidence.
+  Focused tests cover transpositions, Unicode, deterministic selection,
+  scoring, backend parity, access isolation, schema incompatibility and
+  corruption, CLI/MCP contracts, work-bound behavior, and allocation-bounded
+  candidate selection. The optimized 100,000-term selection microbenchmark on
+  the development workstation runs in about 62 ms with 384 bytes and one
+  allocation, excluding SQLite vocabulary materialization. On the 49-case
+  retrieval suite, hit@1 is 79.6%, hit@5 is 89.8%, MRR is 0.838, nDCG@10 is
+  0.854, zero-result cases fall from 10 to 2, forbidden results remain zero,
+  and filesystem/production-auto parity remains 49/49. All four dedicated
+  typo cases now hit the expected page at rank 1; remaining failures are
+  primarily semantic vocabulary mismatches rather than spelling errors.
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Review backlog item 16, phase 4 — agent retrieval loop and search v1:**
+  completed 2026-07-31. Generated AGENTS, Claude, operating-rule, and repository
+  guidance now teaches agents to start with automatic matching, inspect and
+  read likely results, reformulate weak queries with distinctive evidence
+  terms and metadata filters, use fuzzy matching for uncertain spelling,
+  reserve lexical matching for exact verification, and never infer absence
+  from one zero-result query. Authorized local agents may complement Lore with
+  `rg` over authoritative Markdown; MCP-only agents may not bypass principal
+  permissions or sensitivity policy. The MCP documentation carries the same
+  bounded loop, and the evaluation guide now accurately describes the current
+  lexical-plus-fuzzy baseline. Search v1 is considered complete; further
+  ranking or semantic work should be driven by observed agent failures added
+  to the retrieval harness rather than speculative expansion. Fresh-repository
+  initialization tests, `go vet ./...`, `go test ./...`, and
+  `go build ./cmd/lore` all passed.
+- **Post-review follow-up — bounded HTTP response publication:** completed
+  2026-07-31. Authenticated MCP requests now retain their global concurrency
+  slots through both bounded whole-response buffers and the final client write,
+  preventing slow readers from accumulating response buffers outside the
+  configured concurrency envelope. A production-composition regression test
+  blocks the final write and proves a second request receives `429` without
+  entering MCP. Deployment guidance now distinguishes bounded response capacity
+  from repository-scan working sets, requires readiness alerting because
+  `Restart=on-failure` cannot observe a readiness-only `503`, keeps health paths
+  private, recommends idle low-limit transaction pruning, and records the
+  one-way `rate_limit` configuration compatibility boundary. Retention artifact
+  validation now requires exactly three ASCII digits and reports malformed
+  trailing JSON consistently with strict repository metadata parsing. Focused
+  tests passed 20 consecutive runs; `go vet ./...`, `go test ./...`,
+  `go test -race ./...`, and `go build ./cmd/lore` all passed.
+
 ## v0.4 completed milestones
 
 - **M1 — SDK adapter and local stdio:** pinned the official
@@ -53,7 +332,7 @@ Milestones 1–5 and the complete release matrix are finished.
   bodies, preview diffs, unauthorized titles and paths, prompt injection,
   protected-path intent, URI confusion, tool-name injection, active recovery,
   single-writer contention, concurrent reads, and shutdown. Hardened loopback,
-  private-tailnet, and systemd deployment examples are included under
+  Tailscale Serve, Caddy, and systemd deployment examples are included under
   `docs/examples/`.
 - **M5 — client matrix, documentation, and release candidate:** validated the
   current Codex and Claude Code stdio and HTTP configuration forms against
@@ -343,7 +622,8 @@ Milestone commits:
 ## Known issues
 
 - No known v0.4 correctness issues.
-- v0.4 has no automatic transaction-artifact retention or pruning.
+- Transaction-artifact retention is explicit and local; Lore has no automatic
+  repository retention policy or bundled timer.
 - A local index intentionally duplicates canonical text and can be larger than
   the source corpus; it is optional and disposable.
 - Automatic search uses the filesystem for non-Git repositories because Git

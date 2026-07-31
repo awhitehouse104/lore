@@ -97,7 +97,7 @@ func (s *Service) RecoveryStatus(ctx context.Context) (RecoveryStatusResult, err
 
 func (s *Service) RollbackRecovery(ctx context.Context) (result RecoveryResult, returnErr error) {
 	now := s.Clock.Now().UTC()
-	handle, apiErr := acquireWriteLock(s.Repo, "recover rollback", now)
+	handle, apiErr := s.acquireWriteLock(ctx, "recover rollback", now)
 	if apiErr != nil {
 		return result, apiErr
 	}
@@ -189,7 +189,7 @@ func (s *Service) RollbackRecovery(ctx context.Context) (result RecoveryResult, 
 
 func (s *Service) FinalizeRecovery(ctx context.Context) (result RecoveryResult, returnErr error) {
 	now := s.Clock.Now().UTC()
-	handle, apiErr := acquireWriteLock(s.Repo, "recover finalize", now)
+	handle, apiErr := s.acquireWriteLock(ctx, "recover finalize", now)
 	if apiErr != nil {
 		return result, apiErr
 	}

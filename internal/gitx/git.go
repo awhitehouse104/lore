@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,10 +17,18 @@ type CommandError struct {
 	Command       string
 	ExitCode      int
 	NotRepository bool
+	TimedOut      bool
+	Canceled      bool
 	Cause         error
 }
 
 func (e *CommandError) Error() string {
+	if e.TimedOut {
+		return fmt.Sprintf("git %s timed out", e.Command)
+	}
+	if e.Canceled {
+		return fmt.Sprintf("git %s was canceled", e.Command)
+	}
 	return fmt.Sprintf("git %s failed (exit %d)", e.Command, e.ExitCode)
 }
 
@@ -30,7 +37,19 @@ func (e *CommandError) Unwrap() error {
 }
 
 type Client struct {
-	Executable string
+	Executable     string
+	LocalTimeout   time.Duration
+	NetworkTimeout time.Duration
+	Environment    []string
+}
+
+type FilterAttributeError struct {
+	Path  string
+	Value string
+}
+
+func (e *FilterAttributeError) Error() string {
+	return fmt.Sprintf("Git filter attribute %q is not allowed for Lore-managed path %q", e.Value, e.Path)
 }
 
 type Change struct {
@@ -47,7 +66,11 @@ type Commit struct {
 }
 
 func New() Client {
-	return Client{Executable: "git"}
+	return Client{
+		Executable:     "git",
+		LocalTimeout:   DefaultLocalTimeout,
+		NetworkTimeout: DefaultNetworkTimeout,
+	}
 }
 
 func (c Client) IsRepository(ctx context.Context, dir string) (bool, error) {
@@ -84,12 +107,19 @@ func (c Client) IdentityConfigured(ctx context.Context, dir string) (bool, error
 }
 
 func (c Client) AddAll(ctx context.Context, dir string) error {
-	_, err := c.run(ctx, dir, "add", "--", ".")
+	paths, err := c.stageablePaths(ctx, dir, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.requireNoFilterAttributes(ctx, dir, paths); err != nil {
+		return err
+	}
+	_, err = c.run(ctx, dir, "add", "--", ".")
 	return err
 }
 
 func (c Client) CommitAll(ctx context.Context, dir, subject string) (string, error) {
-	if _, err := c.run(ctx, dir, "commit", "-m", subject); err != nil {
+	if _, err := c.run(ctx, dir, "commit", "--no-gpg-sign", "-m", subject); err != nil {
 		return "", err
 	}
 	return c.Head(ctx, dir)
@@ -100,12 +130,15 @@ func (c Client) CommitPath(ctx context.Context, dir, path, subject string) (stri
 }
 
 func (c Client) CommitPaths(ctx context.Context, dir string, paths []string, subject string) (string, error) {
+	if err := c.requireNoFilterAttributes(ctx, dir, paths); err != nil {
+		return "", err
+	}
 	addArgs := []string{"add", "--"}
 	addArgs = append(addArgs, paths...)
 	if _, err := c.run(ctx, dir, addArgs...); err != nil {
 		return "", err
 	}
-	commitArgs := []string{"commit", "--only", "-m", subject, "--"}
+	commitArgs := []string{"commit", "--no-gpg-sign", "--only", "-m", subject, "--"}
 	commitArgs = append(commitArgs, paths...)
 	if _, err := c.run(ctx, dir, commitArgs...); err != nil {
 		return "", err
@@ -166,6 +199,23 @@ func (c Client) IsAncestor(ctx context.Context, dir, ancestor, descendant string
 		return false, nil
 	}
 	return false, err
+}
+
+func (c Client) CommitReachable(ctx context.Context, dir, commit string) (bool, error) {
+	stdout, err := c.run(
+		ctx,
+		dir,
+		"for-each-ref",
+		"--format=%(refname)",
+		"--contains="+commit,
+		"refs/heads",
+		"refs/remotes",
+		"refs/tags",
+	)
+	if err != nil {
+		return false, err
+	}
+	return len(bytes.TrimSpace(stdout)) > 0, nil
 }
 
 func (c Client) CommitTime(ctx context.Context, dir, commit string) (time.Time, error) {
@@ -261,6 +311,13 @@ func (c Client) SourceChanges(ctx context.Context, dir string) ([]Change, error)
 }
 
 func (c Client) Changes(ctx context.Context, dir string, paths []string) ([]Change, error) {
+	managedPaths, err := c.stageablePaths(ctx, dir, paths)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.requireNoFilterAttributes(ctx, dir, managedPaths); err != nil {
+		return nil, err
+	}
 	args := []string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}
 	args = append(args, paths...)
 	stdout, err := c.run(ctx, dir, args...)
@@ -380,47 +437,70 @@ func (c Client) PushHead(ctx context.Context, dir, remote string) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.run(ctx, dir, "push", remote, "HEAD:refs/heads/"+branch)
+	_, err = c.runNetwork(ctx, dir, "push", "--no-signed", remote, "HEAD:refs/heads/"+branch)
 	return err
 }
 
-func (c Client) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	stdout, err := c.runCaptureOnExit(ctx, dir, args...)
+func (c Client) stageablePaths(ctx context.Context, dir string, pathspecs []string) ([]string, error) {
+	args := []string{"ls-files", "-z", "--cached", "--others", "--exclude-standard"}
+	if len(pathspecs) > 0 {
+		args = append(args, "--")
+		args = append(args, pathspecs...)
+	}
+	stdout, err := c.run(ctx, dir, args...)
 	if err != nil {
 		return nil, err
 	}
-	return stdout, nil
+	fields := bytes.Split(stdout, []byte{0})
+	paths := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if len(field) == 0 {
+			continue
+		}
+		path := filepathSlash(string(field))
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
-func (c Client) runCaptureOnExit(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	executable := c.Executable
-	if executable == "" {
-		executable = "git"
+func (c Client) requireNoFilterAttributes(ctx context.Context, dir string, paths []string) error {
+	const batchSize = 256
+	for start := 0; start < len(paths); start += batchSize {
+		end := min(start+batchSize, len(paths))
+		args := []string{"check-attr", "-z", "filter", "--"}
+		args = append(args, paths[start:end]...)
+		stdout, err := c.run(ctx, dir, args...)
+		if err != nil {
+			return err
+		}
+		fields := bytes.Split(stdout, []byte{0})
+		for len(fields) > 0 && len(fields[len(fields)-1]) == 0 {
+			fields = fields[:len(fields)-1]
+		}
+		if len(fields)%3 != 0 {
+			return fmt.Errorf("parse git check-attr: expected groups of 3 fields, got %d fields", len(fields))
+		}
+		for index := 0; index < len(fields); index += 3 {
+			if string(fields[index+1]) != "filter" {
+				return fmt.Errorf("parse git check-attr: unexpected attribute %q", fields[index+1])
+			}
+			value := string(fields[index+2])
+			if value == "unspecified" || value == "unset" {
+				continue
+			}
+			return &FilterAttributeError{
+				Path:  filepathSlash(string(fields[index])),
+				Value: value,
+			}
+		}
 	}
-	commandArgs := append([]string{"-C", dir}, args...)
-	command := exec.CommandContext(ctx, executable, commandArgs...)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	err := command.Run()
-	if err == nil {
-		return stdout.Bytes(), nil
-	}
-	exitCode := -1
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		exitCode = exitErr.ExitCode()
-	}
-	name := "command"
-	if len(args) > 0 {
-		name = args[0]
-	}
-	return stdout.Bytes(), &CommandError{
-		Command:       name,
-		ExitCode:      exitCode,
-		NotRepository: strings.Contains(strings.ToLower(stderr.String()), "not a git repository"),
-		Cause:         err,
-	}
+	return nil
 }
 
 func configMissing(err error) bool {

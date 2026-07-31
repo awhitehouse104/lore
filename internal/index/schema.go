@@ -39,10 +39,21 @@ CREATE INDEX documents_type_idx ON documents(document_type);
 CREATE INDEX documents_sensitivity_idx ON documents(sensitivity);
 CREATE INDEX documents_revision_idx ON documents(revision);
 
+CREATE TABLE document_terms (
+    document_rowid INTEGER NOT NULL,
+    term           TEXT NOT NULL,
+    rune_length    INTEGER NOT NULL CHECK (rune_length > 0),
+    PRIMARY KEY (document_rowid, term)
+) WITHOUT ROWID;
+
+CREATE INDEX document_terms_term_idx ON document_terms(term);
+CREATE INDEX document_terms_length_term_idx ON document_terms(rune_length, term, document_rowid);
+
 CREATE VIRTUAL TABLE documents_fts USING fts5(
     title,
     aliases_text,
     tags_text,
+    kind,
     path,
     body,
     content='documents',

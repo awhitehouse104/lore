@@ -94,8 +94,15 @@ lore mcp serve --config /etc/lore/mcp.yaml
 
 The endpoint is stateless. Every request must carry its bearer token; there is
 no login session, cookie, token minting, or OAuth flow in v0.4. Use a private
-network or an authenticated TLS reverse proxy. Never expose Lore's plaintext
-listener directly to a public network.
+Tailscale Serve edge or a TLS reverse proxy. Never expose Lore's plaintext
+listener directly to a public network. The
+[deployment guide](deployment.md) provides complete Tailscale grants, Serve,
+Caddy, firewall, and smoke-test guidance.
+
+Each configured HTTP principal has an independent default allowance of 128
+immediate requests followed by 600 requests per minute. Normal MCP discovery
+and model-paced tool workflows should remain well inside that envelope. Clients
+sharing one principal intentionally share its bucket.
 
 ### Codex
 
@@ -104,7 +111,7 @@ Keep the token in the client process environment, not in TOML:
 ```bash
 export LORE_MCP_TOKEN='replace-with-the-token-file-value'
 codex mcp add lore-remote \
-  --url https://lore.example/mcp \
+  --url https://lore-vps.example.ts.net/mcp \
   --bearer-token-env-var LORE_MCP_TOKEN
 ```
 
@@ -112,7 +119,7 @@ Equivalent current configuration:
 
 ```toml
 [mcp_servers.lore-remote]
-url = "https://lore.example/mcp"
+url = "https://lore-vps.example.ts.net/mcp"
 bearer_token_env_var = "LORE_MCP_TOKEN"
 default_tools_approval_mode = "writes"
 tool_timeout_sec = 60
@@ -127,7 +134,7 @@ The current CLI accepts a static authorization header:
 
 ```bash
 claude mcp add --transport http --scope local lore-remote \
-  https://lore.example/mcp \
+  https://lore-vps.example.ts.net/mcp \
   --header "Authorization: Bearer replace-with-token"
 ```
 
@@ -139,7 +146,7 @@ shareable `.mcp.json`, use environment expansion instead:
   "mcpServers": {
     "lore-remote": {
       "type": "http",
-      "url": "https://lore.example/mcp",
+      "url": "https://lore-vps.example.ts.net/mcp",
       "headers": {
         "Authorization": "Bearer ${LORE_MCP_TOKEN}"
       },
@@ -166,6 +173,8 @@ Tool discovery is filtered by permission, and every invocation checks again:
 
 Permissions are additive. `curate` does not imply `query`, and `inspect` does
 not imply history. Give a principal only the permissions its client needs.
+Transaction pruning is deliberately absent from MCP; run retention maintenance
+from a trusted local CLI session.
 
 Each principal also has an allowlist of `normal`, `sensitive`, and/or
 `local-only`. Search filters before returning results; direct unauthorized
@@ -184,6 +193,29 @@ All successful structured tool results use schema version `1`. Search and read
 outputs include provenance, exact line information, and SHA-256 revisions.
 Read responses are bounded; request another line range when `more` is true.
 
+`lore_search` accepts `matching: auto|lexical|fuzzy`, defaulting to `auto`.
+Matching mode is independent of `backend`. Adaptive mode typo-expands only
+eligible terms absent from the principal's already-filtered vocabulary;
+`lexical` disables expansion and `fuzzy` requests the broader explicit mode.
+Search output reports `matching` and `fuzzy_expanded`, and fuzzy results include
+the query term, matched document term, and edit distance.
+
+An MCP agent should use a bounded retrieval loop:
+
+1. Start with `matching: auto` and the natural query.
+2. Inspect the top snippets and use `lore_read` on likely results.
+3. If evidence is weak or absent, retry with two to four distinctive terms
+   learned from the returned evidence and add type, tag, or path filters when
+   they narrow the question.
+4. Use `matching: fuzzy` when spelling is uncertain and `matching: lexical`
+   when verifying exact terminology.
+5. Do not treat one zero-result query as proof that the knowledge is absent.
+
+Agents with separately authorized local repository access may also search the
+authoritative `pages/` and `sources/` Markdown with code-oriented tools such as
+`rg`. An MCP-only agent must not use another path to bypass the principal's
+permissions or sensitivity policy.
+
 Capture and commit accept optional idempotency keys. Reuse a key only for the
 same principal, operation, and exact input. A mismatched reuse fails rather
 than repeating a different write.
@@ -199,6 +231,16 @@ Resource responses are private, zero-TTL, bounded, and policy-filtered.
 Search results contain a matching `resource_uri`; it can be used with MCP
 `resources/read` or passed back to `lore_read`. Resources are convenient reads,
 not a way around tool authorization.
+
+Stateless HTTP constructs concrete page resources lazily and only for
+`resources/list`. Initialization, discovery, tool listing, resource-template
+listing, and unrelated tool calls do not scan the repository merely to prepare
+that list. Each HTTP resource-list request builds a fresh sensitivity-filtered
+view; Lore deliberately keeps no cross-request metadata cache that could retain
+a stale title, URI, or sensitivity after an external edit. Exact resource reads
+continue to resolve and authorize current canonical content independently.
+Stdio loads the list once at startup and refreshes it after a successful
+in-process commit.
 
 ## Hosted clients
 
@@ -218,19 +260,28 @@ connector can be added outside Lore without changing the knowledge format.
 - A not-found read may mean either nonexistent or unauthorized content; this
   ambiguity is intentional.
 - HTTP `401` means the authorization header is missing, malformed, duplicated,
-  or invalid. Lore returns the same public response for all of them.
+  or invalid. Lore returns the same public response for all of them. Its
+  privacy-safe audit reason is `missing_credentials` when no authorization
+  field arrived and `invalid_credentials` for every supplied but unaccepted
+  shape; neither event contains a source address or attempted identity.
 - HTTP `403` commonly means a rejected `Origin`; configure the exact scheme,
   host, and effective port, with no path.
 - HTTP `404` means the endpoint path is wrong. Health checks are only
   `/health/live` and `/health/ready`.
-- HTTP `413`, `429`, `503`, or a timeout indicates a configured body,
-  concurrency, response, or time bound. Narrow the operation; do not disable
-  the safety control reflexively.
+- A `503` from `/health/ready` means the fixed repository substrate check
+  failed or recovery is active; its deliberately generic body contains no
+  diagnosis. Liveness remains `200` for those states. Run `lore recover` and
+  `lore lint` locally.
+- HTTP `413` indicates the configured body bound. HTTP `429` indicates either
+  the principal's request-rate bucket or the global concurrency bound; wait for
+  `Retry-After` before retrying. An MCP request timeout indicates the configured
+  time bound. Correct a tight loop before deliberately raising a limit.
 - If stdio fails immediately, run the exact configured Lore command in a
   terminal. Confirm the executable path, repository path, profile, and that
   stdout is not wrapped by a banner-producing script.
 - An active recovery journal intentionally blocks writes while reads remain
-  available. Follow [the recovery guide](recovery.md).
+  available and makes HTTP readiness return `503`. Follow
+  [the recovery guide](recovery.md).
 - Treat client/model transcripts as a separate disclosure boundary. Lore's
   redacted audit log does not control what a client retains.
 

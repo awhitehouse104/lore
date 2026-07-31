@@ -169,7 +169,7 @@ never canonical knowledge:
 
 ```text
 .lore/
-├── write.lock/
+├── write.lock
 ├── index.sqlite
 ├── index.sqlite-wal
 ├── index.sqlite-shm
@@ -179,6 +179,7 @@ never canonical knowledge:
 │   └── tx_<ULID>/
 │       ├── proposal.json
 │       ├── state.json
+│       ├── retention.json
 │       ├── diff.patch
 │       ├── lint.json
 │       └── content/
@@ -194,21 +195,37 @@ for the diff, lint report, and each exact resulting document. Lifecycle states
 are `previewed`, `applying`, `committed`, `discarded`, `failed`, and
 `recovery_required`; invalid transitions are integrity errors.
 
+`retention.json` is optional and exists only for a committed transaction whose
+payload compaction has started. It binds the transaction ID and preview digest
+to a sorted manifest containing the path, SHA-256, and logical byte count of
+every removable payload. Phase `pruning` permits any prefix of those verified
+artifacts to be absent after interruption; phase `pruned` requires all of them
+to be absent. Proposal and state receipts remain.
+
 An active recovery journal contains exact originals or explicit absence
 markers and advances through `prepared`, `applying_files`, `files_applied`,
 `git_committed`, and `finalized`. It is flushed before canonical mutation and
 blocks all other writers. See [recovery.md](recovery.md).
 
 Derived transaction artifacts can contain synthesized page bytes and diffs.
-They use private permissions where supported, but v0.4 has no automatic
-retention or pruning.
+They use private permissions where supported. Explicit transaction pruning can
+compact old committed payloads, but there is no automatic retention policy.
+
+`write.lock` is a persistent private regular file used as the target of the
+repository-wide Linux `flock`. Its JSON metadata is diagnostic rather than
+authoritative and contains schema version, PID, hostname, command, and start
+time. Unlocking does not delete the file; descriptor closure on normal exit or
+process death releases the kernel lock.
 
 The SQLite index contains normalized document metadata, body text, exact
-canonical revisions, snapshot metadata, and an external-content FTS5 table.
-Its application schema version is independent of repository/JSON schema
-version `1`. It is never edited or migrated in place; incompatibility requires
-replacement. Installed databases use WAL, while full builds use one
-self-contained temporary database so only a verified artifact is promoted.
+canonical revisions, snapshot metadata, an external-content FTS5 table, and a
+derived exact-term table used for corpus rarity statistics and fuzzy candidate
+lookup. Each term records its exact Unicode rune length; `kind` participates in
+FTS candidate generation. The current index application schema is version `3`,
+independent of repository/JSON schema version `1`. It is never edited or
+migrated in place; incompatibility requires replacement. Installed databases
+use WAL, while full builds use one self-contained temporary database so only a
+verified artifact is promoted.
 
 All sensitivity levels may be indexed locally. Access policy is applied before
 candidate rows leave the index package. The index, companions, operation lock,

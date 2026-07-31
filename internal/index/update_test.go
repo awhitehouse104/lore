@@ -158,6 +158,7 @@ func TestStatusDetectsCorruptIncompatibleAndWrongIdentity(t *testing.T) {
 	tests := []struct {
 		name   string
 		mutate func(*testing.T, string)
+		full   bool
 		state  State
 	}{
 		{
@@ -171,12 +172,58 @@ func TestStatusDetectsCorruptIncompatibleAndWrongIdentity(t *testing.T) {
 			state: StateCorrupt,
 		},
 		{
+			name: "corrupt exact lexical terms",
+			mutate: func(t *testing.T, root string) {
+				t.Helper()
+				db, err := sql.Open("sqlite", filepath.Join(root, ".lore", "index.sqlite"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec("DELETE FROM document_terms WHERE term='indexed'"); err != nil {
+					_ = db.Close()
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			},
+			full:  true,
+			state: StateCorrupt,
+		},
+		{
+			name: "incompatible previous schema",
+			mutate: func(t *testing.T, root string) {
+				t.Helper()
+				updateMetadataForTest(t, root, "index_schema_version", "2")
+			},
+			state: StateIncompatible,
+		},
+		{
 			name: "incompatible schema",
 			mutate: func(t *testing.T, root string) {
 				t.Helper()
 				updateMetadataForTest(t, root, "index_schema_version", "999")
 			},
 			state: StateIncompatible,
+		},
+		{
+			name: "corrupt exact lexical term length",
+			mutate: func(t *testing.T, root string) {
+				t.Helper()
+				db, err := sql.Open("sqlite", filepath.Join(root, ".lore", "index.sqlite"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.Exec("UPDATE document_terms SET rune_length=rune_length+1 WHERE term='indexed'"); err != nil {
+					_ = db.Close()
+					t.Fatal(err)
+				}
+				if err := db.Close(); err != nil {
+					t.Fatal(err)
+				}
+			},
+			full:  true,
+			state: StateCorrupt,
 		},
 		{
 			name: "wrong identity",
@@ -190,12 +237,13 @@ func TestStatusDetectsCorruptIncompatibleAndWrongIdentity(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repo := newTestRepository(t)
+			writeTestPage(t, repo.Root, "indexed body")
 			manager := NewManager(repo, gitx.New(), "0.3.0-test")
 			if _, err := manager.Build(ctx, BuildOptions{}); err != nil {
 				t.Fatal(err)
 			}
 			test.mutate(t, repo.Root)
-			status, err := manager.Status(ctx, false)
+			status, err := manager.Status(ctx, test.full)
 			if err != nil {
 				t.Fatal(err)
 			}

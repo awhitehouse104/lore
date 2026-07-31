@@ -24,6 +24,13 @@ type Recorder struct {
 	logger *slog.Logger
 }
 
+type AuthenticationDenialReason string
+
+const (
+	AuthenticationDenialMissingCredentials AuthenticationDenialReason = "missing_credentials"
+	AuthenticationDenialInvalidCredentials AuthenticationDenialReason = "invalid_credentials"
+)
+
 func New(logger *slog.Logger) *Recorder {
 	return &Recorder{logger: logger}
 }
@@ -75,14 +82,20 @@ func (r *Recorder) Record(event Event) {
 	r.logger.Info("Lore MCP audit", attributes...)
 }
 
-func (r *Recorder) AuthenticationDenied(transport string) {
+func (r *Recorder) AuthenticationDenied(transport string, reason AuthenticationDenialReason) {
 	if r == nil || r.logger == nil {
 		return
+	}
+	switch reason {
+	case AuthenticationDenialMissingCredentials, AuthenticationDenialInvalidCredentials:
+	default:
+		reason = AuthenticationDenialInvalidCredentials
 	}
 	r.logger.Warn("Lore MCP authentication denied",
 		"event", "mcp_authentication",
 		"transport", safeField(transport, "unknown"),
 		"outcome", "denied",
+		"reason", string(reason),
 	)
 }
 

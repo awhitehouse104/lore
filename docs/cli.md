@@ -37,6 +37,25 @@ Exit codes are stable:
 
 All commands support `--help`.
 
+Repository writers use the persistent regular file `.lore/write.lock` as a
+Linux `flock` target. They wait for up to two seconds with context-aware
+backoff before returning the typed `repository_locked` conflict. The lock file
+records only diagnostic PID, hostname, command, and start-time metadata; it
+remains in place when unlocked. Process exit, including `SIGKILL` or OOM
+termination, closes the descriptor and releases the kernel lock, so do not
+remove the regular lock file during normal operation.
+
+Every Git subprocess is noninteractive and receives a sanitized environment.
+Local operations have a 30-second deadline and pushes have a two-minute
+deadline; an earlier command, HTTP-request, or shutdown deadline still wins.
+Cancellation terminates the Git process group, including SSH or credential
+children. Lore disables repository hooks, filesystem monitors, signing,
+automatic maintenance, editors, pagers, prompts, and askpass programs. It also
+rejects managed or staged paths with an active Git `filter` attribute before
+running commands such as status or add that could execute the filter. Use an
+unlocked SSH deploy key or agent, or a preconfigured noninteractive HTTPS
+credential helper, for pushes.
+
 ## `init`
 
 ```text
@@ -69,7 +88,8 @@ lore capture \
 
 When neither `--text` nor `--file` is present, capture reads non-terminal stdin. Input is bounded by `capture.max_bytes` and must be valid UTF-8. Prefer stdin to `--text` for private material.
 
-Capture validates metadata before acquiring `.lore/write.lock`, then publishes one no-clobber source file. The lock records PID, hostname, command, and start time. Lore never automatically removes an old lock; contention reports its metadata and manual recovery path.
+Capture validates metadata before acquiring the repository write lock, then
+publishes one no-clobber source file.
 
 Auto-commit uses a path-limited Git commit:
 
@@ -86,6 +106,21 @@ enabled, capture attempts an index update only after source write, configured
 commit, and push handling complete. Refresh failure is a warning and cannot
 undo the source or local Git commit. Capture never creates an index.
 
+### Write-lock upgrade compatibility
+
+The first post-v0.4 writer converts the old `.lore/write.lock/` directory to
+the persistent regular lock file only after the old directory disappears. A
+running v0.4 writer can therefore finish and release normally while the new
+writer waits. If the legacy directory remains after the bounded wait, Lore
+fails closed and reports `legacy_lock: true` plus manual recovery guidance.
+Stop all v0.4 writers, verify the recorded owner has exited, remove only that
+legacy lock directory, and retry.
+
+Once the regular lock file exists, v0.4 writers fail closed because their
+directory creation cannot succeed. This makes the writer upgrade intentionally
+one-way. To deliberately downgrade, stop every Lore writer, verify none holds
+the lock, remove the regular `.lore/write.lock` file, and only then start v0.4.
+
 ## `search`
 
 ```text
@@ -93,14 +128,43 @@ lore search QUERY... \
   [--scope all|pages|sources] \
   [--kind TOKEN] \
   [--backend auto|index|filesystem] \
+  [--matching auto|lexical|fuzzy] \
   [--include-sensitivity normal|sensitive|local-only ...] \
   [--limit N] \
   [--json]
 ```
 
-Defaults are `scope=all` and `limit=10`; maximum limit is 100. Query terms split on non-letter/non-number boundaries using Unicode-aware lowercasing.
+Defaults are `scope=all`, `matching=auto`, and `limit=10`; maximum limit is
+100. Query terms split on non-letter/non-number boundaries using Unicode-aware
+lowercasing.
 
-The explainable scorer favors exact title and alias phrases, metadata tokens, tag phrases, body phrases and bounded token occurrences, then kind tokens. Results with no matched terms are omitted. Ordering is score descending and path ascending. No recency boost or normalization is used.
+The explainable scorer keeps exact title and alias phrases dominant, then
+scores exact title, alias, tag, body, and kind tokens plus tag/body phrases.
+Body occurrence credit is bounded. Corpus-aware rarity credit favors exact
+terms found in fewer authorized, already-filtered documents; distinct-term and
+complete-query coverage bonuses favor documents that cover more of a
+multi-term query. Results with no matched terms are omitted. Ordering is score
+descending and path ascending. No recency boost, stemming, or synonym
+expansion is used.
+
+Matching mode is independent of the storage backend:
+
+- `auto` is the default. It keeps exact lexical matching and typo-expands only
+  out-of-vocabulary query terms of 6–24 Unicode characters.
+- `lexical` disables fuzzy expansion and preserves strict exact-token behavior.
+- `fuzzy` keeps exact matches and also expands every eligible term of 4–24
+  characters. It is useful for deliberate maximum-recall searches.
+
+Fuzzy matching uses bounded Unicode Damerau-Levenshtein distance: one edit for
+4–7-rune terms and up to two edits for longer terms, subject to a minimum
+similarity of 75% for terms below eight runes and 80% for longer terms. Auto
+considers at most the eight longest eligible query terms and warns when it
+truncates; explicit fuzzy rejects a broader request. At most four corrections
+per term are considered. Exact scoring remains stronger, fuzzy phrase bonuses do not exist,
+and each query term contributes at most once per document. Automatic mode
+falls back to exact results with a warning if its authorized filtered
+vocabulary exceeds the 100,000-term work bound; explicit `fuzzy` fails clearly
+instead of returning a partial fuzzy search.
 
 `auto` is the configuration default. It uses a fresh compatible derived index
 only when indexed candidate generation preserves filesystem behavior;
@@ -113,9 +177,12 @@ All local sensitivities are included by default. Repeating
 filtering occurs before index rows are returned to the core scorer.
 
 Each result contains rank, score, path, URI, ID, title, kind, line range,
-bounded snippet, and whole-file SHA-256 revision. Search JSON also contains
-`backend`, `backend_requested`, and `index_state`. Oversized documents are
-skipped with warnings. Search never mutates canonical knowledge.
+bounded snippet, and whole-file SHA-256 revision. A result reached through
+fuzzy evidence adds deterministic `fuzzy_matches` entries containing the
+query term, document term, and edit distance. Search JSON also contains
+`backend`, `backend_requested`, `matching`, `fuzzy_expanded`, and `index_state`.
+Oversized documents are skipped with warnings. Search never mutates canonical
+knowledge.
 
 ## `read`
 
@@ -251,8 +318,60 @@ lore transaction discard TRANSACTION_ID [--json]
 Only previewed or failed transactions may be discarded. The operation is
 idempotent and blocked by active recovery. It deletes resulting content, diff,
 and full lint payloads while retaining proposal/state receipt metadata and a
-lint summary. Committed transactions cannot be discarded. v0.4 has no
-automatic pruning.
+lint summary. Committed transactions cannot be discarded.
+
+## `transaction prune`
+
+```text
+lore transaction prune \
+  --older-than AGE \
+  [--limit N] \
+  [--dry-run] \
+  [--json]
+```
+
+Prune is a local-only, explicit compaction command. `AGE` is a positive whole
+number followed by `h`, `d`, or `w`, such as `24h`, `30d`, or `4w`. The cutoff
+is computed once in UTC from the command clock. A committed transaction is
+eligible when its immutable `committed_at` is at or before that cutoff;
+subsequent push-related `updated_at` changes do not postpone retention.
+
+Only committed transactions are eligible. Discarded transactions are already
+compacted; failed transactions must be deliberately discarded; and previewed,
+applying, or recovery-required work is never pruned. The default limit is 100,
+the maximum is 1,000, and oldest commits are selected first with transaction ID
+as the deterministic tie-breaker.
+
+The operation holds the repository write lock and refuses while any recovery
+journal is active. Before removal, it verifies every selected transaction,
+requires its recorded commit to remain reachable from a local branch, remote
+tracking ref, or tag, and proves the exact changed-path set and every committed
+blob hash. All selected transactions pass preflight before the first payload
+is removed, and each is revalidated immediately before compaction. These Git
+checks run while the write lock is held, so schedule pruning while writers are
+idle and start with a small `--limit` on constrained deployments.
+
+Pruning retains `proposal.json` and `state.json` and adds a private
+`retention.json` receipt. The receipt binds the transaction and preview digest
+to an exact, sorted payload manifest and advances durably from `pruning` to
+`pruned`. Lore then removes only the listed, hash-verified regular files:
+`content/*.md`, `diff.patch`, and `lint.json`. A canceled or interrupted
+operation remains valid and resumes idempotently on the next eligible prune.
+Local list/show and repeated commit remain meaningful; compacted receipts are
+not exposed through MCP because their content is no longer available for
+sensitivity authorization.
+
+`--dry-run` uses the same lock, recovery checks, integrity validation, Git
+proof, cutoff, ordering, and limit without writing a retention receipt or
+removing a file. JSON reports the exact cutoff, eligible/selected/remaining
+counts, already-pruned receipts, reclaimable files/bytes, and deterministic
+per-transaction details. Live output separately reports files and logical
+bytes removed by that invocation.
+
+Pruning is disk and retention hygiene, not secure erasure. It does not rewrite
+Git, expire objects or reflogs, alter remotes, clean backups or snapshots, or
+guarantee physical media erasure. Lore has no automatic retention
+configuration or bundled timer.
 
 ## `recover`
 

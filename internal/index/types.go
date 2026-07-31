@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	SchemaVersion     = 1
-	RelativeIndexPath = ".lore/index.sqlite"
+	SchemaVersion      = 1
+	IndexSchemaVersion = 3
+	RelativeIndexPath  = ".lore/index.sqlite"
 )
 
 type State string

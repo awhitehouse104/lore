@@ -59,3 +59,19 @@ func TestSearchMapsBackendFailureToRuntimeError(t *testing.T) {
 		t.Fatalf("Search error = %T %v", err, err)
 	}
 }
+
+func TestSearchMapsExplicitFuzzyBreadthToUsageError(t *testing.T) {
+	service := &Service{
+		Repo:     &repository.Repository{Root: t.TempDir(), Config: config.Defaults()},
+		Searcher: failingSearcher{},
+	}
+	_, err := service.Search(context.Background(), search.Query{
+		Text:     "eligibleone eligibletwo eligiblethree eligiblefour eligiblefive eligiblesix eligibleseven eligibleeight eligiblenine",
+		Matching: search.MatchingFuzzy,
+		Access:   search.AllAccessPolicy(),
+	})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "fuzzy_query_too_broad" || apiErr.ExitCode != ExitUsage {
+		t.Fatalf("Search error = %T %v", err, err)
+	}
+}

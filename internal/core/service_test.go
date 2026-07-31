@@ -135,7 +135,7 @@ func TestCapturePreservesExactBytes(t *testing.T) {
 func TestCaptureLockContentionHasDiagnosticsWithoutBody(t *testing.T) {
 	repo := newServiceRepository(t)
 	now := time.Date(2026, 7, 22, 16, 30, 21, 0, time.UTC)
-	handle, err := lock.Acquire(repo.Root, "other-writer", now)
+	handle, err := lock.Acquire(context.Background(), repo.Root, "other-writer", now, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +154,34 @@ func TestCaptureLockContentionHasDiagnosticsWithoutBody(t *testing.T) {
 	}
 	if apiErr.Details["pid"] == nil || apiErr.Details["lock_path"] == nil {
 		t.Fatalf("lock details: %+v", apiErr.Details)
+	}
+	if apiErr.Details["retryable"] != true || apiErr.Details["waited_ms"] != int64(0) {
+		t.Fatalf("lock retry details: %+v", apiErr.Details)
+	}
+	if _, exists := apiErr.Details["manual_recovery"]; exists {
+		t.Fatalf("current lock incorrectly requires manual recovery: %+v", apiErr.Details)
+	}
+}
+
+func TestCaptureLegacyLockContentionRequiresExplicitMigration(t *testing.T) {
+	repo := newServiceRepository(t)
+	if err := os.Mkdir(lock.Path(repo.Root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	service := testService(repo, &fakeGit{})
+	_, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("private body"),
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.ExitCode != core.ExitConflict || apiErr.Code != "repository_locked" {
+		t.Fatalf("Capture error = %T %v", err, err)
+	}
+	if apiErr.Details["legacy_lock"] != true || apiErr.Details["retryable"] != false ||
+		apiErr.Details["manual_recovery"] == nil {
+		t.Fatalf("legacy lock details: %+v", apiErr.Details)
+	}
+	if _, exists := apiErr.Details["pid"]; exists {
+		t.Fatalf("unavailable legacy metadata was emitted: %+v", apiErr.Details)
 	}
 }
 

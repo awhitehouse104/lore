@@ -1,0 +1,502 @@
+version: 1
+name: lore-agent-retrieval-baseline
+description: Representative deterministic queries for agent-oriented Markdown retrieval.
+corpus: corpus
+cases:
+  - id: direct_disaster_recovery
+    category: direct
+    query:
+      text: disaster recovery
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: direct_operating_principles
+    category: direct
+    query:
+      text: operating principles
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: direct_identity_federation
+    category: direct
+    query:
+      text: identity federation
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_identity_federation
+        grade: 3
+
+  - id: direct_application_packaging
+    category: direct
+    query:
+      text: application packaging
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_application_packaging
+        grade: 3
+
+  - id: direct_focus_system
+    category: direct
+    query:
+      text: focus system
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_focus_system
+        grade: 3
+
+  - id: direct_decision_record
+    category: direct
+    query:
+      text: decision record
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_decision_record
+        grade: 3
+
+  - id: direct_search_index
+    category: direct
+    query:
+      text: search index
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_search_index
+        grade: 3
+
+  - id: direct_backup_policy
+    category: direct
+    query:
+      text: backup policy
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_backup_policy
+        grade: 3
+
+  - id: natural_rebuild_after_failure
+    category: natural_question
+    query:
+      text: rebuild service after host failure
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: natural_rules_for_changes
+    category: natural_question
+    query:
+      text: rules guiding reversible production changes
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: natural_central_authentication
+    category: natural_question
+    query:
+      text: users authenticated central provider
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_identity_federation
+        grade: 3
+
+  - id: natural_shipping_services
+    category: natural_question
+    query:
+      text: services shipped built between environments
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_application_packaging
+        grade: 3
+
+  - id: natural_weekly_attention
+    category: natural_question
+    query:
+      text: weekly review next attention
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_focus_system
+        grade: 3
+
+  - id: natural_preserve_rationale
+    category: natural_question
+    query:
+      text: preserve alternatives evidence rationale
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_decision_record
+        grade: 3
+
+  - id: natural_noisy_server_failure
+    category: natural_question
+    query:
+      text: how do I recover when the server dies
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: natural_noisy_safe_changes
+    category: natural_question
+    query:
+      text: what is our approach to changing production safely
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: natural_noisy_chosen_option
+    category: natural_question
+    query:
+      text: where can I find why we chose an option
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_decision_record
+        grade: 3
+
+  - id: natural_noisy_weekly_priorities
+    category: natural_question
+    query:
+      text: what should I do every week to decide what matters
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_focus_system
+        grade: 3
+
+  - id: morphology_recoveries
+    category: morphology
+    query:
+      text: recoveries
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: morphology_backups
+    category: morphology
+    query:
+      text: backups
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_backup_policy
+        grade: 3
+
+  - id: morphology_deployments
+    category: morphology
+    query:
+      text: deployments
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_deployment_runbook
+        grade: 3
+
+  - id: morphology_curating
+    category: morphology
+    query:
+      text: curating evidence
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_curation_workflow
+        grade: 3
+
+  - id: morphology_credentials
+    category: morphology
+    query:
+      text: credentials rotation
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_credential_handling
+        grade: 3
+
+  - id: morphology_indexes
+    category: morphology
+    query:
+      text: indexes sqlite
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_search_index
+        grade: 3
+
+  - id: typo_disaster_recovery
+    category: fuzzy_typo
+    query:
+      text: disater recovry
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: typo_identity_federation
+    category: fuzzy_typo
+    query:
+      text: identty federaton
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_identity_federation
+        grade: 3
+
+  - id: typo_application_packaging
+    category: fuzzy_typo
+    query:
+      text: applcation pakaging
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_application_packaging
+        grade: 3
+
+  - id: typo_credential_handling
+    category: fuzzy_typo
+    query:
+      text: credntial handlng
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_credential_handling
+        grade: 3
+
+  - id: semantic_emergency_restoration
+    category: vocabulary_mismatch
+    query:
+      text: emergency restoration
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_disaster_recovery
+        grade: 3
+
+  - id: semantic_deployment_philosophy
+    category: vocabulary_mismatch
+    query:
+      text: deployment philosophy
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: semantic_single_sign_on
+    category: vocabulary_mismatch
+    query:
+      text: single sign on
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_identity_federation
+        grade: 3
+
+  - id: semantic_container_strategy
+    category: vocabulary_mismatch
+    query:
+      text: container strategy
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_application_packaging
+        grade: 3
+
+  - id: semantic_productivity_method
+    category: vocabulary_mismatch
+    query:
+      text: productivity method
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_focus_system
+        grade: 3
+
+  - id: semantic_reasoning_ledger
+    category: vocabulary_mismatch
+    query:
+      text: reasoning ledger
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_decision_record
+        grade: 3
+
+  - id: multi_backup_operations
+    category: multi_term
+    query:
+      text: backup operations
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_backup_policy
+        grade: 3
+
+  - id: multi_production_reversible_rollout
+    category: multi_term
+    query:
+      text: production reversible rollout
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: multi_sqlite_derived_catalog
+    category: multi_term
+    query:
+      text: sqlite derived catalog
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_search_index
+        grade: 3
+
+  - id: multi_security_credential_rotation
+    category: multi_term
+    query:
+      text: security credential rotation
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_credential_handling
+        grade: 3
+
+  - id: metadata_tag_filter
+    category: metadata
+    query:
+      text: nightly snapshots
+      scope: pages
+      tags: [operations, backup]
+      sensitivities: [normal]
+    relevant:
+      - id: page_backup_policy
+        grade: 3
+
+  - id: metadata_kind_filter
+    category: metadata
+    query:
+      text: production changes
+      scope: pages
+      kind: policy
+      sensitivities: [normal]
+    relevant:
+      - id: page_operating_principles
+        grade: 3
+
+  - id: metadata_path_filter
+    category: metadata
+    query:
+      text: evidence
+      scope: pages
+      paths: [pages/curation-workflow.md]
+      sensitivities: [normal]
+    relevant:
+      - id: page_curation_workflow
+        grade: 3
+
+  - id: source_public_service_review
+    category: source
+    query:
+      text: public service review
+      scope: sources
+      sensitivities: [normal]
+    relevant:
+      - id: src_01ARZ3NDEKTSV4RRFFQ69G5FAV
+        grade: 3
+
+  - id: source_incident_evidence
+    category: source
+    query:
+      text: incident evidence
+      scope: sources
+      sensitivities: [normal, sensitive]
+    relevant:
+      - id: src_01ARZ3NDEKTSV4RRFFQ69G5FAV
+        grade: 3
+      - id: src_01ARZ3NDEKTSV4RRFFQ69G5FAW
+        grade: 3
+
+  - id: auth_normal_hides_local_travel
+    category: authorization
+    query:
+      text: azimuth travel
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_navigation_notes
+        grade: 2
+    forbidden_ids: [page_private_travel_plans]
+
+  - id: auth_local_can_find_travel
+    category: authorization
+    query:
+      text: azimuth travel
+      scope: pages
+      sensitivities: [normal, local-only]
+    relevant:
+      - id: page_private_travel_plans
+        grade: 3
+
+  - id: auth_normal_hides_credentials
+    category: authorization
+    query:
+      text: heliotrope credentials
+      scope: pages
+      sensitivities: [normal]
+    relevant:
+      - id: page_authentication_overview
+        grade: 2
+    forbidden_ids: [page_production_credentials]
+
+  - id: auth_sensitive_can_find_credentials
+    category: authorization
+    query:
+      text: heliotrope credentials
+      scope: pages
+      sensitivities: [normal, sensitive]
+    relevant:
+      - id: page_production_credentials
+        grade: 3
+
+  - id: auth_normal_hides_incident_source
+    category: authorization
+    query:
+      text: saffron incident
+      scope: sources
+      sensitivities: [normal]
+    relevant:
+      - id: src_01ARZ3NDEKTSV4RRFFQ69G5FAV
+        grade: 2
+    forbidden_ids: [src_01ARZ3NDEKTSV4RRFFQ69G5FAW]
+
+  - id: auth_sensitive_can_find_incident_source
+    category: authorization
+    query:
+      text: saffron incident
+      scope: sources
+      sensitivities: [normal, sensitive]
+    relevant:
+      - id: src_01ARZ3NDEKTSV4RRFFQ69G5FAW
+        grade: 3

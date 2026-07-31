@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"lore/internal/audit"
 	"lore/internal/auth"
 	"lore/internal/core"
+	"lore/internal/repository"
 	"lore/internal/serverconfig"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -33,7 +36,11 @@ func NewHTTPService(service *core.Service, config serverconfig.Config, logger *s
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 	authenticator := auth.NewBearerAuthenticator(config.BearerPrincipals)
+	rateLimiter := newPrincipalRateLimiter(config.BearerPrincipals, config.Transport.RateLimit, time.Now)
 	auditRecorder := audit.New(logger)
+	// Lore publishes only finite stateless JSON responses. The whole-response
+	// limiter deliberately rejects SSE, so do not enable a streaming transport
+	// or server notifications without replacing that whole-response boundary.
 	protocolHandler := mcp.NewStreamableHTTPHandler(
 		func(request *http.Request) *mcp.Server {
 			principal, ok := auth.PrincipalFromContext(request.Context())
@@ -50,23 +57,19 @@ func NewHTTPService(service *core.Service, config serverconfig.Config, logger *s
 			PropagateRequestCancellation: true,
 		},
 	)
-	endpoint := requestTimeoutMiddleware(
-		authenticationMiddleware(
-			authenticator,
-			auditRecorder,
-			concurrencyMiddleware(
-				config.Transport.MaxConcurrentRequests,
-				protocolHandler,
-			),
-		),
-		config.Transport.RequestTimeout.Value(),
+	endpoint := protectedEndpointHandler(
+		config,
+		authenticator,
+		auditRecorder,
+		rateLimiter,
+		protocolHandler,
 	)
-	endpoint = originMiddleware(config.NormalizedOrigins, endpoint)
-	root := exactRouteHandler(config.Endpoint, endpoint)
+	readiness := repository.NewReadinessProbe(service.Repo)
+	root := exactRouteHandler(config.Endpoint, endpoint, readiness)
 	httpService := &HTTPService{config: config, logger: logger}
 	httpService.server = &http.Server{
 		Addr:              config.Listen,
-		Handler:           responseLimitMiddleware(config.Transport.ResponseMaxBytes, root),
+		Handler:           root,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       config.Transport.RequestTimeout.Value(),
 		WriteTimeout:      config.Transport.RequestTimeout.Value() + 5*time.Second,
@@ -74,6 +77,34 @@ func NewHTTPService(service *core.Service, config serverconfig.Config, logger *s
 		MaxHeaderBytes:    16 * 1024,
 	}
 	return httpService
+}
+
+func protectedEndpointHandler(
+	config serverconfig.Config,
+	authenticator *auth.BearerAuthenticator,
+	recorder *audit.Recorder,
+	rateLimiter *principalRateLimiter,
+	protocolHandler http.Handler,
+) http.Handler {
+	// Keep the concurrency gate outside both whole-response buffers. A request
+	// remains in flight until its bounded response has been published to the
+	// client, so slow readers cannot retain buffers beyond the configured gate.
+	endpoint := authenticationMiddleware(
+		authenticator,
+		recorder,
+		principalRateLimitMiddleware(
+			rateLimiter,
+			concurrencyMiddleware(
+				config.Transport.MaxConcurrentRequests,
+				boundedRequestMiddleware(
+					protocolHandler,
+					config.Transport.RequestTimeout.Value(),
+					config.Transport.ResponseMaxBytes,
+				),
+			),
+		),
+	)
+	return originMiddleware(config.NormalizedOrigins, endpoint)
 }
 
 func (s *HTTPService) Handler() http.Handler {
@@ -123,7 +154,11 @@ func (s *HTTPService) Serve(ctx context.Context, listener net.Listener) error {
 	}
 }
 
-func exactRouteHandler(endpoint string, mcpHandler http.Handler) http.Handler {
+type readinessChecker interface {
+	Check() error
+}
+
+func exactRouteHandler(endpoint string, mcpHandler http.Handler, readiness readinessChecker) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		setPrivateHeaders(writer.Header())
 		if request.URL.RawQuery != "" || request.URL.RawPath != "" {
@@ -133,21 +168,31 @@ func exactRouteHandler(endpoint string, mcpHandler http.Handler) http.Handler {
 		switch request.URL.Path {
 		case endpoint:
 			mcpHandler.ServeHTTP(writer, request)
-		case "/health/live", "/health/ready":
-			healthHandler(writer, request)
+		case "/health/live":
+			healthHandler(writer, request, nil)
+		case "/health/ready":
+			healthHandler(writer, request, func() bool {
+				return readiness != nil && readiness.Check() == nil
+			})
 		default:
 			http.NotFound(writer, request)
 		}
 	})
 }
 
-func healthHandler(writer http.ResponseWriter, request *http.Request) {
+func healthHandler(writer http.ResponseWriter, request *http.Request, availability func() bool) {
 	if request.Method != http.MethodGet {
 		writer.Header().Set("Allow", http.MethodGet)
 		http.Error(writer, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json")
+	available := availability == nil || availability()
+	if !available {
+		writer.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(writer, "{\"status\":\"unavailable\"}\n")
+		return
+	}
 	writer.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(writer, "{\"status\":\"ok\"}\n")
 }
@@ -182,9 +227,14 @@ func originMiddleware(allowed []string, next http.Handler) http.Handler {
 
 func authenticationMiddleware(authenticator *auth.BearerAuthenticator, recorder *audit.Recorder, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		principal, ok := authenticator.Authenticate(request.Header.Values("Authorization"))
+		authorization := request.Header.Values("Authorization")
+		principal, ok := authenticator.Authenticate(authorization)
 		if !ok {
-			recorder.AuthenticationDenied("http")
+			reason := audit.AuthenticationDenialInvalidCredentials
+			if len(authorization) == 0 {
+				reason = audit.AuthenticationDenialMissingCredentials
+			}
+			recorder.AuthenticationDenied("http", reason)
 			writer.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(writer, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -209,6 +259,13 @@ func concurrencyMiddleware(maximum int, next http.Handler) http.Handler {
 
 func requestTimeoutMiddleware(next http.Handler, timeout time.Duration) http.Handler {
 	return http.TimeoutHandler(next, timeout, "Request timed out.\n")
+}
+
+func boundedRequestMiddleware(next http.Handler, timeout time.Duration, responseMaximum int64) http.Handler {
+	// TimeoutHandler has its own whole-response buffer. Keep Lore's bounded
+	// writer inside it so an upstream handler cannot allocate an unbounded
+	// timeout buffer before the configured response limit is applied.
+	return requestTimeoutMiddleware(responseLimitMiddleware(responseMaximum, next), timeout)
 }
 
 var errResponseTooLarge = errors.New("response exceeds configured limit")
@@ -246,8 +303,6 @@ func (w *bufferedResponseWriter) Write(data []byte) (int, error) {
 	return w.body.Write(data)
 }
 
-func (w *bufferedResponseWriter) Flush() {}
-
 func responseLimitMiddleware(maximum int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		buffered := newBufferedResponseWriter(maximum)
@@ -255,6 +310,11 @@ func responseLimitMiddleware(maximum int64, next http.Handler) http.Handler {
 		if buffered.overflow {
 			setPrivateHeaders(writer.Header())
 			http.Error(writer, "Response exceeded the configured limit.", http.StatusInternalServerError)
+			return
+		}
+		if isEventStream(buffered.header) {
+			setPrivateHeaders(writer.Header())
+			http.Error(writer, "Streaming responses are not supported.", http.StatusInternalServerError)
 			return
 		}
 		for key, values := range buffered.header {
@@ -268,6 +328,16 @@ func responseLimitMiddleware(maximum int64, next http.Handler) http.Handler {
 		writer.WriteHeader(status)
 		_, _ = writer.Write(buffered.body.Bytes())
 	})
+}
+
+func isEventStream(header http.Header) bool {
+	for _, contentType := range header.Values("Content-Type") {
+		mediaType, _, err := mime.ParseMediaType(contentType)
+		if err == nil && strings.EqualFold(mediaType, "text/event-stream") {
+			return true
+		}
+	}
+	return false
 }
 
 func setPrivateHeaders(header http.Header) {

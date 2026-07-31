@@ -1,0 +1,32 @@
+// Illustrative sections for a tailnet policy file. Replace you@example.com,
+// merge these entries with the rest of the policy, and retain the tests.
+{
+  "groups": {
+    "group:lore-clients": [
+      "you@example.com",
+    ],
+  },
+
+  "tagOwners": {
+    "tag:lore-server": [
+      "autogroup:admin",
+    ],
+  },
+
+  "grants": [
+    {
+      "src": ["group:lore-clients"],
+      "dst": ["tag:lore-server"],
+      "ip": ["tcp:443"],
+    },
+  ],
+
+  "tests": [
+    {
+      "src": "you@example.com",
+      "proto": "tcp",
+      "accept": ["tag:lore-server:443"],
+      "deny": ["tag:lore-server:8787"],
+    },
+  ],
+}

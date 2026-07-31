@@ -165,6 +165,7 @@ type searchFlags struct {
 	kind                 string
 	limit                int
 	backend              search.Backend
+	matching             search.MatchingMode
 	includeSensitivities []string
 	queryParts           []string
 }
@@ -200,12 +201,13 @@ func runSearch(ctx context.Context, args []string, global globalOptions, s strea
 	}
 	queryText := strings.Join(flags.queryParts, " ")
 	result, err := service.Search(ctx, search.Query{
-		Text:    queryText,
-		Scope:   flags.scope,
-		Kind:    flags.kind,
-		Limit:   flags.limit,
-		Backend: backend,
-		Access:  access,
+		Text:     queryText,
+		Scope:    flags.scope,
+		Kind:     flags.kind,
+		Limit:    flags.limit,
+		Backend:  backend,
+		Matching: flags.matching,
+		Access:   access,
 	})
 	if err != nil {
 		return emitOperationError(s, flags.json, err)
@@ -224,6 +226,9 @@ func runSearch(ctx context.Context, args []string, global globalOptions, s strea
 		fmt.Fprintf(s.out, "%d. %s:%d-%d  [%s] %s  score=%d\n", item.Rank, item.Path, item.LineStart, item.LineEnd, item.Kind, title, item.Score)
 		for _, line := range strings.Split(item.Snippet, "\n") {
 			fmt.Fprintf(s.out, "   %s\n", line)
+		}
+		for _, match := range item.FuzzyMatches {
+			fmt.Fprintf(s.out, "   fuzzy: %s -> %s (distance %d)\n", match.QueryTerm, match.DocumentTerm, match.Distance)
 		}
 		fmt.Fprintf(s.out, "   %s\n", item.URI)
 	}
@@ -244,6 +249,7 @@ Options:
   --scope all|pages|sources
   --kind TOKEN
   --backend auto|index|filesystem
+  --matching auto|lexical|fuzzy
   --include-sensitivity normal|sensitive|local-only
                         repeatable; defaults to all local sensitivities
   --limit N             default 10, maximum 100
@@ -275,6 +281,12 @@ Options:
 				return false, err
 			}
 			flags.backend, index = search.Backend(value), next
+		case arg == "--matching" || strings.HasPrefix(arg, "--matching="):
+			value, next, err := flagValue(args, index, "--matching")
+			if err != nil {
+				return false, err
+			}
+			flags.matching, index = search.MatchingMode(value), next
 		case arg == "--include-sensitivity" || strings.HasPrefix(arg, "--include-sensitivity="):
 			value, next, err := flagValue(args, index, "--include-sensitivity")
 			if err != nil {
@@ -311,6 +323,11 @@ Options:
 	case "", search.BackendAuto, search.BackendIndex, search.BackendFilesystem:
 	default:
 		return false, core.NewError(core.ExitUsage, "invalid_backend", "--backend must be auto, index, or filesystem")
+	}
+	switch flags.matching {
+	case "", search.MatchingAuto, search.MatchingLexical, search.MatchingFuzzy:
+	default:
+		return false, core.NewError(core.ExitUsage, "invalid_matching", "--matching must be auto, lexical, or fuzzy")
 	}
 	for _, sensitivity := range flags.includeSensitivities {
 		if sensitivity != "normal" && sensitivity != "sensitive" && sensitivity != "local-only" {
@@ -928,7 +945,7 @@ Commands:
   preview   validate and persist an exact transaction proposal
   commit    apply and Git-commit a previewed transaction
   transaction
-            inspect or discard transaction proposals
+            inspect, discard, or prune transaction artifacts
   recover   inspect, roll back, or finalize interrupted transactions
   index     build, update, inspect, or clear the derived search index
   mcp       serve Lore through the Model Context Protocol

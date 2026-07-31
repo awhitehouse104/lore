@@ -39,7 +39,7 @@ func (s *Service) IndexUpdate(ctx context.Context) (result loreindex.UpdateResul
 	if s == nil || s.Repo == nil || s.Clock == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "index service is not fully configured")
 	}
-	handle, apiErr := acquireWriteLock(s.Repo, "index-update", s.Clock.Now().UTC())
+	handle, apiErr := s.acquireWriteLock(ctx, "index-update", s.Clock.Now().UTC())
 	if apiErr != nil {
 		return result, apiErr
 	}
@@ -72,11 +72,11 @@ func (s *Service) IndexUpdate(ctx context.Context) (result loreindex.UpdateResul
 	return result, nil
 }
 
-func (s *Service) IndexClear() (result loreindex.ClearResult, returnErr error) {
+func (s *Service) IndexClear(ctx context.Context) (result loreindex.ClearResult, returnErr error) {
 	if s == nil || s.Repo == nil || s.Clock == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "index service is not fully configured")
 	}
-	handle, apiErr := acquireWriteLock(s.Repo, "index-clear", s.Clock.Now().UTC())
+	handle, apiErr := s.acquireWriteLock(ctx, "index-clear", s.Clock.Now().UTC())
 	if apiErr != nil {
 		return result, apiErr
 	}
@@ -98,7 +98,7 @@ func (s *Service) IndexBuild(ctx context.Context, options IndexBuildOptions) (re
 	if s == nil || s.Repo == nil || s.Clock == nil {
 		return result, NewError(ExitRuntime, "service_unavailable", "index service is not fully configured")
 	}
-	handle, apiErr := acquireWriteLock(s.Repo, "index-build", s.Clock.Now().UTC())
+	handle, apiErr := s.acquireWriteLock(ctx, "index-build", s.Clock.Now().UTC())
 	if apiErr != nil {
 		return result, apiErr
 	}

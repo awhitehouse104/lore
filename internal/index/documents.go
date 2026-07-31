@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"lore/internal/docs"
+	"lore/internal/search"
 )
 
 const maximumDocumentDiagnostics = 50
@@ -32,6 +33,7 @@ type indexedDocument struct {
 	CreatedAt     string
 	UpdatedAt     string
 	IndexedAt     string
+	LexicalTerms  []string
 }
 
 func (m *Manager) scanDocuments(ctx context.Context, indexedAt string) ([]indexedDocument, error) {
@@ -103,6 +105,9 @@ func (m *Manager) scanDocuments(ctx context.Context, indexedAt string) ([]indexe
 			CreatedAt:     createdAt,
 			UpdatedAt:     updatedAt,
 			IndexedAt:     indexedAt,
+			LexicalTerms: search.DocumentTokens(
+				document.Title(), document.Aliases(), document.Tags(), document.Kind(), document.Body,
+			),
 		})
 	}
 	if len(diagnostics) > 0 {

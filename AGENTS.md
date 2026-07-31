@@ -15,10 +15,19 @@ Before finishing a code change, run:
 ## Engineering rules
 
 - Keep the Markdown repository authoritative.
-- Do not add an LLM call, daemon, MCP server, HTTP API, embeddings, or an
-  authoritative database in v0.3. SQLite is permitted only as disposable,
-  repository-bound derived search state.
-- Keep the CLI adapter thin; core operations return typed values and errors.
+- Treat the completed v0.4 architecture as the baseline: Lore ships a CLI, a
+  disposable SQLite search index, local stdio MCP, and a permissioned stateless
+  HTTP MCP gateway.
+- Do not add a server-side LLM call, embeddings or vector retrieval, an
+  authoritative database, autonomous background processing, or a new
+  transport/API without explicitly approved release scope.
+- Keep SQLite repository-bound, disposable, and derived from authoritative
+  Markdown.
+- Keep CLI and MCP adapters thin; core operations return typed values and
+  errors.
+- Keep remote-server configuration and credentials outside the knowledge
+  repository, and preserve the structural exclusion of `local-only` content
+  from HTTP.
 - Never invoke a shell; pass argument arrays to external commands.
 - Centralize repository path validation and reject traversal or symlink escape.
 - Never log or include captured source bodies in errors.

@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"lore/internal/auth"
 	"lore/internal/core"
@@ -19,6 +20,7 @@ import (
 	"lore/internal/gitx"
 	"lore/internal/initrepo"
 	"lore/internal/repository"
+	"lore/internal/search"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -101,6 +103,19 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		searchOutput.Results[0].ID != "page_project_foo" {
 		t.Fatalf("search output = %+v", searchOutput)
 	}
+	if searchOutput.Matching != search.MatchingAuto || searchOutput.FuzzyExpanded {
+		t.Fatalf("exact search matching metadata = %+v", searchOutput)
+	}
+	fuzzyOutput := decodeOutput[SearchOutput](t, callTool(t, clientSession, "lore_search", map[string]any{
+		"query":    "deplyable Kubernets",
+		"types":    []string{"page"},
+		"matching": "auto",
+		"backend":  "filesystem",
+	}))
+	if fuzzyOutput.Matching != search.MatchingAuto || !fuzzyOutput.FuzzyExpanded ||
+		len(fuzzyOutput.Results) != 1 || len(fuzzyOutput.Results[0].FuzzyMatches) != 2 {
+		t.Fatalf("fuzzy search output = %+v", fuzzyOutput)
+	}
 
 	readResult := callTool(t, clientSession, "lore_read", map[string]any{
 		"ref":        searchOutput.Results[0].URI,
@@ -137,6 +152,16 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	}
 	if !invalid.IsError || len(invalid.Content) != 1 {
 		t.Fatalf("invalid bounded input result = %+v", invalid)
+	}
+	invalidMatching, err := clientSession.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "lore_search",
+		Arguments: map[string]any{"query": "foo", "matching": "approximate"},
+	})
+	if err != nil {
+		t.Fatalf("invalid matching CallTool: %v", err)
+	}
+	if !invalidMatching.IsError {
+		t.Fatalf("invalid matching input result = %+v", invalidMatching)
 	}
 }
 
@@ -315,7 +340,17 @@ Material reserved for local clients.
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	return core.NewService(repo)
+	service := core.NewService(repo)
+	service.Clock = fixedTestClock{value: time.Date(2026, 7, 29, 16, 0, 0, 0, time.UTC)}
+	return service
+}
+
+type fixedTestClock struct {
+	value time.Time
+}
+
+func (c fixedTestClock) Now() time.Time {
+	return c.value
 }
 
 func requireGit(t *testing.T) {

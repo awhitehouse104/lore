@@ -1,0 +1,4709 @@
+{
+  "schema_version": 1,
+  "suite_version": 1,
+  "suite": "lore-agent-retrieval-baseline",
+  "description": "Representative deterministic queries for agent-oriented Markdown retrieval.",
+  "corpus_documents": 18,
+  "case_count": 49,
+  "backends": [
+    {
+      "requested_backend": "filesystem",
+      "filesystem_cases": 49,
+      "indexed_cases": 0,
+      "overall": {
+        "cases": 49,
+        "hit_at_1": 39,
+        "hit_at_3": 43,
+        "hit_at_5": 44,
+        "hit_at_10": 44,
+        "mean_reciprocal_rank": 0.838435,
+        "mean_recall_at_5": 0.897959,
+        "mean_ndcg_at_10": 0.85354,
+        "zero_results": 2,
+        "returned_results": 96,
+        "mean_results": 1.959184,
+        "forbidden_results": 0
+      },
+      "categories": [
+        {
+          "category": "authorization",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 5,
+            "hit_at_3": 6,
+            "hit_at_5": 6,
+            "hit_at_10": 6,
+            "mean_reciprocal_rank": 0.916667,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 0.938488,
+            "zero_results": 0,
+            "returned_results": 11,
+            "mean_results": 1.833333,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "direct",
+          "metrics": {
+            "cases": 8,
+            "hit_at_1": 8,
+            "hit_at_3": 8,
+            "hit_at_5": 8,
+            "hit_at_10": 8,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 13,
+            "mean_results": 1.625,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "fuzzy_typo",
+          "metrics": {
+            "cases": 4,
+            "hit_at_1": 4,
+            "hit_at_3": 4,
+            "hit_at_5": 4,
+            "hit_at_10": 4,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 6,
+            "mean_results": 1.5,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "metadata",
+          "metrics": {
+            "cases": 3,
+            "hit_at_1": 3,
+            "hit_at_3": 3,
+            "hit_at_5": 3,
+            "hit_at_10": 3,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 3,
+            "mean_results": 1,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "morphology",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 4,
+            "hit_at_3": 5,
+            "hit_at_5": 5,
+            "hit_at_10": 5,
+            "mean_reciprocal_rank": 0.75,
+            "mean_recall_at_5": 0.833333,
+            "mean_ndcg_at_10": 0.771822,
+            "zero_results": 0,
+            "returned_results": 10,
+            "mean_results": 1.666667,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "multi_term",
+          "metrics": {
+            "cases": 4,
+            "hit_at_1": 4,
+            "hit_at_3": 4,
+            "hit_at_5": 4,
+            "hit_at_10": 4,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 11,
+            "mean_results": 2.75,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "natural_question",
+          "metrics": {
+            "cases": 10,
+            "hit_at_1": 7,
+            "hit_at_3": 8,
+            "hit_at_5": 9,
+            "hit_at_10": 9,
+            "mean_reciprocal_rank": 0.775,
+            "mean_recall_at_5": 0.9,
+            "mean_ndcg_at_10": 0.806161,
+            "zero_results": 0,
+            "returned_results": 33,
+            "mean_results": 3.3,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "source",
+          "metrics": {
+            "cases": 2,
+            "hit_at_1": 2,
+            "hit_at_3": 2,
+            "hit_at_5": 2,
+            "hit_at_10": 2,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 3,
+            "mean_results": 1.5,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "vocabulary_mismatch",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 2,
+            "hit_at_3": 3,
+            "hit_at_5": 3,
+            "hit_at_10": 3,
+            "mean_reciprocal_rank": 0.388889,
+            "mean_recall_at_5": 0.5,
+            "mean_ndcg_at_10": 0.416667,
+            "zero_results": 2,
+            "returned_results": 6,
+            "mean_results": 1,
+            "forbidden_results": 0
+          }
+        }
+      ],
+      "cases": [
+        {
+          "id": "direct_disaster_recovery",
+          "category": "direct",
+          "query": {
+            "text": "disaster recovery",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 205
+            }
+          ]
+        },
+        {
+          "id": "direct_operating_principles",
+          "category": "direct",
+          "query": {
+            "text": "operating principles",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 202
+            }
+          ]
+        },
+        {
+          "id": "direct_identity_federation",
+          "category": "direct",
+          "query": {
+            "text": "identity federation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 205
+            }
+          ]
+        },
+        {
+          "id": "direct_application_packaging",
+          "category": "direct",
+          "query": {
+            "text": "application packaging",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 202
+            }
+          ]
+        },
+        {
+          "id": "direct_focus_system",
+          "category": "direct",
+          "query": {
+            "text": "focus system",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 198
+            },
+            {
+              "rank": 2,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "direct_decision_record",
+          "category": "direct",
+          "query": {
+            "text": "decision record",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 204
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "direct_search_index",
+          "category": "direct",
+          "query": {
+            "text": "search index",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 210
+            }
+          ]
+        },
+        {
+          "id": "direct_backup_policy",
+          "category": "direct",
+          "query": {
+            "text": "backup policy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 208
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 14
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 14
+            }
+          ]
+        },
+        {
+          "id": "natural_rebuild_after_failure",
+          "category": "natural_question",
+          "query": {
+            "text": "rebuild service after host failure",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 59,
+              "fuzzy_matches": [
+                {
+                  "query_term": "rebuild",
+                  "document_term": "rebuilds",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 19
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 18
+            },
+            {
+              "rank": 4,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "rebuild",
+                  "document_term": "rebuilt",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "natural_rules_for_changes",
+          "category": "natural_question",
+          "query": {
+            "text": "rules guiding reversible production changes",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 73
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_central_authentication",
+          "category": "natural_question",
+          "query": {
+            "text": "users authenticated central provider",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 42
+            },
+            {
+              "rank": 2,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_shipping_services",
+          "category": "natural_question",
+          "query": {
+            "text": "services shipped built between environments",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 124
+            }
+          ]
+        },
+        {
+          "id": "natural_weekly_attention",
+          "category": "natural_question",
+          "query": {
+            "text": "weekly review next attention",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 136
+            }
+          ]
+        },
+        {
+          "id": "natural_preserve_rationale",
+          "category": "natural_question",
+          "query": {
+            "text": "preserve alternatives evidence rationale",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 104,
+              "fuzzy_matches": [
+                {
+                  "query_term": "preserve",
+                  "document_term": "preserves",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 23
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_server_failure",
+          "category": "natural_question",
+          "query": {
+            "text": "how do I recover when the server dies",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 42,
+              "fuzzy_matches": [
+                {
+                  "query_term": "recover",
+                  "document_term": "recovery",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 41
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 40
+            },
+            {
+              "rank": 4,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 17
+            },
+            {
+              "rank": 5,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            },
+            {
+              "rank": 6,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 14
+            },
+            {
+              "rank": 7,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 11
+            },
+            {
+              "rank": 8,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 11
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_safe_changes",
+          "category": "natural_question",
+          "query": {
+            "text": "what is our approach to changing production safely",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 4
+            }
+          ],
+          "first_relevant_rank": 4,
+          "reciprocal_rank": 0.25,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.430677,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 41
+            },
+            {
+              "rank": 2,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 15
+            },
+            {
+              "rank": 4,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 15
+            },
+            {
+              "rank": 5,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_chosen_option",
+          "category": "natural_question",
+          "query": {
+            "text": "where can I find why we chose an option",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 38
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 19
+            },
+            {
+              "rank": 3,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 15
+            },
+            {
+              "rank": 4,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_weekly_priorities",
+          "category": "natural_question",
+          "query": {
+            "text": "what should I do every week to decide what matters",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 19
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 18
+            },
+            {
+              "rank": 3,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "morphology_recoveries",
+          "category": "morphology",
+          "query": {
+            "text": "recoveries",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "recoveries",
+                  "document_term": "recovered",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_backups",
+          "category": "morphology",
+          "query": {
+            "text": "backups",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 27,
+              "fuzzy_matches": [
+                {
+                  "query_term": "backups",
+                  "document_term": "backup",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_deployments",
+          "category": "morphology",
+          "query": {
+            "text": "deployments",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_deployment_runbook",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 25,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 10,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 10,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_curating",
+          "category": "morphology",
+          "query": {
+            "text": "curating evidence",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_curation_workflow",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 23
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "morphology_credentials",
+          "category": "morphology",
+          "query": {
+            "text": "credentials rotation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 54
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "morphology_indexes",
+          "category": "morphology",
+          "query": {
+            "text": "indexes sqlite",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "typo_disaster_recovery",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "disater recovry",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 57,
+              "fuzzy_matches": [
+                {
+                  "query_term": "disater",
+                  "document_term": "disaster",
+                  "distance": 1
+                },
+                {
+                  "query_term": "recovry",
+                  "document_term": "recovery",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_identity_federation",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "identty federaton",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 57,
+              "fuzzy_matches": [
+                {
+                  "query_term": "identty",
+                  "document_term": "identity",
+                  "distance": 1
+                },
+                {
+                  "query_term": "federaton",
+                  "document_term": "federation",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_application_packaging",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "applcation pakaging",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 56,
+              "fuzzy_matches": [
+                {
+                  "query_term": "applcation",
+                  "document_term": "application",
+                  "distance": 1
+                },
+                {
+                  "query_term": "pakaging",
+                  "document_term": "packaging",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "applcation",
+                  "document_term": "applications",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_credential_handling",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "credntial handlng",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 56,
+              "fuzzy_matches": [
+                {
+                  "query_term": "credntial",
+                  "document_term": "credential",
+                  "distance": 1
+                },
+                {
+                  "query_term": "handlng",
+                  "document_term": "handling",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 7,
+              "fuzzy_matches": [
+                {
+                  "query_term": "credntial",
+                  "document_term": "credentials",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "semantic_emergency_restoration",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "emergency restoration",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": []
+        },
+        {
+          "id": "semantic_deployment_philosophy",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "deployment philosophy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 3
+            }
+          ],
+          "first_relevant_rank": 3,
+          "reciprocal_rank": 0.333333,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.5,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 45
+            },
+            {
+              "rank": 2,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 20
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "semantic_single_sign_on",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "single sign on",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "semantic_container_strategy",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "container strategy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 14,
+              "fuzzy_matches": [
+                {
+                  "query_term": "container",
+                  "document_term": "containers",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "semantic_productivity_method",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "productivity method",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 24
+            }
+          ]
+        },
+        {
+          "id": "semantic_reasoning_ledger",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "reasoning ledger",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": []
+        },
+        {
+          "id": "multi_backup_operations",
+          "category": "multi_term",
+          "query": {
+            "text": "backup operations",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 85
+            },
+            {
+              "rank": 2,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 41
+            },
+            {
+              "rank": 3,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 16
+            },
+            {
+              "rank": 4,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 16
+            },
+            {
+              "rank": 5,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 16
+            }
+          ]
+        },
+        {
+          "id": "multi_production_reversible_rollout",
+          "category": "multi_term",
+          "query": {
+            "text": "production reversible rollout",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 42
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "multi_sqlite_derived_catalog",
+          "category": "multi_term",
+          "query": {
+            "text": "sqlite derived catalog",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 101
+            }
+          ]
+        },
+        {
+          "id": "multi_security_credential_rotation",
+          "category": "multi_term",
+          "query": {
+            "text": "security credential rotation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 69
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 47
+            },
+            {
+              "rank": 3,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "metadata_tag_filter",
+          "category": "metadata",
+          "query": {
+            "text": "nightly snapshots",
+            "scope": "pages",
+            "tags": [
+              "operations",
+              "backup"
+            ],
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 34
+            }
+          ]
+        },
+        {
+          "id": "metadata_kind_filter",
+          "category": "metadata",
+          "query": {
+            "text": "production changes",
+            "scope": "pages",
+            "kind": "policy",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 52
+            }
+          ]
+        },
+        {
+          "id": "metadata_path_filter",
+          "category": "metadata",
+          "query": {
+            "text": "evidence",
+            "scope": "pages",
+            "paths": [
+              "pages/curation-workflow.md"
+            ],
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_curation_workflow",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 37
+            }
+          ]
+        },
+        {
+          "id": "source_public_service_review",
+          "category": "source",
+          "query": {
+            "text": "public service review",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 69
+            }
+          ]
+        },
+        {
+          "id": "source_incident_evidence",
+          "category": "source",
+          "query": {
+            "text": "incident evidence",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 3,
+              "rank": 1
+            },
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 62
+            },
+            {
+              "rank": 2,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAW-private-incident.md",
+              "score": 62
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_local_travel",
+          "category": "authorization",
+          "query": {
+            "text": "azimuth travel",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_navigation_notes",
+              "grade": 2,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "auth_local_can_find_travel",
+          "category": "authorization",
+          "query": {
+            "text": "azimuth travel",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "local-only"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_private_travel_plans",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_private_travel_plans",
+              "path": "pages/private-travel-plans.md",
+              "score": 84
+            },
+            {
+              "rank": 2,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_credentials",
+          "category": "authorization",
+          "query": {
+            "text": "heliotrope credentials",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_authentication_overview",
+              "grade": 2,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_sensitive_can_find_credentials",
+          "category": "authorization",
+          "query": {
+            "text": "heliotrope credentials",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_production_credentials",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_production_credentials",
+              "path": "pages/production-credentials.md",
+              "score": 84
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            },
+            {
+              "rank": 3,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_incident_source",
+          "category": "authorization",
+          "query": {
+            "text": "saffron incident",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 2,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 17
+            }
+          ]
+        },
+        {
+          "id": "auth_sensitive_can_find_incident_source",
+          "category": "authorization",
+          "query": {
+            "text": "saffron incident",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAW-private-incident.md",
+              "score": 58
+            },
+            {
+              "rank": 2,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 17
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "requested_backend": "auto",
+      "filesystem_cases": 5,
+      "indexed_cases": 44,
+      "overall": {
+        "cases": 49,
+        "hit_at_1": 39,
+        "hit_at_3": 43,
+        "hit_at_5": 44,
+        "hit_at_10": 44,
+        "mean_reciprocal_rank": 0.838435,
+        "mean_recall_at_5": 0.897959,
+        "mean_ndcg_at_10": 0.85354,
+        "zero_results": 2,
+        "returned_results": 96,
+        "mean_results": 1.959184,
+        "forbidden_results": 0
+      },
+      "categories": [
+        {
+          "category": "authorization",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 5,
+            "hit_at_3": 6,
+            "hit_at_5": 6,
+            "hit_at_10": 6,
+            "mean_reciprocal_rank": 0.916667,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 0.938488,
+            "zero_results": 0,
+            "returned_results": 11,
+            "mean_results": 1.833333,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "direct",
+          "metrics": {
+            "cases": 8,
+            "hit_at_1": 8,
+            "hit_at_3": 8,
+            "hit_at_5": 8,
+            "hit_at_10": 8,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 13,
+            "mean_results": 1.625,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "fuzzy_typo",
+          "metrics": {
+            "cases": 4,
+            "hit_at_1": 4,
+            "hit_at_3": 4,
+            "hit_at_5": 4,
+            "hit_at_10": 4,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 6,
+            "mean_results": 1.5,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "metadata",
+          "metrics": {
+            "cases": 3,
+            "hit_at_1": 3,
+            "hit_at_3": 3,
+            "hit_at_5": 3,
+            "hit_at_10": 3,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 3,
+            "mean_results": 1,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "morphology",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 4,
+            "hit_at_3": 5,
+            "hit_at_5": 5,
+            "hit_at_10": 5,
+            "mean_reciprocal_rank": 0.75,
+            "mean_recall_at_5": 0.833333,
+            "mean_ndcg_at_10": 0.771822,
+            "zero_results": 0,
+            "returned_results": 10,
+            "mean_results": 1.666667,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "multi_term",
+          "metrics": {
+            "cases": 4,
+            "hit_at_1": 4,
+            "hit_at_3": 4,
+            "hit_at_5": 4,
+            "hit_at_10": 4,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 11,
+            "mean_results": 2.75,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "natural_question",
+          "metrics": {
+            "cases": 10,
+            "hit_at_1": 7,
+            "hit_at_3": 8,
+            "hit_at_5": 9,
+            "hit_at_10": 9,
+            "mean_reciprocal_rank": 0.775,
+            "mean_recall_at_5": 0.9,
+            "mean_ndcg_at_10": 0.806161,
+            "zero_results": 0,
+            "returned_results": 33,
+            "mean_results": 3.3,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "source",
+          "metrics": {
+            "cases": 2,
+            "hit_at_1": 2,
+            "hit_at_3": 2,
+            "hit_at_5": 2,
+            "hit_at_10": 2,
+            "mean_reciprocal_rank": 1,
+            "mean_recall_at_5": 1,
+            "mean_ndcg_at_10": 1,
+            "zero_results": 0,
+            "returned_results": 3,
+            "mean_results": 1.5,
+            "forbidden_results": 0
+          }
+        },
+        {
+          "category": "vocabulary_mismatch",
+          "metrics": {
+            "cases": 6,
+            "hit_at_1": 2,
+            "hit_at_3": 3,
+            "hit_at_5": 3,
+            "hit_at_10": 3,
+            "mean_reciprocal_rank": 0.388889,
+            "mean_recall_at_5": 0.5,
+            "mean_ndcg_at_10": 0.416667,
+            "zero_results": 2,
+            "returned_results": 6,
+            "mean_results": 1,
+            "forbidden_results": 0
+          }
+        }
+      ],
+      "cases": [
+        {
+          "id": "direct_disaster_recovery",
+          "category": "direct",
+          "query": {
+            "text": "disaster recovery",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 205
+            }
+          ]
+        },
+        {
+          "id": "direct_operating_principles",
+          "category": "direct",
+          "query": {
+            "text": "operating principles",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 202
+            }
+          ]
+        },
+        {
+          "id": "direct_identity_federation",
+          "category": "direct",
+          "query": {
+            "text": "identity federation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 205
+            }
+          ]
+        },
+        {
+          "id": "direct_application_packaging",
+          "category": "direct",
+          "query": {
+            "text": "application packaging",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 202
+            }
+          ]
+        },
+        {
+          "id": "direct_focus_system",
+          "category": "direct",
+          "query": {
+            "text": "focus system",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 198
+            },
+            {
+              "rank": 2,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "direct_decision_record",
+          "category": "direct",
+          "query": {
+            "text": "decision record",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 204
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "direct_search_index",
+          "category": "direct",
+          "query": {
+            "text": "search index",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 210
+            }
+          ]
+        },
+        {
+          "id": "direct_backup_policy",
+          "category": "direct",
+          "query": {
+            "text": "backup policy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 208
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 14
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 14
+            }
+          ]
+        },
+        {
+          "id": "natural_rebuild_after_failure",
+          "category": "natural_question",
+          "query": {
+            "text": "rebuild service after host failure",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 59,
+              "fuzzy_matches": [
+                {
+                  "query_term": "rebuild",
+                  "document_term": "rebuilds",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 19
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 18
+            },
+            {
+              "rank": 4,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "rebuild",
+                  "document_term": "rebuilt",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "natural_rules_for_changes",
+          "category": "natural_question",
+          "query": {
+            "text": "rules guiding reversible production changes",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 73
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_central_authentication",
+          "category": "natural_question",
+          "query": {
+            "text": "users authenticated central provider",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 42
+            },
+            {
+              "rank": 2,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_shipping_services",
+          "category": "natural_question",
+          "query": {
+            "text": "services shipped built between environments",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 124
+            }
+          ]
+        },
+        {
+          "id": "natural_weekly_attention",
+          "category": "natural_question",
+          "query": {
+            "text": "weekly review next attention",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 136
+            }
+          ]
+        },
+        {
+          "id": "natural_preserve_rationale",
+          "category": "natural_question",
+          "query": {
+            "text": "preserve alternatives evidence rationale",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 104,
+              "fuzzy_matches": [
+                {
+                  "query_term": "preserve",
+                  "document_term": "preserves",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 23
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_server_failure",
+          "category": "natural_question",
+          "query": {
+            "text": "how do I recover when the server dies",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [
+            "index_query_fallback"
+          ],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 42,
+              "fuzzy_matches": [
+                {
+                  "query_term": "recover",
+                  "document_term": "recovery",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 41
+            },
+            {
+              "rank": 3,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 40
+            },
+            {
+              "rank": 4,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 17
+            },
+            {
+              "rank": 5,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            },
+            {
+              "rank": 6,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 14
+            },
+            {
+              "rank": 7,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 11
+            },
+            {
+              "rank": 8,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 11
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_safe_changes",
+          "category": "natural_question",
+          "query": {
+            "text": "what is our approach to changing production safely",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [
+            "index_query_fallback"
+          ],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 4
+            }
+          ],
+          "first_relevant_rank": 4,
+          "reciprocal_rank": 0.25,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.430677,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 41
+            },
+            {
+              "rank": 2,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            },
+            {
+              "rank": 3,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 15
+            },
+            {
+              "rank": 4,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 15
+            },
+            {
+              "rank": 5,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_chosen_option",
+          "category": "natural_question",
+          "query": {
+            "text": "where can I find why we chose an option",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [
+            "index_query_fallback"
+          ],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 38
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 19
+            },
+            {
+              "rank": 3,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 15
+            },
+            {
+              "rank": 4,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "natural_noisy_weekly_priorities",
+          "category": "natural_question",
+          "query": {
+            "text": "what should I do every week to decide what matters",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [
+            "index_query_fallback"
+          ],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 19
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 18
+            },
+            {
+              "rank": 3,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "morphology_recoveries",
+          "category": "morphology",
+          "query": {
+            "text": "recoveries",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "recoveries",
+                  "document_term": "recovered",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_backups",
+          "category": "morphology",
+          "query": {
+            "text": "backups",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 27,
+              "fuzzy_matches": [
+                {
+                  "query_term": "backups",
+                  "document_term": "backup",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_deployments",
+          "category": "morphology",
+          "query": {
+            "text": "deployments",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_deployment_runbook",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 25,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 10,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 10,
+              "fuzzy_matches": [
+                {
+                  "query_term": "deployments",
+                  "document_term": "deployment",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "morphology_curating",
+          "category": "morphology",
+          "query": {
+            "text": "curating evidence",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_curation_workflow",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 23
+            },
+            {
+              "rank": 2,
+              "id": "page_decision_record",
+              "path": "pages/decision-record.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "morphology_credentials",
+          "category": "morphology",
+          "query": {
+            "text": "credentials rotation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 54
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "morphology_indexes",
+          "category": "morphology",
+          "query": {
+            "text": "indexes sqlite",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "typo_disaster_recovery",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "disater recovry",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 57,
+              "fuzzy_matches": [
+                {
+                  "query_term": "disater",
+                  "document_term": "disaster",
+                  "distance": 1
+                },
+                {
+                  "query_term": "recovry",
+                  "document_term": "recovery",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_identity_federation",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "identty federaton",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 57,
+              "fuzzy_matches": [
+                {
+                  "query_term": "identty",
+                  "document_term": "identity",
+                  "distance": 1
+                },
+                {
+                  "query_term": "federaton",
+                  "document_term": "federation",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_application_packaging",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "applcation pakaging",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 56,
+              "fuzzy_matches": [
+                {
+                  "query_term": "applcation",
+                  "document_term": "application",
+                  "distance": 1
+                },
+                {
+                  "query_term": "pakaging",
+                  "document_term": "packaging",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 9,
+              "fuzzy_matches": [
+                {
+                  "query_term": "applcation",
+                  "document_term": "applications",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "typo_credential_handling",
+          "category": "fuzzy_typo",
+          "query": {
+            "text": "credntial handlng",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 56,
+              "fuzzy_matches": [
+                {
+                  "query_term": "credntial",
+                  "document_term": "credential",
+                  "distance": 1
+                },
+                {
+                  "query_term": "handlng",
+                  "document_term": "handling",
+                  "distance": 1
+                }
+              ]
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 7,
+              "fuzzy_matches": [
+                {
+                  "query_term": "credntial",
+                  "document_term": "credentials",
+                  "distance": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "semantic_emergency_restoration",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "emergency restoration",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_disaster_recovery",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": []
+        },
+        {
+          "id": "semantic_deployment_philosophy",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "deployment philosophy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 3
+            }
+          ],
+          "first_relevant_rank": 3,
+          "reciprocal_rank": 0.333333,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.5,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 45
+            },
+            {
+              "rank": 2,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 20
+            },
+            {
+              "rank": 3,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "semantic_single_sign_on",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "single sign on",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "filesystem",
+          "warning_codes": [
+            "index_query_fallback"
+          ],
+          "relevant": [
+            {
+              "id": "page_identity_federation",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "semantic_container_strategy",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "container strategy",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_application_packaging",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_application_packaging",
+              "path": "pages/application-packaging.md",
+              "score": 14,
+              "fuzzy_matches": [
+                {
+                  "query_term": "container",
+                  "document_term": "containers",
+                  "distance": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "semantic_productivity_method",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "productivity method",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_focus_system",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_focus_system",
+              "path": "pages/focus-system.md",
+              "score": 24
+            }
+          ]
+        },
+        {
+          "id": "semantic_reasoning_ledger",
+          "category": "vocabulary_mismatch",
+          "query": {
+            "text": "reasoning ledger",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_decision_record",
+              "grade": 3,
+              "rank": 0
+            }
+          ],
+          "first_relevant_rank": 0,
+          "reciprocal_rank": 0,
+          "recall_at_5": 0,
+          "ndcg_at_10": 0,
+          "forbidden_hits": [],
+          "results": []
+        },
+        {
+          "id": "multi_backup_operations",
+          "category": "multi_term",
+          "query": {
+            "text": "backup operations",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 85
+            },
+            {
+              "rank": 2,
+              "id": "page_operations_log",
+              "path": "pages/operations-log.md",
+              "score": 41
+            },
+            {
+              "rank": 3,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 16
+            },
+            {
+              "rank": 4,
+              "id": "page_disaster_recovery",
+              "path": "pages/disaster-recovery.md",
+              "score": 16
+            },
+            {
+              "rank": 5,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 16
+            }
+          ]
+        },
+        {
+          "id": "multi_production_reversible_rollout",
+          "category": "multi_term",
+          "query": {
+            "text": "production reversible rollout",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 42
+            },
+            {
+              "rank": 2,
+              "id": "page_deployment_runbook",
+              "path": "pages/deployment-runbook.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "multi_sqlite_derived_catalog",
+          "category": "multi_term",
+          "query": {
+            "text": "sqlite derived catalog",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_search_index",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_search_index",
+              "path": "pages/search-index.md",
+              "score": 101
+            }
+          ]
+        },
+        {
+          "id": "multi_security_credential_rotation",
+          "category": "multi_term",
+          "query": {
+            "text": "security credential rotation",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_credential_handling",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 69
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 47
+            },
+            {
+              "rank": 3,
+              "id": "page_identity_federation",
+              "path": "pages/identity-federation.md",
+              "score": 20
+            }
+          ]
+        },
+        {
+          "id": "metadata_tag_filter",
+          "category": "metadata",
+          "query": {
+            "text": "nightly snapshots",
+            "scope": "pages",
+            "tags": [
+              "operations",
+              "backup"
+            ],
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_backup_policy",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_backup_policy",
+              "path": "pages/backup-policy.md",
+              "score": 34
+            }
+          ]
+        },
+        {
+          "id": "metadata_kind_filter",
+          "category": "metadata",
+          "query": {
+            "text": "production changes",
+            "scope": "pages",
+            "kind": "policy",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_operating_principles",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_operating_principles",
+              "path": "pages/operating-principles.md",
+              "score": 52
+            }
+          ]
+        },
+        {
+          "id": "metadata_path_filter",
+          "category": "metadata",
+          "query": {
+            "text": "evidence",
+            "scope": "pages",
+            "paths": [
+              "pages/curation-workflow.md"
+            ],
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_curation_workflow",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_curation_workflow",
+              "path": "pages/curation-workflow.md",
+              "score": 37
+            }
+          ]
+        },
+        {
+          "id": "source_public_service_review",
+          "category": "source",
+          "query": {
+            "text": "public service review",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 69
+            }
+          ]
+        },
+        {
+          "id": "source_incident_evidence",
+          "category": "source",
+          "query": {
+            "text": "incident evidence",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 3,
+              "rank": 1
+            },
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "grade": 3,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 62
+            },
+            {
+              "rank": 2,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAW-private-incident.md",
+              "score": 62
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_local_travel",
+          "category": "authorization",
+          "query": {
+            "text": "azimuth travel",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_navigation_notes",
+              "grade": 2,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 19
+            }
+          ]
+        },
+        {
+          "id": "auth_local_can_find_travel",
+          "category": "authorization",
+          "query": {
+            "text": "azimuth travel",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "local-only"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_private_travel_plans",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_private_travel_plans",
+              "path": "pages/private-travel-plans.md",
+              "score": 84
+            },
+            {
+              "rank": 2,
+              "id": "page_navigation_notes",
+              "path": "pages/navigation-notes.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_credentials",
+          "category": "authorization",
+          "query": {
+            "text": "heliotrope credentials",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_authentication_overview",
+              "grade": 2,
+              "rank": 2
+            }
+          ],
+          "first_relevant_rank": 2,
+          "reciprocal_rank": 0.5,
+          "recall_at_5": 1,
+          "ndcg_at_10": 0.63093,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            },
+            {
+              "rank": 2,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_sensitive_can_find_credentials",
+          "category": "authorization",
+          "query": {
+            "text": "heliotrope credentials",
+            "scope": "pages",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "page_production_credentials",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "page_production_credentials",
+              "path": "pages/production-credentials.md",
+              "score": 84
+            },
+            {
+              "rank": 2,
+              "id": "page_credential_handling",
+              "path": "pages/credential-handling.md",
+              "score": 20
+            },
+            {
+              "rank": 3,
+              "id": "page_authentication_overview",
+              "path": "pages/authentication-overview.md",
+              "score": 15
+            }
+          ]
+        },
+        {
+          "id": "auth_normal_hides_incident_source",
+          "category": "authorization",
+          "query": {
+            "text": "saffron incident",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "grade": 2,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 17
+            }
+          ]
+        },
+        {
+          "id": "auth_sensitive_can_find_incident_source",
+          "category": "authorization",
+          "query": {
+            "text": "saffron incident",
+            "scope": "sources",
+            "limit": 20,
+            "matching": "auto",
+            "sensitivities": [
+              "normal",
+              "sensitive"
+            ]
+          },
+          "effective_backend": "index",
+          "index_state": "fresh",
+          "warning_codes": [],
+          "relevant": [
+            {
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "grade": 3,
+              "rank": 1
+            }
+          ],
+          "first_relevant_rank": 1,
+          "reciprocal_rank": 1,
+          "recall_at_5": 1,
+          "ndcg_at_10": 1,
+          "forbidden_hits": [],
+          "results": [
+            {
+              "rank": 1,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAW-private-incident.md",
+              "score": 58
+            },
+            {
+              "rank": 2,
+              "id": "src_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+              "path": "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-service-review.md",
+              "score": 17
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "parity": {
+    "compared_cases": 49,
+    "equal_cases": 49,
+    "mismatches": []
+  }
+}

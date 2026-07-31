@@ -65,11 +65,39 @@ sensitivity: normal
 		bearerEntry(t, normalReader, token),
 	})
 	gateway := NewHTTPService(service, config, logger)
-	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{}`))
-	request.Header.Set("Authorization", "Bearer "+token+"wrong")
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json, text/event-stream")
-	gateway.Handler().ServeHTTP(httptest.NewRecorder(), request)
+	denialBody := "seeded denied request body"
+	peerAddress := "203.0.113.27:49152"
+	forwardedIdentity := "seeded-forwarded-identity@example.com"
+	sendDenied := func(authorization ...string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(denialBody))
+		request.RemoteAddr = peerAddress
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		request.Header.Set("X-Forwarded-For", forwardedIdentity)
+		request.Header.Set("Tailscale-User-Login", forwardedIdentity)
+		for _, value := range authorization {
+			request.Header.Add("Authorization", value)
+		}
+		response := httptest.NewRecorder()
+		gateway.Handler().ServeHTTP(response, request)
+		return response
+	}
+	invalid := sendDenied("Bearer " + token + "wrong")
+	missing := sendDenied()
+	malformed := sendDenied("Basic " + token)
+	duplicated := sendDenied("Bearer "+token, "Bearer "+token)
+	for name, response := range map[string]*httptest.ResponseRecorder{
+		"duplicated": duplicated,
+		"invalid":    invalid,
+		"malformed":  malformed,
+		"missing":    missing,
+	} {
+		if response.Code != http.StatusUnauthorized ||
+			response.Header().Get("WWW-Authenticate") != "Bearer" ||
+			response.Body.String() != "Unauthorized\n" {
+			t.Fatalf("%s denial = %d headers=%v body=%q", name, response.Code, response.Header(), response.Body.String())
+		}
+	}
 
 	logged := logs.String()
 	for _, secret := range []string{
@@ -81,6 +109,9 @@ sensitivity: normal
 		"sensitive-notes.md",
 		"Audit Secret",
 		"audit-secret.md",
+		denialBody,
+		peerAddress,
+		forwardedIdentity,
 	} {
 		if strings.Contains(logged, secret) {
 			t.Fatalf("audit log leaked %q: %s", secret, logged)
@@ -93,10 +124,16 @@ sensitivity: normal
 		`"operation":"lore_preview"`,
 		`"operation":"resources/read"`,
 		`"event":"mcp_authentication"`,
+		`"reason":"missing_credentials"`,
+		`"reason":"invalid_credentials"`,
 	} {
 		if !strings.Contains(logged, expected) {
 			t.Errorf("audit log missing %s: %s", expected, logged)
 		}
+	}
+	if strings.Count(logged, `"reason":"missing_credentials"`) != 1 ||
+		strings.Count(logged, `"reason":"invalid_credentials"`) != 3 {
+		t.Fatalf("authentication denial reasons = %s", logged)
 	}
 }
 
