@@ -11,12 +11,14 @@ import (
 )
 
 type externalError struct {
-	SchemaVersion int    `json:"schema_version"`
-	Status        string `json:"status"`
-	RequestID     string `json:"request_id"`
-	Code          string `json:"code"`
-	Message       string `json:"message"`
-	ErrorID       string `json:"error_id,omitempty"`
+	SchemaVersion int               `json:"schema_version"`
+	Status        string            `json:"status"`
+	RequestID     string            `json:"request_id"`
+	Code          string            `json:"code"`
+	Reason        string            `json:"reason,omitempty"`
+	Message       string            `json:"message"`
+	Details       map[string]string `json:"details,omitempty"`
+	ErrorID       string            `json:"error_id,omitempty"`
 }
 
 type toolError struct {
@@ -30,6 +32,8 @@ func (e *toolError) Error() string {
 
 func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 	code, message := "internal_error", "The Lore operation failed unexpectedly."
+	reason := ""
+	var details map[string]string
 	errorID := ""
 	var apiErr *core.APIError
 	if errors.As(err, &apiErr) {
@@ -54,6 +58,7 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 			switch apiErr.ExitCode {
 			case core.ExitUsage, core.ExitValidation:
 				code, message = "invalid_argument", "The tool arguments are invalid."
+				reason, message, details = safeValidationDisclosure(apiErr, message)
 			case core.ExitConflict:
 				code, message = "conflict", "The Lore operation conflicts with current repository state."
 			}
@@ -67,7 +72,9 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 		Status:        "error",
 		RequestID:     requestID,
 		Code:          code,
+		Reason:        reason,
 		Message:       message,
+		Details:       details,
 		ErrorID:       errorID,
 	}
 	data, marshalErr := json.Marshal(envelope)
@@ -78,6 +85,24 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 		Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
 	}
 	return result, &toolError{code: code, message: string(data)}
+}
+
+func safeValidationDisclosure(apiErr *core.APIError, fallbackMessage string) (string, string, map[string]string) {
+	if apiErr == nil || apiErr.Code != "updated_too_old" {
+		return "", fallbackMessage, nil
+	}
+	details := make(map[string]string, 3)
+	for _, key := range []string{"field", "minimum", "path"} {
+		if value, ok := apiErr.Details[key].(string); ok && value != "" {
+			details[key] = value
+		}
+	}
+	if len(details) != 3 {
+		return "", fallbackMessage, nil
+	}
+	return "updated_too_old",
+		"A content-changing page update must set updated to at least the current UTC calendar date.",
+		details
 }
 
 func mappedIdempotencyError(err error, requestID string) (*mcp.CallToolResult, error) {

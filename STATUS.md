@@ -283,6 +283,47 @@ Milestones 1–5 and the complete release matrix are finished.
   trailing JSON consistently with strict repository metadata parsing. Focused
   tests passed 20 consecutive runs; `go vet ./...`, `go test ./...`,
   `go test -race ./...`, and `go build ./cmd/lore` all passed.
+- **Dogfood follow-up — truthful index warnings and portable curation
+  guidance:** completed 2026-07-31. Transaction commit no longer carries the
+  expected pre-commit `index_stale` lint finding into a successful result;
+  `index_refresh_failed` is now reserved for an actual failed post-commit
+  refresh, while other derived-index findings map to `index_health_warning`.
+  MCP initialization and generated repository guidance now teach minimally
+  self-contained context for approvals, canonical shared-subject pages instead
+  of duplicated profile facts, and evidence-qualified resolution of relative
+  dates. Only that generic temporal rule was incorporated from the dogfood
+  repository; no personal guidance was copied. Idempotency guidance now makes
+  keys explicitly optional and assigns stable retry-key generation to clients.
+  Revision-guarded partial-page operations remain deferred pending additional
+  whole-page editing failures from dogfooding. Focused regressions passed 20
+  consecutive runs; `go vet ./...`, `go test ./...`, `go test -race ./...`,
+  and `go build ./cmd/lore` all passed.
+- **Dogfood follow-up — actionable UTC page-update validation:** completed
+  2026-07-31. MCP retains the backward-compatible `invalid_argument` category
+  while `updated_too_old` now carries a whitelisted stable reason and sanitized
+  `field`, `path`, and UTC `minimum` details. Other validation failures remain
+  generic by default. Preview tool, initialization, data-model, CLI, MCP, and
+  generated agent guidance now explain the UTC page-date contract and how to
+  recover when a client remains on the preceding local date. Regression
+  coverage exercises the America/New_York-to-UTC midnight boundary and proves
+  error results disclose neither page bodies nor unlisted validation details.
+  Generic MCP and generated guidance separately defines the user-time semantic
+  clock: use a known user timezone for human meaning, preserve explicit source
+  timezones, ask when an unknown timezone is material, and never treat Lore's
+  UTC metadata date as the user's local date. First-use guidance checks
+  authorized context for preferred name and default timezone, asks instead of
+  guessing when either is unknown, and retains answers only with consent.
+  Focused regressions passed 20 consecutive runs; `go vet ./...`,
+  `go test ./...`, and `go build ./cmd/lore` all passed.
+- **Dogfood follow-up — truthful source-integration warnings:** completed
+  2026-07-31. Commit-time lint no longer publishes the expected temporary
+  `uncommitted_source_change` findings for sources being changed by the active
+  `mark_source_integrated` transaction. Exact-path filtering retains the same
+  warning for independently dirty sources, which MCP now reports as the
+  specific `source_worktree_dirty` code rather than `operation_warning`.
+  Focused regressions passed 20 consecutive runs; `go vet ./...`,
+  `go test ./...`, `go test -race ./...`, and `go build ./cmd/lore` all
+  passed.
 
 ## v0.4 completed milestones
 

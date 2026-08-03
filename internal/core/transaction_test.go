@@ -251,6 +251,7 @@ func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
 		name      string
 		transform func([]byte) []byte
 		wantCode  string
+		minimum   string
 	}{
 		{
 			name: "no_effect",
@@ -279,6 +280,7 @@ func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
 				return bytes.Replace(data, []byte("Original."), []byte("Changed."), 1)
 			},
 			wantCode: "updated_too_old",
+			minimum:  "2026-07-28",
 		},
 	}
 	for _, tt := range tests {
@@ -292,7 +294,7 @@ func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
 			runGit(t, repo.Root, "add", "--", "pages/existing.md")
 			runGit(t, repo.Root, "commit", "-m", "maintenance: fixture")
 			service := core.NewService(repo)
-			service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+			service.Clock = fixedClock{value: time.Date(2026, 7, 27, 21, 10, 0, 0, time.FixedZone("EDT", -4*60*60))}
 			service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
 			proposed := tt.transform(append([]byte(nil), current...))
 			_, err := service.Preview(context.Background(), transactionRequest(t, "update: immutable check", []map[string]any{{
@@ -302,6 +304,13 @@ func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
 			var apiErr *core.APIError
 			if !errors.As(err, &apiErr) || apiErr.Code != tt.wantCode {
 				t.Fatalf("error = %#v, want %s", err, tt.wantCode)
+			}
+			if tt.minimum != "" {
+				if apiErr.Details["field"] != "updated" ||
+					apiErr.Details["minimum"] != tt.minimum ||
+					apiErr.Details["path"] != "pages/existing.md" {
+					t.Fatalf("error details = %#v", apiErr.Details)
+				}
 			}
 		})
 	}
@@ -430,7 +439,26 @@ func TestCommitMultiplePathsPreservesUnrelatedGitState(t *testing.T) {
 	if err := os.WriteFile(sourceAbsolute, sourceData, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repo.Root, "add", "--", "pages/first.md", "pages/second.md", sourceRelative)
+	unrelatedBody := []byte("unrelated source body")
+	unrelatedSource := docs.Source{
+		ID:          "src_01ARZ3NDEKTSV4RRFFQ69G5FAW",
+		Kind:        "note",
+		CapturedAt:  "2026-07-28T18:30:00Z",
+		Origin:      "test",
+		OriginRef:   "before",
+		RawSHA256:   docs.SHA256(unrelatedBody),
+		Sensitivity: "normal",
+	}
+	unrelatedData, err := docs.MarshalSource(unrelatedSource, unrelatedBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelatedRelative := "sources/2026/07/" + unrelatedSource.ID + "-note.md"
+	unrelatedAbsolute := filepath.Join(repo.Root, filepath.FromSlash(unrelatedRelative))
+	if err := os.WriteFile(unrelatedAbsolute, unrelatedData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/first.md", "pages/second.md", sourceRelative, unrelatedRelative)
 	runGit(t, repo.Root, "commit", "-m", "maintenance: transaction fixtures")
 
 	service := core.NewService(repo)
@@ -446,6 +474,13 @@ func TestCommitMultiplePathsPreservesUnrelatedGitState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preview: %v", err)
 	}
+	unrelatedChanged := bytes.Replace(unrelatedData, []byte("origin_ref: before"), []byte("origin_ref: after"), 1)
+	if bytes.Equal(unrelatedChanged, unrelatedData) {
+		t.Fatal("unrelated source fixture did not change")
+	}
+	if err := os.WriteFile(unrelatedAbsolute, unrelatedChanged, 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	operatingRules := filepath.Join(repo.Root, "system", "OPERATING_RULES.md")
 	if err := os.WriteFile(operatingRules, append(mustRead(t, operatingRules), []byte("\nstaged unrelated\n")...), 0o644); err != nil {
@@ -456,13 +491,16 @@ func TestCommitMultiplePathsPreservesUnrelatedGitState(t *testing.T) {
 	if err := os.WriteFile(readme, append(mustRead(t, readme), []byte("\nunstaged unrelated\n")...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	unrelatedBefore := runGit(t, repo.Root, "status", "--porcelain=v1", "-z", "--", "system/OPERATING_RULES.md", "README.md")
+	unrelatedBefore := runGit(t, repo.Root, "status", "--porcelain=v1", "-z", "--", "system/OPERATING_RULES.md", "README.md", unrelatedRelative)
 
 	result, err := service.Commit(context.Background(), core.CommitOptions{
 		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
 	})
 	if err != nil {
 		t.Fatalf("Commit: %v", err)
+	}
+	if len(result.Warnings) != 1 || !strings.HasPrefix(result.Warnings[0], "uncommitted_source_change: "+unrelatedRelative+":") {
+		t.Fatalf("commit warnings = %v", result.Warnings)
 	}
 	paths, err := gitx.New().ChangedPathsInCommit(context.Background(), repo.Root, result.Commit)
 	if err != nil {
@@ -472,7 +510,7 @@ func TestCommitMultiplePathsPreservesUnrelatedGitState(t *testing.T) {
 	if strings.Join(paths, "\n") != strings.Join(expected, "\n") {
 		t.Fatalf("commit paths = %v, want %v", paths, expected)
 	}
-	unrelatedAfter := runGit(t, repo.Root, "status", "--porcelain=v1", "-z", "--", "system/OPERATING_RULES.md", "README.md")
+	unrelatedAfter := runGit(t, repo.Root, "status", "--porcelain=v1", "-z", "--", "system/OPERATING_RULES.md", "README.md", unrelatedRelative)
 	if unrelatedAfter != unrelatedBefore {
 		t.Fatalf("unrelated Git state changed:\nbefore %q\nafter  %q", unrelatedBefore, unrelatedAfter)
 	}
@@ -675,10 +713,14 @@ func TestCommitRefreshesExistingGitIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Commit(context.Background(), core.CommitOptions{
+	result, err := service.Commit(context.Background(), core.CommitOptions{
 		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Commit: %v", err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("successful index refresh warnings = %v", result.Warnings)
 	}
 	status, err := service.IndexStatus(context.Background(), true)
 	if err != nil {

@@ -216,9 +216,43 @@ authoritative `pages/` and `sources/` Markdown with code-oriented tools such as
 `rg`. An MCP-only agent must not use another path to bypass the principal's
 permissions or sensitivity policy.
 
-Capture and commit accept optional idempotency keys. Reuse a key only for the
+For human-facing dates and time-sensitive matters, an agent should use a known
+user timezone from authorized context, preserve any timezone stated by the
+source, and ask when the user timezone is unknown and materially affects the
+result. Lore's UTC capture, integration, source-path, and page-update metadata
+do not establish the user's local calendar date.
+
+On first use of a repository, an agent should check authorized instructions and
+knowledge for the user's preferred name and default timezone. If either remains
+absent or ambiguous, ask rather than guessing. Capture and curate the answer so
+later agents can retrieve it only when the user consents; do not solicit
+unrelated personal defaults preemptively.
+
+Capture and commit accept optional idempotency keys; ordinary single-shot local
+calls do not require one. A client that may automatically retry a write should
+generate and retain the key before its first attempt. Reuse a key only for the
 same principal, operation, and exact input. A mismatched reuse fails rather
-than repeating a different write.
+than repeating a different write. A server-generated key cannot protect a
+retry after a response is lost, so key generation correctly remains a client
+responsibility.
+
+Mutation warning code `index_refresh_failed` is reserved for an actual failed
+post-write refresh. A separate `index_health_warning` means lint observed an
+index policy or health condition; inspect `lore_index_status` for its current
+typed findings. The intentionally stale interval after transaction files are
+applied but before their Git commit is not reported as a refresh failure.
+Likewise, source files intentionally changed by `mark_source_integrated` are not
+reported as dirty during that pre-commit interval. An independently modified
+source remains visible as `source_worktree_dirty` and should be inspected with
+`lore_lint`.
+
+MCP error `code` values remain broad and backward-compatible. Whitelisted,
+actionable validation failures may also include a stable `reason` and sanitized
+string `details`; other validation failures retain the generic public shape.
+For example, a content-changing page update whose `updated` field precedes the
+server's current UTC date returns `code: invalid_argument`, `reason:
+updated_too_old`, and `field`, `path`, and required `minimum` details. Error
+details never include page or source bodies.
 
 Resource URIs are canonical ID-only forms:
 

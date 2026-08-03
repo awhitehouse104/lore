@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"lore/internal/config"
@@ -33,6 +34,50 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 			t.Errorf("%s: %v", relative, statErr)
 		} else if !info.Mode().IsRegular() {
 			t.Errorf("%s is not a regular file", relative)
+		}
+	}
+	guidanceChecks := []struct {
+		path      string
+		fragments []string
+	}{
+		{
+			path: "AGENTS.md",
+			fragments: []string{
+				"minimally self-contained source boundary",
+				"Store a shared fact once",
+				"Resolve relative temporal expressions",
+				"known user timezone",
+				"On first use",
+				"Capture and curate the answer",
+				"UTC metadata clock",
+				"updated_too_old",
+				"Idempotency keys are optional",
+			},
+		},
+		{
+			path: "system/OPERATING_RULES.md",
+			fragments: []string{
+				"preserve enough of the verbatim exchange",
+				"link entity profiles to a shared subject",
+				"preserve ambiguity or ask for clarification",
+				"known user timezone",
+				"preferred name",
+				"only with the user's consent",
+				"UTC metadata clock",
+				"minimum` returned with `updated_too_old`",
+				"Use a client-generated key when automatic retries are possible",
+			},
+		},
+	}
+	for _, check := range guidanceChecks {
+		data, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(check.path)))
+		if readErr != nil {
+			t.Fatalf("read generated %s: %v", check.path, readErr)
+		}
+		for _, fragment := range check.fragments {
+			if !strings.Contains(string(data), fragment) {
+				t.Errorf("generated %s is missing %q", check.path, fragment)
+			}
 		}
 	}
 	if _, err := config.Load(filepath.Join(root, "lore.yaml")); err != nil {

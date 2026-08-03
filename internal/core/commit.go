@@ -255,7 +255,11 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 	}
 	artifacts.State = committedState
 	result = committedResult(artifacts, false)
-	result.Warnings = append(result.Warnings, lintWarningsWithout(realLint, "recovery_active")...)
+	// Files have been applied but HEAD still names the preview base while this
+	// lint runs. The active recovery journal, stale index, and uncommitted status
+	// of source targets are therefore expected until the exact-path commit. Keep
+	// warnings for unrelated dirty sources and other real findings.
+	result.Warnings = append(result.Warnings, lintWarningsForCommit(realLint, artifacts.Proposal.ChangedPaths)...)
 
 	journal.Phase = recovery.PhaseFinalized
 	if err := recoveryStore.Update(journal); err != nil {

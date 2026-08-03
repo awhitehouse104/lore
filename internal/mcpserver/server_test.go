@@ -41,8 +41,14 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		t.Fatalf("client Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = clientSession.Close() })
-	if result := clientSession.InitializeResult(); result == nil || result.ProtocolVersion != "2026-07-28" {
-		t.Fatalf("modern negotiation result = %+v", result)
+	initializeResult := clientSession.InitializeResult()
+	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
+		t.Fatalf("modern negotiation result = %+v", initializeResult)
+	}
+	for _, fragment := range []string{"self-contained", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "UTC metadata", "current UTC calendar date", "Idempotency keys are optional"} {
+		if !strings.Contains(initializeResult.Instructions, fragment) {
+			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
+		}
 	}
 
 	list, err := clientSession.ListTools(t.Context(), nil)
@@ -162,6 +168,79 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	}
 	if !invalidMatching.IsError {
 		t.Fatalf("invalid matching input result = %+v", invalidMatching)
+	}
+}
+
+func TestPreviewDisclosesSafeUTCUpdateMinimum(t *testing.T) {
+	service := newTestService(t)
+	service.Clock = fixedTestClock{value: time.Date(2026, 7, 31, 21, 15, 0, 0, time.FixedZone("EDT", -4*60*60))}
+	pagePath := filepath.Join(service.Repo.Root, "pages", "project-foo.md")
+	current, err := os.ReadFile(pagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposed := strings.Replace(string(current), "Project Foo must remain deployable", "Project Foo remains deployable", 1)
+	session := connectTestClient(t, service, fullPrincipal(t))
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_preview",
+		Arguments: map[string]any{
+			"schema_version": 1,
+			"message":        "maintenance: test UTC update boundary",
+			"operations": []any{map[string]any{
+				"op":                "update_page",
+				"path":              "pages/project-foo.md",
+				"expected_revision": docs.Revision(current),
+				"content":           proposed,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("preview result = %+v, want tool error", result)
+	}
+	var envelope externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, result)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "invalid_argument" || envelope.Reason != "updated_too_old" ||
+		envelope.Details["field"] != "updated" ||
+		envelope.Details["minimum"] != "2026-08-01" ||
+		envelope.Details["path"] != "pages/project-foo.md" {
+		t.Fatalf("error envelope = %+v", envelope)
+	}
+	if strings.Contains(toolResultText(t, result), "Project Foo remains deployable") {
+		t.Fatalf("error disclosed page body: %s", toolResultText(t, result))
+	}
+}
+
+func TestMappedToolErrorKeepsUnlistedValidationFailuresGeneric(t *testing.T) {
+	apiErr := core.NewError(core.ExitValidation, "private_validation_state", "private validation detail")
+	apiErr.Details = map[string]any{"path": "pages/private.md"}
+	result, _ := mappedToolError(apiErr, "req_01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	var envelope externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, result)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "invalid_argument" || envelope.Reason != "" || envelope.Details != nil ||
+		envelope.Message != "The tool arguments are invalid." {
+		t.Fatalf("error envelope = %+v", envelope)
+	}
+	if strings.Contains(toolResultText(t, result), "private") {
+		t.Fatalf("generic error disclosed private detail: %s", toolResultText(t, result))
+	}
+}
+
+func TestSafeWarningCodesDistinguishIndexHealthFromRefreshFailure(t *testing.T) {
+	got := safeWarningCodes([]string{
+		"index_permissions_open: .lore/index.sqlite: derived index permissions should deny group and other access",
+		"existing index refresh failed; run lore index update",
+		"uncommitted_source_change: sources/2026/07/unrelated.md: source has uncommitted Git status \" M\"",
+	})
+	want := []string{"index_health_warning", "index_refresh_failed", "source_worktree_dirty"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("safe warning codes = %v, want %v", got, want)
 	}
 }
 

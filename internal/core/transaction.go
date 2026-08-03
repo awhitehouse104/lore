@@ -352,7 +352,14 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 		}
 		today, _ := time.Parse("2006-01-02", now.UTC().Format("2006-01-02"))
 		if docs.PageChangedExceptUpdated(currentDocument, proposedDocument) && proposedUpdated.Before(today) {
-			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "updated_too_old", fmt.Sprintf("update_page updated date must be at least %s for content changes to %s", today.Format("2006-01-02"), operation.Path))
+			minimum := today.Format("2006-01-02")
+			apiErr := NewError(ExitValidation, "updated_too_old", fmt.Sprintf("update_page updated date must be at least %s for content changes to %s", minimum, operation.Path))
+			apiErr.Details = map[string]any{
+				"field":   "updated",
+				"minimum": minimum,
+				"path":    operation.Path,
+			}
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
 		return transaction.EffectiveOperation{
 			Op:                     operation.Op,
@@ -749,6 +756,29 @@ func lintWarningsWithout(result lint.Result, excludedCodes ...string) []string {
 			}
 			warnings = append(warnings, fmt.Sprintf("%s: %s: %s", finding.Code, finding.Path, finding.Message))
 		}
+	}
+	return warnings
+}
+
+func lintWarningsForCommit(result lint.Result, changedPaths []string) []string {
+	changed := make(map[string]struct{}, len(changedPaths))
+	for _, path := range changedPaths {
+		changed[path] = struct{}{}
+	}
+	warnings := []string{}
+	for _, finding := range result.Findings {
+		if finding.Severity != lint.SeverityWarning {
+			continue
+		}
+		if finding.Code == "recovery_active" || finding.Code == "index_stale" {
+			continue
+		}
+		if finding.Code == "uncommitted_source_change" {
+			if _, expected := changed[finding.Path]; expected {
+				continue
+			}
+		}
+		warnings = append(warnings, fmt.Sprintf("%s: %s: %s", finding.Code, finding.Path, finding.Message))
 	}
 	return warnings
 }

@@ -119,7 +119,38 @@ Optional `aliases` and `tags` are lists of non-empty strings. Page titles and al
 Transaction page creation and update always use a complete proposed document;
 Lore does not merge. Page `id` and `created` are immutable during update.
 `updated` cannot regress, and a change outside that field requires an
-`updated` date at least as recent as the current UTC calendar date.
+`updated` date at least as recent as the current UTC calendar date. If a client
+is still on the preceding local calendar date, the MCP `updated_too_old` error
+reports Lore's required UTC `minimum` date.
+
+## Modeling conventions
+
+Source `kind` is an open validated token, so callers may use values such as
+`approval`, `decision`, or `conversation_excerpt` without a schema change. A
+context-dependent fragment such as "let's do it" should not be captured as if
+it were self-explanatory: preserve a minimally sufficient verbatim exchange and
+an `origin_ref` when available, while keeping any inferred interpretation out
+of the immutable source wording.
+
+Store a durable fact once on the narrowest page that naturally owns it. A fact
+shared by several people or projects normally belongs on a shared subject,
+household, event, or dated-plan page; entity profiles should link to that page
+instead of copying its complete details. These are curation conventions rather
+than new authoritative relationship fields. Ordinary relative Markdown links
+remain lint-checked and searchable.
+
+When a source uses a relative temporal expression, resolve it into an explicit
+date or range only when capture time and context make the intended period
+clear. Preserve the original wording, identify the resolution as inference,
+and preserve ambiguity or ask for clarification when multiple interpretations
+remain plausible.
+
+Human-facing dates, deadlines, and relative expressions use the known user
+timezone unless the source or request specifies another one. Preserve explicit
+source timezones, and ask when the user timezone is unknown and materially
+changes the interpretation. This semantic clock is separate from Lore's UTC
+metadata clock: for example, a user's late evening can already be the next UTC
+date required by page `updated` validation.
 
 ## Links, references, and revisions
 

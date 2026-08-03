@@ -244,7 +244,8 @@ text, medical detail, credentials, or unnecessary sensitive information.
 
 Preview requires a named Git branch and an existing commit. It rejects dirty
 target paths, stale revisions, unsafe paths, an active recovery journal, and
-page metadata violations. It never mutates the working tree, index, refs, or
+page metadata violations. A page body change must set `updated` to at least the
+current UTC calendar date. It never mutates the working tree, index, refs, or
 history. Instead it overlays the exact effective bytes in memory, runs full
 lint, and generates an uncolored unified diff with `a/` and `b/` paths.
 
