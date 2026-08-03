@@ -29,6 +29,15 @@ direct `pages/*.md` children and can update only `integrated_at` and
 configuration, Git metadata, and `.lore/**` are protected from normal content
 writes.
 
+The generated instruction files have separate responsibilities.
+`system/OPERATING_RULES.md` is shared Lore policy and should remain synchronized
+with the generated template. Root `AGENTS.md` is the repository-specific
+overlay for owner context, stricter requirements, access profiles, and session
+procedures; it should reference rather than repeat the shared rules.
+`CLAUDE.md` is only a Claude Code compatibility passthrough that imports both
+files. Changes to any of them are explicit repository-maintenance work rather
+than ordinary knowledge maintenance.
+
 Pages remain flat in v0.4. Sources are partitioned by their UTC capture date:
 
 ```text

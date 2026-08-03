@@ -43,22 +43,17 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 		{
 			path: "AGENTS.md",
 			fragments: []string{
-				"minimally self-contained source boundary",
-				"Store a shared fact once",
-				"Resolve relative temporal expressions",
-				"known user timezone",
-				"On first use",
-				"Capture and curate the answer",
-				"UTC metadata clock",
-				"updated_too_old",
-				"Idempotency keys are optional",
+				"authoritative shared policy",
+				"repository-specific owner context",
+				"compatibility passthrough",
+				"normal knowledge maintenance",
 			},
 		},
 		{
 			path: "system/OPERATING_RULES.md",
 			fragments: []string{
 				"preserve enough of the verbatim exchange",
-				"link entity profiles to a shared subject",
+				"Link entity profiles to a shared subject",
 				"preserve ambiguity or ask for clarification",
 				"known user timezone",
 				"preferred name",
@@ -74,11 +69,34 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 		if readErr != nil {
 			t.Fatalf("read generated %s: %v", check.path, readErr)
 		}
+		contents := strings.Join(strings.Fields(string(data)), " ")
 		for _, fragment := range check.fragments {
-			if !strings.Contains(string(data), fragment) {
+			if !strings.Contains(contents, fragment) {
 				t.Errorf("generated %s is missing %q", check.path, fragment)
 			}
 		}
+	}
+	agentsData, readErr := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if readErr != nil {
+		t.Fatalf("read generated AGENTS.md: %v", readErr)
+	}
+	normalizedAgents := strings.Join(strings.Fields(string(agentsData)), " ")
+	for _, duplicate := range []string{
+		"Capture initiating raw information",
+		"Use `lore preview`",
+		"Idempotency keys are optional",
+	} {
+		if strings.Contains(normalizedAgents, duplicate) {
+			t.Errorf("generated AGENTS.md duplicates shared policy %q", duplicate)
+		}
+	}
+	claudeData, readErr := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if readErr != nil {
+		t.Fatalf("read generated CLAUDE.md: %v", readErr)
+	}
+	const wantClaude = "# Claude Code compatibility\n\n@AGENTS.md\n@system/OPERATING_RULES.md\n"
+	if string(claudeData) != wantClaude {
+		t.Errorf("generated CLAUDE.md = %q, want %q", claudeData, wantClaude)
 	}
 	if _, err := config.Load(filepath.Join(root, "lore.yaml")); err != nil {
 		t.Fatalf("load generated config: %v", err)

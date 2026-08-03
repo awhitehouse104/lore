@@ -324,6 +324,14 @@ Milestones 1–5 and the complete release matrix are finished.
   Focused regressions passed 20 consecutive runs; `go vet ./...`,
   `go test ./...`, `go test -race ./...`, and `go build ./cmd/lore` all
   passed.
+- **Instruction hierarchy cleanup:** completed 2026-08-03. Generated
+  `system/OPERATING_RULES.md` is now the single shared Lore policy,
+  repository-specific owner context and session procedures belong only in
+  root `AGENTS.md`, and `CLAUDE.md` is a native import passthrough for both.
+  Initialization regression coverage prevents shared policy from drifting back
+  into `AGENTS.md` or `CLAUDE.md`. Existing repositories adopt template
+  changes through an explicit protected-file maintenance change; Lore does not
+  overwrite local instruction files during normal operation.
 
 ## v0.4 completed milestones
 

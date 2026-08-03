@@ -268,12 +268,13 @@ a client uses the Lore CLI. They are not an operating-system sandbox. A general
 shell agent or process running as the repository owner can bypass Lore and edit
 Markdown, `.lore/`, or Git directly.
 
-Generated `AGENTS.md` and `system/OPERATING_RULES.md` tell cooperative agents to
-use bounded Lore operations and avoid protected files, but those instructions
-are policy, not access control. MCP itself exposes no arbitrary shell, Git,
-SQL, or filesystem tool. Still use filesystem permissions, a sandbox, a
-dedicated account, or another OS-level control when prevention rather than
-guidance is required.
+Generated `system/OPERATING_RULES.md` tells cooperative agents to use bounded
+Lore operations and avoid protected files. Repository-specific additions belong
+in root `AGENTS.md`, while `CLAUDE.md` imports both files without copying them.
+These instructions are policy, not access control. MCP itself exposes no
+arbitrary shell, Git, SQL, or filesystem tool. Still use filesystem
+permissions, a sandbox, a dedicated account, or another OS-level control when
+prevention rather than guidance is required.
 
 ## Recovery boundary
 
