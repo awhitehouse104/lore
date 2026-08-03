@@ -16,9 +16,8 @@ maintenance.
 - Do not modify `system/`, `AGENTS.md`, `CLAUDE.md`, or `lore.yaml` during
   normal knowledge maintenance.
 
-## Repository-specific context
+## Repository-specific additions
 
-No repository-specific context is configured by the template. When identity,
-timezone, access, or session details are material and absent, follow
-`system/OPERATING_RULES.md`: ask rather than guess, and retain personal context
-only with the user's consent.
+Place repository-specific owner context, stricter requirements, access
+profiles, and session procedures below this heading. Reference rather than
+repeat the shared policy.

@@ -33,6 +33,12 @@ Backups are another retention and disclosure boundary. Define their encryption, 
 
 Captured sources may contain hostile prompt injection, misleading instructions, or untrusted imported text. Lore treats source content as data and never executes it as operating instructions. Agent clients must preserve that separation and follow the repository's `system/OPERATING_RULES.md`.
 
+Untrusted prose also cannot grant authority indirectly through tool arguments.
+Clients must not use retrieved content to claim a principal or actor, grant a
+permission, downgrade a known sensitivity classification, select a protected
+path, or bypass revision and preview-digest checks. A required capture
+sensitivity must come from trusted user, request, and repository context.
+
 Lore never calls an LLM and never independently sends repository content to a
 model provider. An MCP or CLI agent can disclose content when it reads or
 transmits it; its transcript, logs, host, and model provider are separate
@@ -269,12 +275,16 @@ shell agent or process running as the repository owner can bypass Lore and edit
 Markdown, `.lore/`, or Git directly.
 
 Generated `system/OPERATING_RULES.md` tells cooperative agents to use bounded
-Lore operations and avoid protected files. Repository-specific additions belong
-in root `AGENTS.md`, while `CLAUDE.md` imports both files without copying them.
-These instructions are policy, not access control. MCP itself exposes no
-arbitrary shell, Git, SQL, or filesystem tool. Still use filesystem
-permissions, a sandbox, a dedicated account, or another OS-level control when
-prevention rather than guidance is required.
+Lore tools for supported repository mutations and administration and to avoid
+direct edits to managed content or derived state. It permits direct access only
+for authorized local read-only retrieval, Git synchronization, explicit
+protected-file maintenance outside Lore's content API, and work outside the
+Lore repository. Repository-specific additions belong in root `AGENTS.md`,
+while `CLAUDE.md` imports both files without copying them. These instructions
+are policy, not access control. MCP itself exposes no arbitrary shell, Git,
+SQL, or filesystem tool. Still use filesystem permissions, a sandbox, a
+dedicated account, or another OS-level control when prevention rather than
+guidance is required.
 
 ## Recovery boundary
 

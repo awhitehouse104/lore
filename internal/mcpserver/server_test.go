@@ -45,7 +45,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"self-contained", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "UTC metadata", "current UTC calendar date", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"self-contained", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "downgrade a known sensitivity", "Idempotency keys are optional"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}

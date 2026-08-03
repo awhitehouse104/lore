@@ -331,7 +331,13 @@ Milestones 1–5 and the complete release matrix are finished.
   Initialization regression coverage prevents shared policy from drifting back
   into `AGENTS.md` or `CLAUDE.md`. Existing repositories adopt template
   changes through an explicit protected-file maintenance change; Lore does not
-  overwrite local instruction files during normal operation.
+  overwrite local instruction files during normal operation. A post-pull
+  dogfood review restored explicit defenses against privilege claims through
+  tool arguments, sensitivity downgrades, and unnecessary collection of
+  personal defaults. It also makes Lore tools mandatory for supported
+  repository mutations and administration while preserving narrow exceptions
+  for read-only local retrieval, Git synchronization, protected-file
+  maintenance, and explicitly requested work outside the repository.
 
 ## v0.4 completed milestones
 
