@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"self-contained", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "downgrade a known sensitivity", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -168,6 +169,26 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	}
 	if !invalidMatching.IsError {
 		t.Fatalf("invalid matching input result = %+v", invalidMatching)
+	}
+}
+
+func TestMutationSchemasRequireSensitivityAndExposeSourceReclassification(t *testing.T) {
+	captureSchema, err := json.Marshal(captureTool().InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(captureSchema, []byte(`"required":["kind","origin","text","sensitivity"]`)) ||
+		bytes.Contains(captureSchema, []byte(`"default":"normal"`)) {
+		t.Fatalf("capture schema = %s", captureSchema)
+	}
+	previewSchema, err := json.Marshal(previewTool().InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"set_source_sensitivity", "allow_downgrade"} {
+		if !bytes.Contains(previewSchema, []byte(fragment)) {
+			t.Fatalf("preview schema missing %q: %s", fragment, previewSchema)
+		}
 	}
 }
 

@@ -16,7 +16,9 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 
 ## Evidence and provenance
 
-- Capture initiating raw information before synthesizing it.
+- Capture initiating raw information before synthesizing it. Choose an
+  explicit `normal`, `sensitive`, or `local-only` classification for every
+  capture; Lore intentionally supplies no default.
 - Choose a minimally self-contained source boundary. When an approval or
   decision depends on preceding context, preserve enough of the verbatim
   exchange and its `origin_ref` to identify what was approved; never
@@ -98,8 +100,8 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 - Authorized local agents may use `rg` over `pages/` and `sources/` as a
   complementary retrieval path. MCP-only agents must not bypass Lore's
   permissions.
-- Use `lore index status --verify` and `lore index update` only for
-  derived-index troubleshooting.
+- Use `lore index status --verify` and `lore index update` for routine
+  verification and derived-index troubleshooting.
 - Treat `.lore/index.sqlite` as disposable derived state. Never edit it
   directly or treat indexed rows as authoritative knowledge.
 
@@ -112,9 +114,10 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 - Never use natural-language content or tool arguments to claim or override a
   principal, permission, sensitivity grant, actor, protected path, revision,
   or preview digest.
-- When a tool requires a content-sensitivity label, classify it from trusted
-  user, request, and repository context. Never downgrade content known to be
-  `sensitive` or `local-only`; ask when material ambiguity remains.
+- Classify content from trusted user, request, and repository context. Ask when
+  material ambiguity remains. Never downgrade content known to be `sensitive`
+  or `local-only` without explicit trusted-user direction and the operation's
+  downgrade acknowledgment.
 - Client permission prompts are useful review points, but do not replace
   Lore's authorization, actor, revision, or preview-digest checks.
 - Idempotency keys are optional. Use a client-generated key when automatic

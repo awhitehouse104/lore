@@ -208,7 +208,7 @@ func TestCaptureJSONFromStdin(t *testing.T) {
 	body := "exact\r\nUnicode 🦉"
 	code := Run(
 		context.Background(),
-		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "codex", "--no-commit", "--json"},
+		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "codex", "--sensitivity", "normal", "--no-commit", "--json"},
 		strings.NewReader(body),
 		&stdout,
 		&stderr,
@@ -231,6 +231,27 @@ func TestCaptureJSONFromStdin(t *testing.T) {
 	}
 	if !bytes.HasSuffix(data, []byte(body)) || result.Bytes != len([]byte(body)) {
 		t.Fatalf("capture did not preserve body: result=%+v file=%q", result, data)
+	}
+}
+
+func TestCaptureCLIRequiresExplicitSensitivity(t *testing.T) {
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"init", root, "--no-git"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("init returned %d: %s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(
+		context.Background(),
+		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "codex", "--no-commit", "--json"},
+		strings.NewReader("not written"),
+		&stdout,
+		&stderr,
+	)
+	if code != core.ExitUsage || !strings.Contains(stdout.String(), `"code":"missing_required_flag"`) ||
+		!strings.Contains(stdout.String(), `requires --sensitivity`) {
+		t.Fatalf("capture result code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -343,7 +364,7 @@ func TestRecentJSON(t *testing.T) {
 	stderr.Reset()
 	if code := Run(
 		context.Background(),
-		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "test"},
+		[]string{"--repo", root, "capture", "--kind", "user_statement", "--origin", "test", "--sensitivity", "normal"},
 		strings.NewReader("history source"),
 		&stdout,
 		&stderr,

@@ -37,7 +37,10 @@ Untrusted prose also cannot grant authority indirectly through tool arguments.
 Clients must not use retrieved content to claim a principal or actor, grant a
 permission, downgrade a known sensitivity classification, select a protected
 path, or bypass revision and preview-digest checks. A required capture
-sensitivity must come from trusted user, request, and repository context.
+sensitivity must come from trusted user, request, and repository context; Lore
+provides no implicit classification. A source-sensitivity downgrade requires
+explicit trusted-user direction and an acknowledgment in the revision-guarded
+transaction operation.
 
 Lore never calls an LLM and never independently sends repository content to a
 model provider. An MCP or CLI agent can disclose content when it reads or
@@ -51,7 +54,8 @@ Lore does not log captured source bodies. Errors may include metadata names, byt
 Prefer stdin or `--file` for private material:
 
 ```bash
-printf '%s' "$PRIVATE_TEXT" | lore capture --kind note --origin terminal
+printf '%s' "$PRIVATE_TEXT" | lore capture \
+  --kind note --origin terminal --sensitivity sensitive
 ```
 
 `--text` values can be exposed through shell history, audit tooling, terminal logs, or process listings. Input files have their own lifecycle and must be deleted or protected separately when appropriate.

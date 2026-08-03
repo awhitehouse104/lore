@@ -111,13 +111,19 @@ lore init [PATH] [--no-git] [--json]
 
 ```bash
 printf '%s' 'exact bytes' | lore --repo PATH capture \
-  --kind user_statement --origin codex --tag project-foo --json
+  --kind user_statement --origin codex --sensitivity normal \
+  --tag project-foo --json
 
 lore --repo PATH capture --kind note --origin import \
   --file ./note.md --sensitivity sensitive --no-commit
 ```
 
-`--text`, `--file`, and piped stdin are mutually exclusive input sources. Capture preserves input bytes without trimming, newline insertion, newline conversion, Unicode normalization, or Markdown escaping. Use `--allow-empty` for an intentional empty body. `--push` and `--no-push` override repository push configuration.
+Every capture requires an explicit `--sensitivity`; Lore does not infer one or
+default to `normal`. `--text`, `--file`, and piped stdin are mutually exclusive
+input sources. Capture preserves input bytes without trimming, newline
+insertion, newline conversion, Unicode normalization, or Markdown escaping.
+Use `--allow-empty` for an intentional empty body. `--push` and `--no-push`
+override repository push configuration.
 
 ### Search
 
@@ -275,7 +281,11 @@ filesystem operations.
 
 ## Sources and pages
 
-Sources live at `sources/YYYY/MM/src_<ULID>-<kind>.md`. Their body is the exact captured input, and `raw_sha256` protects it against later modification. Source bodies are immutable by policy; corrections are new captures.
+Sources live at `sources/YYYY/MM/src_<ULID>-<kind>.md`. Their body is the exact
+captured input, and `raw_sha256` protects it against later modification. Source
+bodies are immutable by policy; corrections are new captures. Revision-guarded
+transactions may update integration metadata or correct a source sensitivity
+without changing its body.
 
 Pages are flat files under `pages/`. They are mutable synthesis maintained by a human or agent, with stable IDs and citations to sources. Git records page evolution. See [the data model](docs/data-model.md) for both schemas.
 

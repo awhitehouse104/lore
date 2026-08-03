@@ -369,6 +369,58 @@ func MarshalSource(source Source, body []byte) ([]byte, error) {
 // frontmatter. Unknown frontmatter fields survive YAML re-serialization and
 // the source body bytes are appended without modification.
 func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, pageIDs []string) ([]byte, error) {
+	return updateSourceFrontmatter(path, data, func(mapping *yaml.Node, source *Source) error {
+		union := make(map[string]struct{}, len(source.IntegratedInto)+len(pageIDs))
+		for _, pageID := range source.IntegratedInto {
+			union[pageID] = struct{}{}
+		}
+		for _, pageID := range pageIDs {
+			if err := ValidatePageID(pageID); err != nil {
+				return fmt.Errorf("invalid integrated page ID %q", pageID)
+			}
+			union[pageID] = struct{}{}
+		}
+		integratedInto := make([]string, 0, len(union))
+		for pageID := range union {
+			integratedInto = append(integratedInto, pageID)
+		}
+		sort.Strings(integratedInto)
+
+		setMappingValue(mapping, "integrated_at", &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: integratedAt.UTC().Format(time.RFC3339Nano),
+		})
+		sequence := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, pageID := range integratedInto {
+			sequence.Content = append(sequence.Content, &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: pageID,
+			})
+		}
+		setMappingValue(mapping, "integrated_into", sequence)
+		return nil
+	})
+}
+
+// SetSourceSensitivity updates only the sensitivity field in source
+// frontmatter. It preserves the exact source body and its raw SHA-256.
+func SetSourceSensitivity(path string, data []byte, sensitivity string) ([]byte, error) {
+	if !ValidSensitivity(sensitivity) {
+		return nil, fmt.Errorf("sensitivity must be normal, sensitive, or local-only")
+	}
+	return updateSourceFrontmatter(path, data, func(mapping *yaml.Node, _ *Source) error {
+		setMappingValue(mapping, "sensitivity", &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: sensitivity,
+		})
+		return nil
+	})
+}
+
+func updateSourceFrontmatter(path string, data []byte, update func(*yaml.Node, *Source) error) ([]byte, error) {
 	document, err := Parse(path, data)
 	if err != nil {
 		return nil, err
@@ -382,21 +434,6 @@ func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, page
 	if SHA256(document.Body) != document.Source.RawSHA256 {
 		return nil, fmt.Errorf("source body SHA-256 does not match raw_sha256")
 	}
-	union := make(map[string]struct{}, len(document.Source.IntegratedInto)+len(pageIDs))
-	for _, pageID := range document.Source.IntegratedInto {
-		union[pageID] = struct{}{}
-	}
-	for _, pageID := range pageIDs {
-		if err := ValidatePageID(pageID); err != nil {
-			return nil, fmt.Errorf("invalid integrated page ID %q", pageID)
-		}
-		union[pageID] = struct{}{}
-	}
-	integratedInto := make([]string, 0, len(union))
-	for pageID := range union {
-		integratedInto = append(integratedInto, pageID)
-	}
-	sort.Strings(integratedInto)
 
 	frontmatter, _, _, err := splitFrontmatter(data)
 	if err != nil {
@@ -409,21 +446,9 @@ func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, page
 	if len(root.Content) != 1 || root.Content[0].Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("source frontmatter must be a YAML mapping")
 	}
-	mapping := root.Content[0]
-	setMappingValue(mapping, "integrated_at", &yaml.Node{
-		Kind:  yaml.ScalarNode,
-		Tag:   "!!str",
-		Value: integratedAt.UTC().Format(time.RFC3339Nano),
-	})
-	sequence := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	for _, pageID := range integratedInto {
-		sequence.Content = append(sequence.Content, &yaml.Node{
-			Kind:  yaml.ScalarNode,
-			Tag:   "!!str",
-			Value: pageID,
-		})
+	if err := update(root.Content[0], document.Source); err != nil {
+		return nil, err
 	}
-	setMappingValue(mapping, "integrated_into", sequence)
 	encoded, err := yaml.Marshal(&root)
 	if err != nil {
 		return nil, fmt.Errorf("marshal source frontmatter: %w", err)
@@ -437,8 +462,11 @@ func MarkSourceIntegrated(path string, data []byte, integratedAt time.Time, page
 	if err != nil {
 		return nil, fmt.Errorf("validate updated source: %w", err)
 	}
+	if errs := ValidateSource(updated.Source); len(errs) > 0 {
+		return nil, fmt.Errorf("validate updated source: %w", errs[0])
+	}
 	if SHA256(updated.Body) != updated.Source.RawSHA256 || !bytes.Equal(updated.Body, document.Body) {
-		return nil, fmt.Errorf("source body changed while updating integration metadata")
+		return nil, fmt.Errorf("source body changed while updating source metadata")
 	}
 	return result, nil
 }

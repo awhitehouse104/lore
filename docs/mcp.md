@@ -173,6 +173,13 @@ Tool discovery is filtered by permission, and every invocation checks again:
 
 Permissions are additive. `curate` does not imply `query`, and `inspect` does
 not imply history. Give a principal only the permissions its client needs.
+
+`lore_capture` requires an explicit `sensitivity` on every call; the server
+does not infer or default the classification. `lore_preview` supports
+revision-guarded `set_source_sensitivity` operations. They preserve exact
+source bodies and require `allow_downgrade: true` when moving to a less
+restrictive classification. Existing principal sensitivity policy authorizes
+both the current and resulting source.
 Transaction pruning is deliberately absent from MCP; run retention maintenance
 from a trusted local CLI session.
 
@@ -257,10 +264,10 @@ post-write refresh. A separate `index_health_warning` means lint observed an
 index policy or health condition; inspect `lore_index_status` for its current
 typed findings. The intentionally stale interval after transaction files are
 applied but before their Git commit is not reported as a refresh failure.
-Likewise, source files intentionally changed by `mark_source_integrated` are not
-reported as dirty during that pre-commit interval. An independently modified
-source remains visible as `source_worktree_dirty` and should be inspected with
-`lore_lint`.
+Likewise, source files intentionally changed by `mark_source_integrated` or
+`set_source_sensitivity` are not reported as dirty during that pre-commit
+interval. An independently modified source remains visible as
+`source_worktree_dirty` and should be inspected with `lore_lint`.
 
 MCP error `code` values remain broad and backward-compatible. Whitelisted,
 actionable validation failures may also include a stable `reason` and sanitized

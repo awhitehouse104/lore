@@ -132,6 +132,22 @@ func TestCapturePreservesExactBytes(t *testing.T) {
 	}
 }
 
+func TestCaptureRequiresExplicitSensitivity(t *testing.T) {
+	repo := newServiceRepository(t)
+	service := testService(repo, &fakeGit{})
+	_, err := service.Capture(context.Background(), core.CaptureOptions{
+		Kind: "user_statement", Origin: "codex", Body: []byte("not written"), NoCommit: true,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "missing_sensitivity" {
+		t.Fatalf("Capture error = %#v", err)
+	}
+	matches, globErr := filepath.Glob(filepath.Join(repo.Root, "sources", "*", "*", "*.md"))
+	if globErr != nil || len(matches) != 0 {
+		t.Fatalf("missing-sensitivity capture wrote sources: %v, err=%v", matches, globErr)
+	}
+}
+
 func TestCaptureLockContentionHasDiagnosticsWithoutBody(t *testing.T) {
 	repo := newServiceRepository(t)
 	now := time.Date(2026, 7, 22, 16, 30, 21, 0, time.UTC)
@@ -143,7 +159,7 @@ func TestCaptureLockContentionHasDiagnosticsWithoutBody(t *testing.T) {
 	service := testService(repo, &fakeGit{})
 	secret := "do-not-leak-this-body"
 	_, err = service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte(secret),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte(secret),
 	})
 	var apiErr *core.APIError
 	if !errors.As(err, &apiErr) || apiErr.ExitCode != core.ExitConflict || apiErr.Code != "repository_locked" {
@@ -170,7 +186,7 @@ func TestCaptureLegacyLockContentionRequiresExplicitMigration(t *testing.T) {
 	}
 	service := testService(repo, &fakeGit{})
 	_, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("private body"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("private body"),
 	})
 	var apiErr *core.APIError
 	if !errors.As(err, &apiErr) || apiErr.ExitCode != core.ExitConflict || apiErr.Code != "repository_locked" {
@@ -191,7 +207,7 @@ func TestCaptureCommitFailurePreservesSource(t *testing.T) {
 	git := &fakeGit{commitErr: errors.New("author identity unavailable")}
 	service := testService(repo, git)
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte(secret),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte(secret),
 	})
 	var apiErr *core.APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != "git_commit_failed" {
@@ -212,7 +228,7 @@ func TestCaptureGeneratedPathConflict(t *testing.T) {
 	repo := newServiceRepository(t)
 	service := testService(repo, &fakeGit{})
 	options := core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("same generated path"), NoCommit: true,
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("same generated path"), NoCommit: true,
 	}
 	if _, err := service.Capture(context.Background(), options); err != nil {
 		t.Fatalf("first Capture: %v", err)
@@ -234,7 +250,7 @@ func TestCaptureRefreshFailureDoesNotUndoCanonicalWrite(t *testing.T) {
 	}
 	service.IndexMaintenance = maintenance
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("durable source"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("durable source"),
 	})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
@@ -259,7 +275,7 @@ func TestCaptureDoesNotCreateMissingIndex(t *testing.T) {
 	}
 	service.IndexMaintenance = maintenance
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("durable source"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("durable source"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,7 +299,7 @@ func TestCaptureRefreshesExistingGitIndex(t *testing.T) {
 		t.Fatalf("IndexBuild: %v", err)
 	}
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("indexed after capture"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("indexed after capture"),
 	})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
@@ -309,7 +325,7 @@ func TestCapturePushFailurePolicy(t *testing.T) {
 			service := testService(repo, git)
 			push := true
 			result, err := service.Capture(context.Background(), core.CaptureOptions{
-				Kind: "user_statement", Origin: "codex", Body: []byte("hello"), Push: &push,
+				Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("hello"), Push: &push,
 			})
 			if requirePush {
 				var apiErr *core.APIError
@@ -365,7 +381,7 @@ sensitivity: normal
 	}
 	service := testService(repo, gitx.New())
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("exact source"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("exact source"),
 	})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
@@ -400,7 +416,7 @@ func TestCaptureRealCommitFailurePreservesValidSource(t *testing.T) {
 	service := testService(repo, gitx.New())
 	body := []byte("this source survives commit failure")
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: body,
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: body,
 	})
 	var apiErr *core.APIError
 	if !errors.As(err, &apiErr) || apiErr.Code != "git_commit_failed" {
@@ -435,7 +451,7 @@ func TestCapturePushesToLocalBareRemote(t *testing.T) {
 	service := testService(repo, gitx.New())
 	push := true
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("push me"), Push: &push,
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("push me"), Push: &push,
 	})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)
@@ -463,7 +479,7 @@ func TestCaptureRealPushFailureKeepsLocalCommit(t *testing.T) {
 	service := testService(repo, gitx.New())
 	push := true
 	result, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("local durability"), Push: &push,
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("local durability"), Push: &push,
 	})
 	if err != nil {
 		t.Fatalf("optional push failure returned error: %v", err)
@@ -608,7 +624,7 @@ func TestRecentHistoryContentFilterAndAll(t *testing.T) {
 	}
 	captureService := testService(repo, gitx.New())
 	captured, err := captureService.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "codex", Body: []byte("history evidence"),
+		Kind: "user_statement", Origin: "codex", Sensitivity: "normal", Body: []byte("history evidence"),
 	})
 	if err != nil {
 		t.Fatalf("Capture: %v", err)

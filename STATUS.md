@@ -338,6 +338,15 @@ Milestones 1–5 and the complete release matrix are finished.
   repository mutations and administration while preserving narrow exceptions
   for read-only local retrieval, Git synchronization, protected-file
   maintenance, and explicitly requested work outside the repository.
+- **Dogfood follow-up — explicit capture classification and correctable source
+  sensitivity:** completed 2026-08-03. CLI, core, and MCP capture now require
+  an explicit `normal`, `sensitive`, or `local-only` value instead of silently
+  defaulting to `normal`. The revision-guarded `set_source_sensitivity`
+  transaction operation preserves exact source bodies, `raw_sha256`, and
+  unrelated frontmatter while using the normal preview, digest, authorization,
+  commit, recovery, and index-refresh path. Less-restrictive changes require an
+  explicit `allow_downgrade` acknowledgment. Generated and MCP guidance also
+  distinguishes routine index verification from troubleshooting.
 
 ## v0.4 completed milestones
 

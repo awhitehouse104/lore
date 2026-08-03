@@ -209,6 +209,105 @@ func TestPreviewUpdateAndSourceIntegrationPreserveSourceBody(t *testing.T) {
 	}
 }
 
+func TestSetSourceSensitivityPreviewCommitAndDowngradeConfirmation(t *testing.T) {
+	repo := transactionTestRepository(t)
+	body := []byte("exact\r\nprivate source body")
+	source := docs.Source{
+		ID:          fixedID,
+		Kind:        "user_statement",
+		CapturedAt:  "2026-07-28T18:00:00Z",
+		Origin:      "test",
+		RawSHA256:   docs.SHA256(body),
+		Sensitivity: "normal",
+	}
+	sourceData, err := docs.MarshalSource(source, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRelative := "sources/2026/07/" + fixedID + "-user_statement.md"
+	sourceAbsolute := filepath.Join(repo.Root, filepath.FromSlash(sourceRelative))
+	if err := os.MkdirAll(filepath.Dir(sourceAbsolute), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourceAbsolute, sourceData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", sourceRelative)
+	runGit(t, repo.Root, "commit", "-m", "maintenance: sensitivity fixture")
+
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "correct: source sensitivity", []map[string]any{{
+		"op": "set_source_sensitivity", "path": sourceRelative,
+		"expected_revision": docs.Revision(sourceData), "sensitivity": "sensitive",
+	}}))
+	if err != nil {
+		t.Fatalf("Preview upgrade: %v", err)
+	}
+	if !strings.Contains(preview.Diff, "-sensitivity: normal") || !strings.Contains(preview.Diff, "+sensitivity: sensitive") {
+		t.Fatalf("upgrade diff = %s", preview.Diff)
+	}
+	shown, err := service.TransactionShow(preview.TransactionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := shown.Proposal.Operations[0]
+	if operation.Sensitivity != "sensitive" || operation.AllowDowngrade {
+		t.Fatalf("upgrade operation = %+v", operation)
+	}
+	result, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	if err != nil {
+		t.Fatalf("Commit upgrade: %v", err)
+	}
+	upgraded := mustRead(t, sourceAbsolute)
+	document, err := docs.Parse(sourceRelative, upgraded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "committed" || document.Source.Sensitivity != "sensitive" ||
+		!bytes.Equal(document.Body, body) || document.Source.RawSHA256 != docs.SHA256(body) {
+		t.Fatalf("upgraded result=%+v source=%+v", result, document.Source)
+	}
+
+	service.TxIDs = fixedTransactionIDs{value: "tx_01ARZ3NDEKTSV4RRFFQ69G5FAW"}
+	downgrade := map[string]any{
+		"op": "set_source_sensitivity", "path": sourceRelative,
+		"expected_revision": docs.Revision(upgraded), "sensitivity": "normal",
+	}
+	_, err = service.Preview(context.Background(), transactionRequest(t, "correct: source sensitivity", []map[string]any{downgrade}))
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "sensitivity_downgrade_requires_confirmation" {
+		t.Fatalf("unconfirmed downgrade error = %#v", err)
+	}
+	downgrade["allow_downgrade"] = true
+	preview, err = service.Preview(context.Background(), transactionRequest(t, "correct: source sensitivity", []map[string]any{downgrade}))
+	if err != nil {
+		t.Fatalf("Preview downgrade: %v", err)
+	}
+	shown, err = service.TransactionShow(preview.TransactionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shown.Proposal.Operations[0].AllowDowngrade {
+		t.Fatalf("downgrade confirmation was not retained: %+v", shown.Proposal.Operations[0])
+	}
+	if _, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	}); err != nil {
+		t.Fatalf("Commit downgrade: %v", err)
+	}
+	downgraded, err := docs.Parse(sourceRelative, mustRead(t, sourceAbsolute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if downgraded.Source.Sensitivity != "normal" || !bytes.Equal(downgraded.Body, body) {
+		t.Fatalf("downgraded source = %+v", downgraded.Source)
+	}
+}
+
 func TestPreviewRejectsRevisionMismatchAndDirtyTarget(t *testing.T) {
 	repo := transactionTestRepository(t)
 	page := validTransactionPage("page_existing", "Existing", "2026-07-28", "Original.\n")
@@ -826,7 +925,7 @@ func TestRecoveryRollbackAfterInjectedFileRename(t *testing.T) {
 		t.Fatalf("status = %+v", status)
 	}
 	if _, err := service.Capture(context.Background(), core.CaptureOptions{
-		Kind: "user_statement", Origin: "test", Body: []byte("blocked capture"), NoCommit: true,
+		Kind: "user_statement", Origin: "test", Sensitivity: "normal", Body: []byte("blocked capture"), NoCommit: true,
 	}); !errors.As(err, &apiErr) || apiErr.Code != "recovery_required" {
 		t.Fatalf("capture was not blocked by recovery: %#v", err)
 	}

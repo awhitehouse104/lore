@@ -442,10 +442,9 @@ type captureFlags struct {
 
 func runCapture(ctx context.Context, args []string, global globalOptions, s streams) int {
 	flags := captureFlags{
-		repo:        global.repo,
-		json:        global.json || hasFlag(args, "--json"),
-		sensitivity: "normal",
-		tags:        []string{},
+		repo: global.repo,
+		json: global.json || hasFlag(args, "--json"),
+		tags: []string{},
 	}
 	if apiErr := parseCaptureFlags(args, &flags, s.out); apiErr != nil {
 		if apiErr.Code == "help" {
@@ -510,9 +509,11 @@ Input options (mutually exclusive):
   --file PATH         capture exact bytes from a file
   standard input      used when neither --text nor --file is supplied
 
-Metadata and behavior:
-  --origin-ref STRING
+Required metadata:
   --sensitivity normal|sensitive|local-only
+
+Optional metadata and behavior:
+  --origin-ref STRING
   --tag STRING        repeatable
   --allow-empty
   --no-commit
@@ -611,6 +612,9 @@ Metadata and behavior:
 	}
 	if flags.origin == "" {
 		return core.NewError(core.ExitUsage, "missing_required_flag", "lore capture requires --origin")
+	}
+	if flags.sensitivity == "" {
+		return core.NewError(core.ExitUsage, "missing_required_flag", "lore capture requires --sensitivity")
 	}
 	if flags.textSet && flags.fileSet {
 		return core.NewError(core.ExitUsage, "conflicting_input", "--text and --file are mutually exclusive")

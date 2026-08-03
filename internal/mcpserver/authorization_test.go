@@ -136,6 +136,18 @@ func TestCaptureIdempotencyAndSensitivity(t *testing.T) {
 	service := newTestService(t)
 	principal := testPrincipal(t, "normal-capture", []auth.Permission{auth.PermissionCapture}, []string{"normal"})
 	session := connectTestClient(t, service, principal)
+	missingSensitivity, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_capture",
+		Arguments: map[string]any{
+			"kind": "user_statement", "origin": "codex", "text": "Unclassified evidence.",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !missingSensitivity.IsError {
+		t.Fatalf("capture without sensitivity succeeded: %+v", missingSensitivity)
+	}
 	input := map[string]any{
 		"kind":            "user_statement",
 		"origin":          "codex",
@@ -360,6 +372,23 @@ Created through a bounded MCP transaction.
 	}
 	if !integrationPreview.IsError || !strings.Contains(toolResultText(t, integrationPreview), `"code":"permission_denied"`) {
 		t.Fatalf("source integration sensitivity denial = %s", toolResultText(t, integrationPreview))
+	}
+	sourceSensitivityPreview, err := ownerSession.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_preview",
+		Arguments: map[string]any{
+			"schema_version": 1,
+			"message":        "correct: denied source sensitivity",
+			"operations": []any{map[string]any{
+				"op": "set_source_sensitivity", "path": source.Path,
+				"expected_revision": source.Revision, "sensitivity": "sensitive",
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sourceSensitivityPreview.IsError || !strings.Contains(toolResultText(t, sourceSensitivityPreview), `"code":"permission_denied"`) {
+		t.Fatalf("source sensitivity authorization denial = %s", toolResultText(t, sourceSensitivityPreview))
 	}
 
 	normalPage, err := service.Read(t.Context(), "page_project_foo", nil)

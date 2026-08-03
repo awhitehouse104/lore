@@ -188,6 +188,41 @@ custom_extension:
 	}
 }
 
+func TestSetSourceSensitivityPreservesBodyAndUnknownFrontmatter(t *testing.T) {
+	body := []byte("private\r\nsource body without final newline")
+	data := []byte(`---
+id: ` + validSourceID + `
+kind: user_statement
+captured_at: 2026-07-22T16:30:21Z
+origin: codex
+raw_sha256: ` + SHA256(body) + `
+sensitivity: normal
+custom_extension: retained
+---
+`)
+	data = append(data, body...)
+	updated, err := SetSourceSensitivity("sources/2026/07/test.md", data, "sensitive")
+	if err != nil {
+		t.Fatalf("SetSourceSensitivity: %v", err)
+	}
+	document, err := Parse("sources/2026/07/test.md", updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if document.Source.Sensitivity != "sensitive" {
+		t.Fatalf("sensitivity = %q", document.Source.Sensitivity)
+	}
+	if !bytes.Equal(document.Body, body) || SHA256(document.Body) != document.Source.RawSHA256 {
+		t.Fatal("source body integrity changed")
+	}
+	if !bytes.Contains(updated[:document.BodyOffset], []byte("custom_extension: retained")) {
+		t.Fatalf("unknown frontmatter was lost:\n%s", updated[:document.BodyOffset])
+	}
+	if _, err := SetSourceSensitivity("sources/2026/07/test.md", data, "private"); err == nil {
+		t.Fatal("invalid sensitivity was accepted")
+	}
+}
+
 func TestValidateSourceIntegratedInto(t *testing.T) {
 	document, err := Parse("sources/2026/07/test.md", sourceFile("hello"))
 	if err != nil {

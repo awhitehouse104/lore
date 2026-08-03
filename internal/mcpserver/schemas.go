@@ -124,7 +124,7 @@ type CaptureInput struct {
 	Kind           string   `json:"kind"`
 	Origin         string   `json:"origin"`
 	Text           string   `json:"text"`
-	Sensitivity    string   `json:"sensitivity,omitempty"`
+	Sensitivity    string   `json:"sensitivity"`
 	OriginRef      string   `json:"origin_ref,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty"`

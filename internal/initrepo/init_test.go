@@ -53,6 +53,7 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 		{
 			path: "system/OPERATING_RULES.md",
 			fragments: []string{
+				"Lore intentionally supplies no default",
 				"preserve enough of the verbatim exchange",
 				"Link entity profiles to a shared subject",
 				"preserve ambiguity or ask for clarification",
@@ -63,6 +64,7 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 				"UTC metadata clock",
 				"minimum` returned with `updated_too_old`",
 				"every repository mutation or administrative operation",
+				"routine verification and derived-index troubleshooting",
 				"tool arguments to claim or override",
 				"Never downgrade content known to be",
 				"Use a client-generated key when automatic retries are possible",

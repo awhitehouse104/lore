@@ -87,7 +87,12 @@ present, is RFC 3339 UTC. `integrated_into` contains unique valid page IDs.
 Lore writes it as a sorted union and lint warns, rather than errors, when a
 referenced page no longer exists.
 
-The source filename ID and kind must equal its frontmatter, and its path year/month must equal `captured_at` in UTC. Source bodies are append-oriented and immutable by policy. Lore does not deduplicate identical captures.
+The source filename ID and kind must equal its frontmatter, and its path
+year/month must equal `captured_at` in UTC. Source bodies are append-oriented
+and immutable by policy. Revision-guarded transactions may add integration
+metadata or change `sensitivity` while preserving exact body bytes and
+`raw_sha256`. A sensitivity downgrade requires explicit acknowledgment. Lore
+does not deduplicate identical captures.
 
 ## Synthesized pages
 

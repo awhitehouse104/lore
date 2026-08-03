@@ -76,8 +76,8 @@ Missing Git identity is a successful initialization with an actionable warning.
 lore capture \
   --kind TOKEN \
   --origin TOKEN \
+  --sensitivity normal|sensitive|local-only \
   [--origin-ref STRING] \
-  [--sensitivity normal|sensitive|local-only] \
   [--tag STRING ...] \
   [--text STRING | --file PATH] \
   [--allow-empty] \
@@ -86,7 +86,10 @@ lore capture \
   [--json]
 ```
 
-When neither `--text` nor `--file` is present, capture reads non-terminal stdin. Input is bounded by `capture.max_bytes` and must be valid UTF-8. Prefer stdin to `--text` for private material.
+Sensitivity is required for every capture; Lore neither infers a classification
+nor defaults to `normal`. When neither `--text` nor `--file` is present, capture
+reads non-terminal stdin. Input is bounded by `capture.max_bytes` and must be
+valid UTF-8. Prefer stdin to `--text` for private material.
 
 Capture validates metadata before acquiring the repository write lock, then
 publishes one no-clobber source file.
@@ -235,7 +238,10 @@ Supported operations are:
 - `create_page`: `op`, direct `pages/*.md` path, and complete `content`;
 - `update_page`: the same plus the current whole-file `expected_revision`;
 - `mark_source_integrated`: source `path`, `expected_revision`, and 1–50 unique
-  `page_ids`.
+  `page_ids`;
+- `set_source_sensitivity`: source `path`, `expected_revision`, and the new
+  `sensitivity`. A change to a less restrictive classification also requires
+  `allow_downgrade: true`.
 
 Messages are one line, 1–160 UTF-8 bytes, contain no ASCII controls, and begin
 with `integrate:`, `create:`, `update:`, `correct:`, `archive:`, or
@@ -248,6 +254,9 @@ page metadata violations. A page body change must set `updated` to at least the
 current UTC calendar date. It never mutates the working tree, index, refs, or
 history. Instead it overlays the exact effective bytes in memory, runs full
 lint, and generates an uncolored unified diff with `a/` and `b/` paths.
+Source-sensitivity operations preserve the exact body and `raw_sha256`, retain
+unrelated frontmatter, and pass through the same authorization, preview,
+digest, lint, commit, and recovery checks as page operations.
 
 Successful previews persist private mode-`0700`/`0600` artifacts beneath
 `.lore/transactions/tx_<ULID>/` and return a digest of immutable

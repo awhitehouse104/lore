@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	"lore/internal/docs"
+
 	"github.com/oklog/ulid/v2"
 )
 
@@ -43,6 +45,8 @@ type EffectiveOperation struct {
 	Path                   string        `json:"path"`
 	ExpectedRevision       string        `json:"expected_revision,omitempty"`
 	PageIDs                []string      `json:"page_ids,omitempty"`
+	Sensitivity            string        `json:"sensitivity,omitempty"`
+	AllowDowngrade         bool          `json:"allow_downgrade,omitempty"`
 	OriginalRevision       string        `json:"original_revision,omitempty"`
 	ResultingContentSHA256 string        `json:"resulting_content_sha256"`
 	ContentFile            string        `json:"content_file"`
@@ -200,6 +204,19 @@ func ValidateProposal(proposal Proposal) error {
 			}
 			if operation.OriginalRevision != operation.ExpectedRevision {
 				return fmt.Errorf("mark_source_integrated original revision must equal expected revision")
+			}
+		case OperationSetSourceSensitivity:
+			if err := ValidateSourcePath(operation.Path); err != nil {
+				return err
+			}
+			if err := ValidateRevision(operation.ExpectedRevision); err != nil {
+				return err
+			}
+			if operation.OriginalRevision != operation.ExpectedRevision {
+				return fmt.Errorf("set_source_sensitivity original revision must equal expected revision")
+			}
+			if !docs.ValidSensitivity(operation.Sensitivity) {
+				return fmt.Errorf("set_source_sensitivity has invalid sensitivity")
 			}
 		default:
 			return fmt.Errorf("operation %d has invalid kind %q", index, operation.Op)

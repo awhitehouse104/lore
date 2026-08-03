@@ -393,8 +393,56 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 			OriginalRevision:       currentRevision,
 			ResultingContentSHA256: docs.SHA256(resulting),
 		}, original, resulting, false, nil
+	case transaction.OperationSetSourceSensitivity:
+		original, apiErr := readRegularTarget(absolute, operation.Path)
+		if apiErr != nil {
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
+		}
+		currentRevision := docs.Revision(original)
+		if currentRevision != operation.ExpectedRevision {
+			return transaction.EffectiveOperation{}, nil, nil, false, revisionConflict(operation.Path, operation.ExpectedRevision, currentRevision)
+		}
+		currentDocument, err := docs.Parse(operation.Path, original)
+		if err != nil || currentDocument.Source == nil || len(docs.ValidateSource(currentDocument.Source)) > 0 {
+			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "invalid_source", fmt.Sprintf("source sensitivity target is invalid: %s", operation.Path))
+		}
+		if currentDocument.Source.Sensitivity == operation.Sensitivity {
+			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "operation_has_no_effect", fmt.Sprintf("source already has sensitivity %s: %s", operation.Sensitivity, operation.Path))
+		}
+		downgrade := sensitivityRank(operation.Sensitivity) < sensitivityRank(currentDocument.Source.Sensitivity)
+		if downgrade && !operation.AllowDowngrade {
+			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "sensitivity_downgrade_requires_confirmation", "set_source_sensitivity requires allow_downgrade for a less restrictive classification")
+		}
+		resulting, err := docs.SetSourceSensitivity(operation.Path, original, operation.Sensitivity)
+		if err != nil {
+			apiErr := NewError(ExitValidation, "invalid_source", fmt.Sprintf("source sensitivity target is invalid: %s", operation.Path))
+			apiErr.Cause = err
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
+		}
+		return transaction.EffectiveOperation{
+			Op:                     operation.Op,
+			Path:                   operation.Path,
+			ExpectedRevision:       operation.ExpectedRevision,
+			Sensitivity:            operation.Sensitivity,
+			AllowDowngrade:         downgrade,
+			OriginalRevision:       currentRevision,
+			ResultingContentSHA256: docs.SHA256(resulting),
+		}, original, resulting, false, nil
 	default:
 		return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "invalid_operation", "unsupported transaction operation")
+	}
+}
+
+func sensitivityRank(value string) int {
+	switch value {
+	case "normal":
+		return 0
+	case "sensitive":
+		return 1
+	case "local-only":
+		return 2
+	default:
+		return -1
 	}
 }
 

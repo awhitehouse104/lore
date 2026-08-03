@@ -28,6 +28,7 @@ const (
 	OperationCreatePage           OperationKind = "create_page"
 	OperationUpdatePage           OperationKind = "update_page"
 	OperationMarkSourceIntegrated OperationKind = "mark_source_integrated"
+	OperationSetSourceSensitivity OperationKind = "set_source_sensitivity"
 )
 
 type Request struct {
@@ -42,6 +43,8 @@ type Operation struct {
 	ExpectedRevision string        `json:"expected_revision,omitempty"`
 	Content          string        `json:"content,omitempty"`
 	PageIDs          []string      `json:"page_ids,omitempty"`
+	Sensitivity      string        `json:"sensitivity,omitempty"`
+	AllowDowngrade   bool          `json:"allow_downgrade,omitempty"`
 }
 
 type requestWire struct {
@@ -68,6 +71,14 @@ type markSourceWire struct {
 	Path             string        `json:"path"`
 	ExpectedRevision string        `json:"expected_revision"`
 	PageIDs          []string      `json:"page_ids"`
+}
+
+type setSourceSensitivityWire struct {
+	Op               OperationKind `json:"op"`
+	Path             string        `json:"path"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Sensitivity      string        `json:"sensitivity"`
+	AllowDowngrade   bool          `json:"allow_downgrade,omitempty"`
 }
 
 var (
@@ -272,8 +283,29 @@ func decodeOperation(raw []byte) (Operation, error) {
 			ExpectedRevision: wire.ExpectedRevision,
 			PageIDs:          append([]string(nil), wire.PageIDs...),
 		}, nil
+	case OperationSetSourceSensitivity:
+		var wire setSourceSensitivityWire
+		if err := decodeStrict(raw, &wire); err != nil {
+			return Operation{}, fmt.Errorf("decode set_source_sensitivity: %w", err)
+		}
+		if err := ValidateSourcePath(wire.Path); err != nil {
+			return Operation{}, err
+		}
+		if err := ValidateRevision(wire.ExpectedRevision); err != nil {
+			return Operation{}, err
+		}
+		if !docs.ValidSensitivity(wire.Sensitivity) {
+			return Operation{}, fmt.Errorf("sensitivity must be normal, sensitive, or local-only")
+		}
+		return Operation{
+			Op:               wire.Op,
+			Path:             wire.Path,
+			ExpectedRevision: wire.ExpectedRevision,
+			Sensitivity:      wire.Sensitivity,
+			AllowDowngrade:   wire.AllowDowngrade,
+		}, nil
 	default:
-		return Operation{}, fmt.Errorf("op must be create_page, update_page, or mark_source_integrated")
+		return Operation{}, fmt.Errorf("op must be create_page, update_page, mark_source_integrated, or set_source_sensitivity")
 	}
 }
 

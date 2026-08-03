@@ -129,7 +129,7 @@ func (s *Service) Capture(ctx context.Context, options CaptureOptions) (result C
 		return result, NewError(ExitValidation, "invalid_origin", "origin must match ^[a-z][a-z0-9_-]*$")
 	}
 	if options.Sensitivity == "" {
-		options.Sensitivity = "normal"
+		return result, NewError(ExitValidation, "missing_sensitivity", "sensitivity is required")
 	}
 	if !docs.ValidSensitivity(options.Sensitivity) {
 		return result, NewError(ExitValidation, "invalid_sensitivity", "sensitivity must be normal, sensitive, or local-only")
