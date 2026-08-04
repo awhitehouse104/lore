@@ -91,7 +91,8 @@ also retain exact originals until rollback or finalize completes. Protect
 Discard removes a preview's content, diff, and full lint payload while retaining
 a proposal/state receipt and lint summary. Explicit local transaction pruning
 does the same for old committed payloads after proving that the exact commit is
-still reachable and matches every recorded path and blob hash. A durable
+still reachable and matches every recorded path and present blob hash or absent
+deletion. A durable
 retention receipt makes interrupted pruning resumable. Active recovery and all
 noncommitted states are protected.
 
@@ -109,6 +110,13 @@ Proposal, diff, lint, resulting-content, and recovery-original hashes are
 verified before use. Commit also revalidates the exact branch, HEAD, target
 revisions, Git status, prospective lint, regenerated diff, created commit path
 set, and committed blobs. SHA-256 protects integrity; it is not encryption.
+
+Page deletion and reorganization do not alter raw source bodies. A relative
+link captured inside a source remains exact historical evidence even when its
+old page path no longer exists. Source `integrated_into` IDs likewise remain an
+additive historical ledger. Live links in synthesized pages are different:
+prospective lint requires a structural transaction to repair them before
+commit. Git may retain every prior page path, ID, and body as described above.
 
 ## Git remotes and network behavior
 
@@ -259,9 +267,10 @@ files; it does not sanitize canonical Markdown, Git, or backups.
 ## Protected paths and symlinks
 
 Capture can write only a new path under `sources/YYYY/MM/`. Transactions can
-create or update only direct page children and the two source-integration
-frontmatter fields. Lore rejects traversal, absolute paths, symlink traversal,
-unexpected file types, stale bytes, and create overwrite. Normal content
+create, update, or delete only direct page children and can change only the
+supported source integration or sensitivity frontmatter fields. Lore rejects
+traversal, absolute paths, symlink traversal, unexpected file types, stale
+bytes, and create overwrite. Normal content
 operations cannot write `system/`, repository instructions, configuration,
 `.git/`, or `.lore/`.
 

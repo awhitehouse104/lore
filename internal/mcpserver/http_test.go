@@ -44,7 +44,7 @@ func TestHTTPModernStatelessAuthenticationAndPerPrincipalDiscovery(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := toolNames(queryTools.Tools); strings.Join(got, ",") != "lore_read,lore_search" {
+	if got := toolNames(queryTools.Tools); strings.Join(got, ",") != "lore_page_references,lore_read,lore_search" {
 		t.Fatalf("query tools = %v", got)
 	}
 	queryResources, err := querySession.ListResources(t.Context(), nil)

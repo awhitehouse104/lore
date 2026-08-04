@@ -158,6 +158,7 @@ func (s *Service) preview(ctx context.Context, requestBytes []byte, access *sear
 	}
 
 	overlayFiles := make(map[string][]byte, len(operations))
+	deletedPaths := make([]string, 0)
 	effective := make([]transaction.EffectiveOperation, 0, len(operations))
 	diffChanges := make([]diff.Change, 0, len(operations))
 	totalResultingContent := 0
@@ -166,22 +167,26 @@ func (s *Service) preview(ctx context.Context, requestBytes []byte, access *sear
 		if operationErr != nil {
 			return result, operationErr
 		}
-		if !created && bytes.Equal(original, resulting) {
+		if !created && !effectiveOperation.Deleted && bytes.Equal(original, resulting) {
 			return result, NewError(ExitValidation, "operation_has_no_effect", fmt.Sprintf("transaction operation does not change %s", operation.Path))
 		}
-		effectiveOperation.ContentFile = fmt.Sprintf("content/%03d.md", index)
+		if effectiveOperation.Deleted {
+			deletedPaths = append(deletedPaths, operation.Path)
+		} else {
+			effectiveOperation.ContentFile = fmt.Sprintf("content/%03d.md", index)
+			overlayFiles[operation.Path] = resulting
+		}
 		totalResultingContent += len(resulting)
 		if totalResultingContent > transaction.MaxTotalNewContent {
 			return result, NewError(ExitValidation, "transaction_content_too_large", fmt.Sprintf("total resulting content exceeds %d bytes", transaction.MaxTotalNewContent))
 		}
 		effective = append(effective, effectiveOperation)
-		overlayFiles[operation.Path] = resulting
 		diffChanges = append(diffChanges, diff.Change{
-			Path: operation.Path, Original: original, Result: resulting, Created: created,
+			Path: operation.Path, Original: original, Result: resulting, Created: created, Deleted: effectiveOperation.Deleted,
 		})
 	}
 
-	view, err := repository.NewOverlayView(s.Repo, nil, overlayFiles)
+	view, err := repository.NewOverlayViewWithDeletions(s.Repo, nil, overlayFiles, deletedPaths)
 	if err != nil {
 		return result, transactionRuntimeError("overlay_failed", "could not build prospective repository view", err)
 	}
@@ -276,6 +281,9 @@ func (s *Service) preview(ctx context.Context, requestBytes []byte, access *sear
 	}
 	contents := make([][]byte, len(effective))
 	for index, operation := range effective {
+		if operation.Deleted {
+			continue
+		}
 		contents[index] = overlayFiles[operation.Path]
 	}
 	store, err := transaction.NewStore(s.Repo)
@@ -339,9 +347,6 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 		if apiErr != nil {
 			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
-		if currentDocument.Page.ID != proposedDocument.Page.ID {
-			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "immutable_page_id", fmt.Sprintf("update_page cannot change page ID for %s", operation.Path))
-		}
 		if currentDocument.Page.Created != proposedDocument.Page.Created {
 			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "immutable_page_created", fmt.Sprintf("update_page cannot change created for %s", operation.Path))
 		}
@@ -368,6 +373,27 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 			OriginalRevision:       currentRevision,
 			ResultingContentSHA256: docs.SHA256(resulting),
 		}, original, resulting, false, nil
+	case transaction.OperationDeletePage:
+		original, apiErr := readRegularTarget(absolute, operation.Path)
+		if apiErr != nil {
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
+		}
+		currentRevision := docs.Revision(original)
+		if currentRevision != operation.ExpectedRevision {
+			return transaction.EffectiveOperation{}, nil, nil, false, revisionConflict(operation.Path, operation.ExpectedRevision, currentRevision)
+		}
+		currentDocument, err := docs.Parse(operation.Path, original)
+		if err != nil || currentDocument.Page == nil || len(docs.ValidatePage(currentDocument.Page)) > 0 {
+			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "invalid_current_page", fmt.Sprintf("current page is invalid: %s", operation.Path))
+		}
+		return transaction.EffectiveOperation{
+			Op:               operation.Op,
+			Path:             operation.Path,
+			ExpectedRevision: operation.ExpectedRevision,
+			OriginalRevision: currentRevision,
+			Deleted:          true,
+			Sensitivity:      currentDocument.Sensitivity(),
+		}, original, nil, false, nil
 	case transaction.OperationMarkSourceIntegrated:
 		original, apiErr := readRegularTarget(absolute, operation.Path)
 		if apiErr != nil {
@@ -642,10 +668,15 @@ func (s *Service) TransactionShowOwned(ctx context.Context, transactionID string
 		return TransactionShowResult{}, transactionNotFound()
 	}
 	overlayFiles := make(map[string][]byte, len(artifacts.Proposal.Operations))
+	deletedPaths := make([]string, 0)
 	for index, operation := range artifacts.Proposal.Operations {
+		if operation.Deleted {
+			deletedPaths = append(deletedPaths, operation.Path)
+			continue
+		}
 		overlayFiles[operation.Path] = artifacts.Contents[index]
 	}
-	view, viewErr := repository.NewOverlayView(s.Repo, nil, overlayFiles)
+	view, viewErr := repository.NewOverlayViewWithDeletions(s.Repo, nil, overlayFiles, deletedPaths)
 	if viewErr != nil {
 		return TransactionShowResult{}, transactionRuntimeError("overlay_failed", "could not authorize transaction inspection", viewErr)
 	}

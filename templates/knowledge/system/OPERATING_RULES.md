@@ -54,6 +54,10 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 - Search before creating a page.
 - Prefer updating an existing page when information concerns an existing
   entity.
+- Treat synthesized pages as a living current view, not an append-only record.
+  Proactively retitle, rekey, reorganize, consolidate, split, or delete pages
+  when that materially improves the repository's current organization. Git
+  retains the change history; raw sources retain the evidence.
 - Store a shared fact once on the narrowest page that naturally owns it. Link
   entity profiles to a shared subject, household, event, or plan page instead
   of copying the complete fact.
@@ -62,7 +66,20 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 
 ## Change workflow
 
-- Use `lore preview` and `lore commit` for normal page creates and updates.
+- Use `lore preview` and `lore commit` for normal page creates, updates, and
+  deletes.
+- Before changing a page path or ID, consolidating pages, or deleting a page,
+  inspect it with CLI `lore references` or MCP `lore_page_references`. Repair
+  or remove every live backlink from another synthesized page in the same
+  transaction. A path move is one coherent transaction containing the
+  replacement page, backlink updates, source-integration additions where
+  useful, and deletion of the old page.
+- Never rewrite an immutable source body merely because it links to a page path
+  that later moves or disappears. Such links record what the evidence referred
+  to at capture time and do not block structural maintenance.
+- Treat source `integrated_into` values as an additive historical ledger. A
+  value may name a page ID that no longer exists. Add a successor page ID when
+  it helps provenance; do not remove the historical ID.
 - For a page body change, set `updated` to at least the current UTC calendar
   date. If client and server dates differ, follow the `minimum` returned with
   `updated_too_old`.

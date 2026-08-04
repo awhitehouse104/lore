@@ -26,6 +26,12 @@ profiles to it rather than duplicating the complete fact. Resolve relative
 dates only when capture time and context support one interpretation, and mark
 that resolution as inference while preserving the source wording.
 
+Treat synthesized pages as a living current view. Retitle, rekey, reorganize,
+consolidate, split, or delete them when useful, using structured page-reference
+discovery and one atomic transaction to repair every live page backlink.
+Historical links in immutable sources and old `integrated_into` IDs remain as
+evidence; add successor integration IDs rather than removing history.
+
 Start retrieval with ordinary `lore search`, inspect and read likely results,
 then reformulate weak searches with distinctive terms from the evidence. Do not
 infer absence from one query. Authorized local agents may also use `rg` over

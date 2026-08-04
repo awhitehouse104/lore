@@ -17,6 +17,7 @@ func TestGenerateUnifiedDiffHeaders(t *testing.T) {
 	result, err := lorediff.Generate(context.Background(), gitx.New(), []lorediff.Change{
 		{Path: "pages/updated.md", Original: []byte("old\n"), Result: []byte("new\n")},
 		{Path: "pages/created.md", Result: []byte("created\n"), Created: true},
+		{Path: "pages/deleted.md", Original: []byte("deleted\n"), Deleted: true},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -26,6 +27,10 @@ func TestGenerateUnifiedDiffHeaders(t *testing.T) {
 		"diff --git a/pages/created.md b/pages/created.md\n",
 		"--- /dev/null\n",
 		"+++ b/pages/created.md\n",
+		"diff --git a/pages/deleted.md b/pages/deleted.md\n",
+		"--- a/pages/deleted.md\n",
+		"+++ /dev/null\n",
+		"-deleted\n",
 		"diff --git a/pages/updated.md b/pages/updated.md\n",
 		"--- a/pages/updated.md\n",
 		"+++ b/pages/updated.md\n",

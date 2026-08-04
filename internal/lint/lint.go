@@ -17,6 +17,7 @@ import (
 	"lore/internal/docs"
 	"lore/internal/gitx"
 	loreindex "lore/internal/index"
+	"lore/internal/markdownlink"
 	"lore/internal/recovery"
 	"lore/internal/repository"
 	"lore/internal/transaction"
@@ -219,7 +220,6 @@ func RunViewAt(ctx context.Context, repo *repository.Repository, view repository
 
 	checkDuplicateIDs(&result, documents)
 	checkAliasCollisions(&result, documents)
-	checkIntegratedPages(&result, documents)
 	checkLinks(&result, repo, view, documents)
 	if isGit {
 		changes, changesErr := git.SourceChanges(ctx, repo.Root)
@@ -627,37 +627,17 @@ func checkAliasCollisions(result *Result, documents []*docs.Document) {
 	}
 }
 
-func checkIntegratedPages(result *Result, documents []*docs.Document) {
-	pageIDs := make(map[string]struct{})
-	for _, document := range documents {
-		if document.Page != nil {
-			pageIDs[document.Page.ID] = struct{}{}
-		}
-	}
-	for _, document := range documents {
-		if document.Source == nil {
-			continue
-		}
-		for _, pageID := range document.Source.IntegratedInto {
-			if _, exists := pageIDs[pageID]; exists {
-				continue
-			}
-			result.Findings = append(result.Findings, Finding{
-				Severity: SeverityWarning,
-				Code:     "integrated_page_missing",
-				Path:     document.Path,
-				Line:     2,
-				Message:  fmt.Sprintf("integrated_into references missing page ID %s", pageID),
-			})
-		}
-	}
-}
-
 func checkLinks(result *Result, repo *repository.Repository, view repository.View, documents []*docs.Document) {
 	for _, document := range documents {
+		// Source bodies are immutable historical evidence. Their links describe
+		// what the captured text referenced at that time and do not constrain
+		// the current synthesized-page graph.
+		if document.Source != nil {
+			continue
+		}
 		bodyStart := bytes.Count(document.Data[:document.BodyOffset], []byte{'\n'}) + 1
 		for index, line := range strings.Split(string(document.Body), "\n") {
-			for _, destination := range markdownDestinations(line) {
+			for _, destination := range markdownlink.Destinations(line) {
 				checkLink(result, repo, view, document.Path, bodyStart+index, destination)
 			}
 		}
@@ -737,104 +717,6 @@ func checkLink(result *Result, repo *repository.Repository, view repository.View
 			Message:  fmt.Sprintf("could not inspect Markdown link target %q: %v", destination, statErr),
 		})
 	}
-}
-
-func markdownDestinations(line string) []string {
-	var destinations []string
-	for searchFrom := 0; searchFrom < len(line); {
-		relative := strings.Index(line[searchFrom:], "](")
-		if relative < 0 {
-			break
-		}
-		open := searchFrom + relative + 1
-		start := open + 1
-		depth := 1
-		escaped := false
-		closeIndex := -1
-		for index := start; index < len(line); index++ {
-			value := line[index]
-			if escaped {
-				escaped = false
-				continue
-			}
-			if value == '\\' {
-				escaped = true
-				continue
-			}
-			switch value {
-			case '(':
-				depth++
-			case ')':
-				depth--
-				if depth == 0 {
-					closeIndex = index
-				}
-			}
-			if closeIndex >= 0 {
-				break
-			}
-		}
-		if closeIndex < 0 {
-			break
-		}
-		destination := extractMarkdownDestination(strings.TrimSpace(line[start:closeIndex]))
-		destinations = append(destinations, destination)
-		searchFrom = closeIndex + 1
-	}
-	if destination, ok := referenceDefinitionDestination(line); ok {
-		destinations = append(destinations, destination)
-	}
-	return destinations
-}
-
-func referenceDefinitionDestination(line string) (string, bool) {
-	trimmed := strings.TrimLeft(line, " \t")
-	if len(line)-len(trimmed) > 3 || !strings.HasPrefix(trimmed, "[") {
-		return "", false
-	}
-	end := strings.Index(trimmed, "]:")
-	if end <= 1 {
-		return "", false
-	}
-	raw := strings.TrimSpace(trimmed[end+2:])
-	if raw == "" {
-		return "", false
-	}
-	return extractMarkdownDestination(raw), true
-}
-
-func extractMarkdownDestination(raw string) string {
-	destination := raw
-	if strings.HasPrefix(raw, "<") {
-		if end := strings.Index(raw, ">"); end >= 0 {
-			destination = raw[1:end]
-		}
-	} else if end := strings.IndexAny(raw, " \t"); end >= 0 {
-		destination = raw[:end]
-	}
-	return unescapeMarkdownDestination(destination)
-}
-
-func unescapeMarkdownDestination(value string) string {
-	var builder strings.Builder
-	builder.Grow(len(value))
-	escaped := false
-	for _, r := range value {
-		if escaped {
-			builder.WriteRune(r)
-			escaped = false
-			continue
-		}
-		if r == '\\' {
-			escaped = true
-			continue
-		}
-		builder.WriteRune(r)
-	}
-	if escaped {
-		builder.WriteRune('\\')
-	}
-	return builder.String()
 }
 
 func finish(result *Result) {

@@ -173,6 +173,21 @@ func (c Client) BlobAtCommit(ctx context.Context, dir, commit, path string) ([]b
 	return c.run(ctx, dir, "show", commit+":"+path)
 }
 
+// BlobAtCommitOptional returns exists=false when the path is absent from an
+// otherwise valid commit. Callers use it to verify committed deletions without
+// treating an expected missing blob as a Git runtime failure.
+func (c Client) BlobAtCommitOptional(ctx context.Context, dir, commit, path string) ([]byte, bool, error) {
+	data, err := c.BlobAtCommit(ctx, dir, commit, path)
+	if err == nil {
+		return data, true, nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) && commandErr.ExitCode == 128 {
+		return nil, false, nil
+	}
+	return nil, false, err
+}
+
 func (c Client) DirectChildren(ctx context.Context, dir, parent string) ([]string, error) {
 	stdout, err := c.run(ctx, dir, "rev-list", "--all", "--parents")
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"lore/internal/core"
+	"lore/internal/docs"
 	"lore/internal/lock"
 	"lore/internal/search"
 	"lore/internal/transaction"
@@ -110,6 +111,54 @@ func TestTransactionPruneDryRunCompactionAndLocalReceiptBehavior(t *testing.T) {
 	}
 	if again.Selected != 0 || again.Pruned != 0 || again.AlreadyPruned != 1 {
 		t.Fatalf("idempotent core prune = %+v", again)
+	}
+}
+
+func TestTransactionPruneVerifiesCommittedDeletionWithoutContentArtifact(t *testing.T) {
+	repo := transactionTestRepository(t)
+	page := validTransactionPage("page_pruned_delete", "Pruned delete", "2026-07-28", "Delete.\n")
+	path := filepath.Join(repo.Root, "pages", "pruned-delete.md")
+	if err := os.WriteFile(path, page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/pruned-delete.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: deletion fixture")
+	committedAt := time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: committedAt}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "archive: prune deletion", []map[string]any{{
+		"op": "delete_page", "path": "pages/pruned-delete.md", "expected_revision": docs.Revision(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	service.Clock = fixedClock{value: committedAt.Add(48 * time.Hour)}
+	dryRun, err := service.TransactionPrune(context.Background(), core.TransactionPruneOptions{
+		OlderThan: 24 * time.Hour,
+		Limit:     1,
+		DryRun:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dryRun.Selected != 1 || dryRun.FilesReclaimable != 2 {
+		t.Fatalf("deletion prune dry-run = %+v", dryRun)
+	}
+	pruned, err := service.TransactionPrune(context.Background(), core.TransactionPruneOptions{
+		OlderThan: 24 * time.Hour,
+		Limit:     1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned.Pruned != 1 || pruned.FilesRemoved != 2 {
+		t.Fatalf("deletion prune = %+v", pruned)
 	}
 }
 

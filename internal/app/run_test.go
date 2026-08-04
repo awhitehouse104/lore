@@ -107,8 +107,8 @@ func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 			}
 			if requestIndex == 2 {
 				tools := response["result"].(map[string]any)["tools"].([]any)
-				if len(tools) != 2 {
-					t.Fatalf("local-query advertised %d tools, want 2", len(tools))
+				if len(tools) != 3 {
+					t.Fatalf("local-query advertised %d tools, want 3", len(tools))
 				}
 			}
 		}
@@ -342,6 +342,31 @@ Project Foo should remain deployable without Kubernetes.
 	}
 	if read.SchemaVersion != 1 || read.Path != "pages/project-foo.md" || read.LineStart != 12 || read.LineEnd != 14 || read.Content != "# Summary\n\nProject Foo should remain deployable without Kubernetes.\n" {
 		t.Fatalf("read result: %+v", read)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(context.Background(), []string{"--repo", root, "references", "page_project_foo", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("references returned %d, stderr=%q, stdout=%q", code, stderr.String(), stdout.String())
+	}
+	var references struct {
+		SchemaVersion int `json:"schema_version"`
+		Target        struct {
+			Path string `json:"path"`
+			ID   string `json:"id"`
+		} `json:"target"`
+		LiveBacklinks            []core.LinkReference              `json:"live_backlinks"`
+		HistoricalSourceMentions []core.LinkReference              `json:"historical_source_mentions"`
+		SourceIntegrations       []core.SourceIntegrationReference `json:"source_integrations"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &references); err != nil {
+		t.Fatal(err)
+	}
+	if references.SchemaVersion != 1 || references.Target.Path != "pages/project-foo.md" ||
+		references.Target.ID != "page_project_foo" || len(references.LiveBacklinks) != 0 ||
+		len(references.HistoricalSourceMentions) != 0 || len(references.SourceIntegrations) != 0 {
+		t.Fatalf("references result: %+v", references)
 	}
 }
 

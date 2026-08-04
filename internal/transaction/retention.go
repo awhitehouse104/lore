@@ -94,8 +94,8 @@ func ValidateRetention(receipt RetentionReceipt) error {
 	default:
 		return fmt.Errorf("invalid retention phase %q", receipt.Phase)
 	}
-	if len(receipt.Artifacts) < 3 || len(receipt.Artifacts) > MaxOperations+2 {
-		return fmt.Errorf("retention artifacts must contain between 3 and %d entries", MaxOperations+2)
+	if len(receipt.Artifacts) < 2 || len(receipt.Artifacts) > MaxOperations+2 {
+		return fmt.Errorf("retention artifacts must contain between 2 and %d entries", MaxOperations+2)
 	}
 	for index, artifact := range receipt.Artifacts {
 		if index > 0 && receipt.Artifacts[index-1].Path >= artifact.Path {
@@ -126,6 +126,9 @@ func ValidateRetentionForProposal(receipt RetentionReceipt, proposal Proposal, p
 	expected["diff.patch"] = proposal.DiffSHA256
 	expected["lint.json"] = proposal.LintSHA256
 	for _, operation := range proposal.Operations {
+		if operation.Deleted {
+			continue
+		}
 		expected[operation.ContentFile] = operation.ResultingContentSHA256
 	}
 	if len(receipt.Artifacts) != len(expected) {

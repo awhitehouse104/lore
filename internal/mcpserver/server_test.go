@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "successor integration ID", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -83,6 +83,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		"lore_commit",
 		"lore_index_status",
 		"lore_lint",
+		"lore_page_references",
 		"lore_preview",
 		"lore_read",
 		"lore_recent",
@@ -133,6 +134,14 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if readOutput.ID != "page_project_foo" || readOutput.Sensitivity != "normal" ||
 		!strings.Contains(readOutput.Content, "Project Foo") {
 		t.Fatalf("read output = %+v", readOutput)
+	}
+	referencesOutput := decodeOutput[PageReferencesOutput](t, callTool(t, clientSession, "lore_page_references", map[string]any{
+		"ref": "page_project_foo",
+	}))
+	if referencesOutput.Operation != "lore_page_references" || referencesOutput.Target.ID != "page_project_foo" ||
+		len(referencesOutput.LiveBacklinks) != 0 || len(referencesOutput.HistoricalSourceMentions) != 0 ||
+		len(referencesOutput.SourceIntegrations) != 0 {
+		t.Fatalf("page references output = %+v", referencesOutput)
 	}
 
 	recentOutput := decodeOutput[RecentOutput](t, callTool(t, clientSession, "lore_recent", map[string]any{"limit": 5}))
@@ -185,7 +194,7 @@ func TestMutationSchemasRequireSensitivityAndExposeSourceReclassification(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"set_source_sensitivity", "allow_downgrade"} {
+	for _, fragment := range []string{"delete_page", "set_source_sensitivity", "allow_downgrade"} {
 		if !bytes.Contains(previewSchema, []byte(fragment)) {
 			t.Fatalf("preview schema missing %q: %s", fragment, previewSchema)
 		}
@@ -311,7 +320,7 @@ func TestLegacyInitializeAndToolList(t *testing.T) {
 	})
 	list := readJSONLine(t, reader)
 	tools := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 11 {
+	if len(tools) != 12 {
 		t.Fatalf("legacy tool list = %#v", list)
 	}
 }

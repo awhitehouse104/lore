@@ -26,7 +26,7 @@ func TestPermissionFilteredDiscoveryAndSensitivityMasking(t *testing.T) {
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 	}
-	if want := []string{"lore_read", "lore_search"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"lore_page_references", "lore_read", "lore_search"}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("query-only tools = %v, want %v", names, want)
 	}
 
@@ -51,6 +51,18 @@ func TestPermissionFilteredDiscoveryAndSensitivityMasking(t *testing.T) {
 	if !readResult.IsError || !strings.Contains(errorText, `"code":"not_found"`) ||
 		strings.Contains(errorText, "sensitive") || strings.Contains(errorText, "page_sensitive_notes") {
 		t.Fatalf("masked read error = %s", errorText)
+	}
+	referencesResult, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "lore_page_references",
+		Arguments: map[string]any{"ref": "page_local_notes"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	referencesError := toolResultText(t, referencesResult)
+	if !referencesResult.IsError || !strings.Contains(referencesError, `"code":"not_found"`) ||
+		strings.Contains(referencesError, "local-only") || strings.Contains(referencesError, "page_local_notes") {
+		t.Fatalf("masked references error = %s", referencesError)
 	}
 
 	_, err = session.CallTool(t.Context(), &mcp.CallToolParams{

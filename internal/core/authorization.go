@@ -24,6 +24,9 @@ func (s *Service) authorizeTransactionContent(
 				return authorizationDenied()
 			}
 		}
+		if operation.Deleted {
+			continue
+		}
 		document, err := docs.Parse(operation.Path, resulting[index])
 		if err == nil {
 			if !access.Allows(document.Sensitivity()) {
@@ -102,6 +105,12 @@ func (s *Service) transactionArtifactsAuthorized(ctx context.Context, artifacts 
 	for index, operation := range operations {
 		resulting[index] = artifacts.Contents[index]
 		if operation.Op == transaction.OperationCreatePage {
+			continue
+		}
+		if operation.Deleted {
+			if !access.Allows(operation.Sensitivity) {
+				return false
+			}
 			continue
 		}
 		absolute, err := s.Repo.SafeContentPath(operation.Path)

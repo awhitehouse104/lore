@@ -16,6 +16,7 @@ func TestDecodeRequestStrictAndValid(t *testing.T) {
   "operations": [
     {"op":"create_page","path":"pages/new-page.md","content":"page"},
     {"op":"update_page","path":"pages/old.md","expected_revision":"` + validRevision + `","content":"updated"},
+	{"op":"delete_page","path":"pages/obsolete.md","expected_revision":"` + validRevision + `"},
     {"op":"mark_source_integrated","path":"sources/2026/07/source.md","expected_revision":"` + validRevision + `","page_ids":["page_new"]},
     {"op":"set_source_sensitivity","path":"sources/2026/07/private.md","expected_revision":"` + validRevision + `","sensitivity":"sensitive"}
   ]
@@ -24,8 +25,8 @@ func TestDecodeRequestStrictAndValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeRequest: %v", err)
 	}
-	if len(request.Operations) != 4 || request.Operations[2].PageIDs[0] != "page_new" ||
-		request.Operations[3].Sensitivity != "sensitive" {
+	if len(request.Operations) != 5 || request.Operations[2].Op != OperationDeletePage ||
+		request.Operations[3].PageIDs[0] != "page_new" || request.Operations[4].Sensitivity != "sensitive" {
 		t.Fatalf("request = %+v", request)
 	}
 
@@ -34,6 +35,7 @@ func TestDecodeRequestStrictAndValid(t *testing.T) {
 		`{"schema_version":1,"message":"create: x","operations":[{"op":"create_page","path":"pages/x.md","content":"x","extra":true}]}`,
 		`{"schema_version":1,"message":"create: x","operations":[{"op":"create_page","path":"pages/x.md"}]}`,
 		`{"schema_version":1,"message":"create: x","operations":[{"op":"unknown","path":"pages/x.md"}]}`,
+		`{"schema_version":1,"message":"archive: x","operations":[{"op":"delete_page","path":"pages/x.md"}]}`,
 		`{"schema_version":1,"message":"update: x","operations":[{"op":"set_source_sensitivity","path":"sources/2026/07/x.md","expected_revision":"` + validRevision + `"}]}`,
 		`{"schema_version":1,"message":"update: x","operations":[{"op":"set_source_sensitivity","path":"sources/2026/07/x.md","expected_revision":"` + validRevision + `","sensitivity":"private"}]}`,
 		`{"schema_version":1,"message":"create: x","operations":[]} trailing`,

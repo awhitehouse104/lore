@@ -19,6 +19,7 @@ import (
 	"lore/internal/initrepo"
 	"lore/internal/lock"
 	"lore/internal/repository"
+	"lore/internal/search"
 )
 
 const fixedTransactionID = "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -209,6 +210,162 @@ func TestPreviewUpdateAndSourceIntegrationPreserveSourceBody(t *testing.T) {
 	}
 }
 
+func TestReferencesAndAtomicRecipeReorganization(t *testing.T) {
+	repo := transactionTestRepository(t)
+	oldPage := validTransactionPage("page_old_recipe", "Old Recipe", "2026-07-27", "Old recipe.\n")
+	backlink := validTransactionPage("page_meal_plan", "Meal Plan", "2026-07-27", "Make [the old recipe](old-recipe.md#method).\n")
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "old-recipe.md"), oldPage, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "meal-plan.md"), backlink, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sourceBody := []byte("Historical note: [Old Recipe](../../../pages/old-recipe.md).")
+	source := docs.Source{
+		ID:             fixedID,
+		Kind:           "user_statement",
+		CapturedAt:     "2026-07-28T18:00:00Z",
+		Origin:         "test",
+		RawSHA256:      docs.SHA256(sourceBody),
+		Sensitivity:    "normal",
+		IntegratedAt:   "2026-07-28T18:05:00Z",
+		IntegratedInto: []string{"page_old_recipe"},
+	}
+	sourceData, err := docs.MarshalSource(source, sourceBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRelative := "sources/2026/07/" + fixedID + "-user_statement.md"
+	sourceAbsolute := filepath.Join(repo.Root, filepath.FromSlash(sourceRelative))
+	if err := os.MkdirAll(filepath.Dir(sourceAbsolute), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourceAbsolute, sourceData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/old-recipe.md", "pages/meal-plan.md", sourceRelative)
+	runGit(t, repo.Root, "commit", "-m", "maintenance: recipe fixtures")
+
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	references, err := service.PageReferences(context.Background(), "page_old_recipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(references.LiveBacklinks) != 1 || references.LiveBacklinks[0].Path != "pages/meal-plan.md" ||
+		len(references.HistoricalSourceMentions) != 1 || references.HistoricalSourceMentions[0].Path != sourceRelative ||
+		len(references.SourceIntegrations) != 1 || references.SourceIntegrations[0].Path != sourceRelative {
+		t.Fatalf("references = %+v", references)
+	}
+
+	newPage := validTransactionPage("page_lemon_recipe", "Lemon Recipe", "2026-07-28", "New recipe.\n")
+	updatedBacklink := validTransactionPage("page_meal_plan", "Meal Plan", "2026-07-28", "Make [the lemon recipe](lemon-recipe.md#method).\n")
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "maintenance: reorganize recipes", []map[string]any{
+		{"op": "create_page", "path": "pages/lemon-recipe.md", "content": string(newPage)},
+		{"op": "update_page", "path": "pages/meal-plan.md", "expected_revision": docs.Revision(backlink), "content": string(updatedBacklink)},
+		{"op": "mark_source_integrated", "path": sourceRelative, "expected_revision": docs.Revision(sourceData), "page_ids": []string{"page_lemon_recipe"}},
+		{"op": "delete_page", "path": "pages/old-recipe.md", "expected_revision": docs.Revision(oldPage)},
+	}))
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if !preview.Lint.Valid || !strings.Contains(preview.Diff, "+++ /dev/null") ||
+		!strings.Contains(preview.Diff, "pages/lemon-recipe.md") {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if _, err := service.TransactionShowOwned(context.Background(), preview.TransactionID, true, search.AllAccessPolicy()); err != nil {
+		t.Fatalf("TransactionShowOwned for deletion preview: %v", err)
+	}
+	committed, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID,
+		PreviewDigest: preview.PreviewDigest,
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if len(committed.ChangedPaths) != 4 {
+		t.Fatalf("commit = %+v", committed)
+	}
+	if _, err := os.Stat(filepath.Join(repo.Root, "pages", "old-recipe.md")); !os.IsNotExist(err) {
+		t.Fatalf("old recipe still exists: %v", err)
+	}
+	if got := string(mustRead(t, filepath.Join(repo.Root, "pages", "meal-plan.md"))); !strings.Contains(got, "lemon-recipe.md#method") {
+		t.Fatalf("backlink was not updated: %s", got)
+	}
+	updatedSource, err := docs.Parse(sourceRelative, mustRead(t, sourceAbsolute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(updatedSource.Body) != string(sourceBody) ||
+		!containsValue(updatedSource.Source.IntegratedInto, "page_old_recipe") ||
+		!containsValue(updatedSource.Source.IntegratedInto, "page_lemon_recipe") {
+		t.Fatalf("source history changed incorrectly: %+v body=%q", updatedSource.Source, updatedSource.Body)
+	}
+}
+
+func TestPreviewAllowsPageIDChangeWithCurrentUpdateDate(t *testing.T) {
+	repo := transactionTestRepository(t)
+	current := validTransactionPage("page_old_id", "Recipe", "2026-07-27", "Recipe.\n")
+	path := filepath.Join(repo.Root, "pages", "recipe.md")
+	if err := os.WriteFile(path, current, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/recipe.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: recipe fixture")
+	proposed := validTransactionPage("page_new_id", "Recipe", "2026-07-28", "Recipe.\n")
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "maintenance: rekey recipe", []map[string]any{{
+		"op": "update_page", "path": "pages/recipe.md", "expected_revision": docs.Revision(current), "content": string(proposed),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(preview.Diff, "-id: page_old_id") || !strings.Contains(preview.Diff, "+id: page_new_id") {
+		t.Fatalf("rekey diff = %s", preview.Diff)
+	}
+	if _, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID,
+		PreviewDigest: preview.PreviewDigest,
+	}); err != nil {
+		t.Fatalf("Commit rekey: %v", err)
+	}
+	updated, err := docs.Parse("pages/recipe.md", mustRead(t, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Page.ID != "page_new_id" {
+		t.Fatalf("committed page ID = %q", updated.Page.ID)
+	}
+}
+
+func TestPreviewDeleteRequiresLivePageBacklinksToBeRepaired(t *testing.T) {
+	repo := transactionTestRepository(t)
+	target := validTransactionPage("page_delete_target", "Delete Target", "2026-07-27", "Target.\n")
+	backlink := validTransactionPage("page_delete_backlink", "Delete Backlink", "2026-07-27", "See [target](delete-target.md).\n")
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "delete-target.md"), target, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "delete-backlink.md"), backlink, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/delete-target.md", "pages/delete-backlink.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: deletion fixtures")
+
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	_, err := service.Preview(context.Background(), transactionRequest(t, "maintenance: delete linked page", []map[string]any{{
+		"op": "delete_page", "path": "pages/delete-target.md", "expected_revision": docs.Revision(target),
+	}}))
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "prospective_lint_invalid" {
+		t.Fatalf("Preview error = %v", err)
+	}
+}
+
 func TestSetSourceSensitivityPreviewCommitAndDowngradeConfirmation(t *testing.T) {
 	repo := transactionTestRepository(t)
 	body := []byte("exact\r\nprivate source body")
@@ -345,7 +502,7 @@ func TestPreviewRejectsRevisionMismatchAndDirtyTarget(t *testing.T) {
 	}
 }
 
-func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
+func TestPreviewEnforcesImmutableCreatedAndCurrentUpdateDate(t *testing.T) {
 	tests := []struct {
 		name      string
 		transform func([]byte) []byte
@@ -358,13 +515,6 @@ func TestPreviewEnforcesImmutablePageFieldsAndCurrentUpdateDate(t *testing.T) {
 				return data
 			},
 			wantCode: "operation_has_no_effect",
-		},
-		{
-			name: "id",
-			transform: func(data []byte) []byte {
-				return bytes.Replace(data, []byte("id: page_existing"), []byte("id: page_changed"), 1)
-			},
-			wantCode: "immutable_page_id",
 		},
 		{
 			name: "created",
@@ -949,6 +1099,83 @@ func TestRecoveryRollbackAfterInjectedFileRename(t *testing.T) {
 	}
 }
 
+func TestRecoveryRollbackRestoresInterruptedDeletion(t *testing.T) {
+	repo := transactionTestRepository(t)
+	page := validTransactionPage("page_delete_rollback", "Delete rollback", "2026-07-28", "Keep me.\n")
+	path := filepath.Join(repo.Root, "pages", "delete-rollback.md")
+	if err := os.WriteFile(path, page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/delete-rollback.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: deletion fixture")
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	service.TxHooks = transactionFailHooks{fileIndex: 0}
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "archive: interrupted deletion", []map[string]any{{
+		"op": "delete_page", "path": "pages/delete-rollback.md", "expected_revision": docs.Revision(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "injected_interruption" {
+		t.Fatalf("error = %#v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("interrupted deletion left page present: %v", err)
+	}
+	service.TxHooks = nil
+	if _, err := service.RollbackRecovery(context.Background()); err != nil {
+		t.Fatalf("RollbackRecovery: %v", err)
+	}
+	if restored := mustRead(t, path); !bytes.Equal(restored, page) {
+		t.Fatalf("restored page = %q", restored)
+	}
+}
+
+func TestRecoveryFinalizeRecognizesCommittedDeletion(t *testing.T) {
+	repo := transactionTestRepository(t)
+	page := validTransactionPage("page_delete_finalize", "Delete finalize", "2026-07-28", "Delete me.\n")
+	path := filepath.Join(repo.Root, "pages", "delete-finalize.md")
+	if err := os.WriteFile(path, page, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/delete-finalize.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: deletion fixture")
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 7, 28, 20, 10, 0, 0, time.UTC)}
+	service.TxIDs = fixedTransactionIDs{value: fixedTransactionID}
+	service.TxHooks = transactionFailHooks{fileIndex: -1, afterGit: true}
+	preview, err := service.Preview(context.Background(), transactionRequest(t, "archive: finalized deletion", []map[string]any{{
+		"op": "delete_page", "path": "pages/delete-finalize.md", "expected_revision": docs.Revision(page),
+	}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID, PreviewDigest: preview.PreviewDigest,
+	})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "injected_interruption" {
+		t.Fatalf("error = %#v", err)
+	}
+	service.TxHooks = nil
+	result, err := service.FinalizeRecovery(context.Background())
+	if err != nil {
+		t.Fatalf("FinalizeRecovery: %v", err)
+	}
+	if result.Status != "committed" || result.Commit == "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("finalized deletion restored page: %v", err)
+	}
+}
+
 func TestRecoveryFinalizeAfterInjectedGitCommit(t *testing.T) {
 	repo := transactionTestRepository(t)
 	service := core.NewService(repo)
@@ -1232,4 +1459,13 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func containsValue(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }

@@ -144,10 +144,15 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 		return result, apiErr
 	}
 	overlayFiles := make(map[string][]byte, len(artifacts.Proposal.Operations))
+	deletedPaths := make([]string, 0)
 	for index, operation := range artifacts.Proposal.Operations {
+		if operation.Deleted {
+			deletedPaths = append(deletedPaths, operation.Path)
+			continue
+		}
 		overlayFiles[operation.Path] = artifacts.Contents[index]
 	}
-	view, err := repository.NewOverlayView(s.Repo, nil, overlayFiles)
+	view, err := repository.NewOverlayViewWithDeletions(s.Repo, nil, overlayFiles, deletedPaths)
 	if err != nil {
 		return result, transactionRuntimeError("overlay_failed", "could not rebuild the prospective repository", err)
 	}
@@ -195,13 +200,19 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 	}
 
 	for index, operation := range artifacts.Proposal.Operations {
-		if err := s.Repo.AtomicApply(
-			operation.Path,
-			artifacts.Contents[index],
-			originals[index],
-			originalExists[index],
-		); err != nil {
-			return s.rollbackCommitFailure(ctx, store, recoveryStore, artifacts, journal, originals, "file_apply_failed", "could not apply all transaction files", err)
+		var applyErr error
+		if operation.Deleted {
+			applyErr = s.Repo.RemoveExpected(operation.Path, originals[index])
+		} else {
+			applyErr = s.Repo.AtomicApply(
+				operation.Path,
+				artifacts.Contents[index],
+				originals[index],
+				originalExists[index],
+			)
+		}
+		if applyErr != nil {
+			return s.rollbackCommitFailure(ctx, store, recoveryStore, artifacts, journal, originals, "file_apply_failed", "could not apply all transaction files", applyErr)
 		}
 		if s.TxHooks != nil {
 			if err := s.TxHooks.AfterFileRename(index, operation.Path); err != nil {
@@ -358,7 +369,7 @@ func (s *Service) verifyCommitTargets(artifacts transaction.Artifacts) ([][]byte
 		}
 		originals[index] = original
 		exists[index] = true
-		changes[index] = diff.Change{Path: operation.Path, Original: original, Result: artifacts.Contents[index]}
+		changes[index] = diff.Change{Path: operation.Path, Original: original, Result: artifacts.Contents[index], Deleted: operation.Deleted}
 	}
 	return originals, exists, changes, nil
 }
@@ -376,9 +387,18 @@ func (s *Service) verifyCreatedCommit(ctx context.Context, artifacts transaction
 		return apiErr
 	}
 	for index, operation := range artifacts.Proposal.Operations {
-		blob, err := s.TxGit.BlobAtCommit(ctx, s.Repo.Root, commitHash, operation.Path)
+		blob, exists, err := s.TxGit.BlobAtCommitOptional(ctx, s.Repo.Root, commitHash, operation.Path)
 		if err != nil {
 			return transactionRuntimeError("commit_verification_failed", fmt.Sprintf("could not inspect committed path %s", operation.Path), err)
+		}
+		if operation.Deleted {
+			if exists {
+				return NewError(ExitRuntime, "commit_content_mismatch", fmt.Sprintf("deleted path remains in commit: %s", operation.Path))
+			}
+			continue
+		}
+		if !exists {
+			return NewError(ExitRuntime, "commit_content_mismatch", fmt.Sprintf("committed path is absent: %s", operation.Path))
 		}
 		if !bytes.Equal(blob, artifacts.Contents[index]) {
 			return NewError(ExitRuntime, "commit_content_mismatch", fmt.Sprintf("committed bytes do not match the proposal for %s", operation.Path))
@@ -453,6 +473,16 @@ func (s *Service) restoreJournalFiles(journal recovery.Journal, originals [][]by
 				return fmt.Errorf("remove created path %s: %w", file.Path, err)
 			}
 			continue
+		}
+		if file.ResultingAbsent {
+			if _, err := os.Lstat(absolute); errors.Is(err, fs.ErrNotExist) {
+				if err := s.Repo.AtomicApply(file.Path, originals[index], nil, false); err != nil {
+					return fmt.Errorf("restore deleted path %s: %w", file.Path, err)
+				}
+				continue
+			} else if err != nil {
+				return fmt.Errorf("inspect deleted path %s: %w", file.Path, err)
+			}
 		}
 		current, apiErr := readRegularTarget(absolute, file.Path)
 		if apiErr != nil {

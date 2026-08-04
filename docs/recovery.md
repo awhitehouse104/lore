@@ -54,6 +54,7 @@ every target:
 - an updated target must equal either its recorded original SHA-256 or recorded
   Lore result;
 - a created target must be absent or equal the recorded Lore result;
+- a deleted target must equal its recorded original or be absent as proposed;
 - paths must still be contained, regular, and non-symlink.
 
 Any unexpected edit returns conflict exit code 4, preserves that edit, retains
@@ -62,7 +63,8 @@ journal before retrying.
 
 After a successful preflight, Lore clears only transaction paths from the Git
 index, restores exact originals in reverse order, removes exact Lore-created
-files, runs lint, marks the transaction `failed`, and removes the journal.
+files, recreates exact Lore-deleted files, runs lint, marks the transaction
+`failed`, and removes the journal.
 Unrelated staged and unstaged changes remain untouched.
 
 Rollback refuses when Git already contains the exact transaction commit, even
@@ -79,7 +81,8 @@ that one direct child of the preview base commit:
 
 - is reachable from the recorded preview branch;
 - changes every and only the recorded paths;
-- contains a blob at each path whose SHA-256 equals the recorded result.
+- contains a blob at each present-result path whose SHA-256 equals the recorded
+  result and no blob at each absent-result deletion path.
 
 It then records the full commit hash and Git commit time in transaction state,
 advances the journal through `git_committed` and `finalized` as necessary, and

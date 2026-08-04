@@ -42,14 +42,19 @@ func (v FilesystemView) Stat(relative string) (fs.FileInfo, error) {
 	return os.Stat(absolute)
 }
 
-// OverlayView exposes exact replacement or newly-created bytes over a base
-// view. v0.2 transactions do not delete or rename documents.
+// OverlayView exposes exact replacement, creation, or deletion over a base
+// view without mutating the authoritative filesystem.
 type OverlayView struct {
-	base  View
-	files map[string][]byte
+	base    View
+	files   map[string][]byte
+	deleted map[string]struct{}
 }
 
 func NewOverlayView(repo *Repository, base View, files map[string][]byte) (*OverlayView, error) {
+	return NewOverlayViewWithDeletions(repo, base, files, nil)
+}
+
+func NewOverlayViewWithDeletions(repo *Repository, base View, files map[string][]byte, deleted []string) (*OverlayView, error) {
 	if base == nil {
 		base = FilesystemView{Repository: repo}
 	}
@@ -61,7 +66,18 @@ func NewOverlayView(repo *Repository, base View, files map[string][]byte) (*Over
 		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
 		copied[clean] = append([]byte(nil), data...)
 	}
-	return &OverlayView{base: base, files: copied}, nil
+	removed := make(map[string]struct{}, len(deleted))
+	for _, path := range deleted {
+		if _, err := repo.SafeContentPath(path); err != nil {
+			return nil, fmt.Errorf("deleted overlay path %s: %w", path, err)
+		}
+		clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+		if _, exists := copied[clean]; exists {
+			return nil, fmt.Errorf("overlay path %s cannot have both content and deletion", path)
+		}
+		removed[clean] = struct{}{}
+	}
+	return &OverlayView{base: base, files: copied, deleted: removed}, nil
 }
 
 func (v *OverlayView) ManagedMarkdown() ([]string, []WalkIssue, error) {
@@ -71,6 +87,9 @@ func (v *OverlayView) ManagedMarkdown() ([]string, []WalkIssue, error) {
 	}
 	set := make(map[string]struct{}, len(paths)+len(v.files))
 	for _, path := range paths {
+		if _, deleted := v.deleted[path]; deleted {
+			continue
+		}
 		set[path] = struct{}{}
 	}
 	for path := range v.files {
@@ -88,6 +107,9 @@ func (v *OverlayView) ManagedMarkdown() ([]string, []WalkIssue, error) {
 
 func (v *OverlayView) ReadFile(relative string) ([]byte, error) {
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	if _, deleted := v.deleted[clean]; deleted {
+		return nil, &fs.PathError{Op: "read", Path: clean, Err: fs.ErrNotExist}
+	}
 	if data, exists := v.files[clean]; exists {
 		return append([]byte(nil), data...), nil
 	}
@@ -96,6 +118,9 @@ func (v *OverlayView) ReadFile(relative string) ([]byte, error) {
 
 func (v *OverlayView) Stat(relative string) (fs.FileInfo, error) {
 	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(relative)))
+	if _, deleted := v.deleted[clean]; deleted {
+		return nil, &fs.PathError{Op: "stat", Path: clean, Err: fs.ErrNotExist}
+	}
 	if data, exists := v.files[clean]; exists {
 		return overlayFileInfo{name: filepath.Base(clean), size: int64(len(data))}, nil
 	}

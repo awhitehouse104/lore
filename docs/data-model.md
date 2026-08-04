@@ -23,9 +23,9 @@ lore-home/
 ```
 
 `pages/**` and `sources/**` are managed content roots. Capture can create only
-date-partitioned source files. Lore transactions can create or update only
-direct `pages/*.md` children and can update only `integrated_at` and
-`integrated_into` in an existing source. `system/**`, repository instructions,
+date-partitioned source files. Lore transactions can create, replace, or delete
+direct `pages/*.md` children and can update only integration metadata or
+sensitivity in an existing source. `system/**`, repository instructions,
 configuration, Git metadata, and `.lore/**` are protected from normal content
 writes.
 
@@ -83,9 +83,11 @@ Required fields:
 
 Optional fields are `origin_ref`, `tags`, `integrated_at`, and
 `integrated_into`. Tags must be non-empty strings. `integrated_at`, when
-present, is RFC 3339 UTC. `integrated_into` contains unique valid page IDs.
-Lore writes it as a sorted union and lint warns, rather than errors, when a
-referenced page no longer exists.
+present, is RFC 3339 UTC. `integrated_into` contains unique syntactically valid
+page IDs. Lore writes it as a sorted, additive historical union. An ID may
+legitimately outlive its current synthesized page, so lint does not require it
+to resolve and structural maintenance does not remove it. A successor page ID
+may be added while retaining the historical ID.
 
 The source filename ID and kind must equal its frontmatter, and its path
 year/month must equal `captured_at` in UTC. Source bodies are append-oriented
@@ -121,7 +123,7 @@ Project Foo is ...
 
 Required fields:
 
-- `id`: stable identifier matching `^page_[a-z0-9][a-z0-9_]*$`
+- `id`: current identifier matching `^page_[a-z0-9][a-z0-9_]*$`
 - `title`: non-empty title
 - `kind`: token matching `^[a-z][a-z0-9_-]*$`
 - `created` and `updated`: ISO `YYYY-MM-DD`, with `updated` not before `created`
@@ -131,11 +133,19 @@ Required fields:
 Optional `aliases` and `tags` are lists of non-empty strings. Page titles and aliases may not identify more than one page case-insensitively.
 
 Transaction page creation and update always use a complete proposed document;
-Lore does not merge. Page `id` and `created` are immutable during update.
-`updated` cannot regress, and a change outside that field requires an
-`updated` date at least as recent as the current UTC calendar date. If a client
-is still on the preceding local calendar date, the MCP `updated_too_old` error
-reports Lore's required UTC `minimum` date.
+Lore does not merge. A revision-guarded update may change a page's ID, title,
+kind, status, sensitivity, aliases, tags, and body. `created` remains immutable,
+`updated` cannot regress, and a change outside that field requires an `updated`
+date at least as recent as the current UTC calendar date. If a client is still
+on the preceding local calendar date, the MCP `updated_too_old` error reports
+Lore's required UTC `minimum` date.
+
+A page path move is composed atomically from `create_page` for the replacement,
+revision-guarded updates to every live page backlink, optional additive source
+integration entries, and `delete_page` for the old path. A same-path rekey uses
+`update_page`. There is no automatic backlink rewriting: the complete preview
+shows the exact proposed organization, and prospective lint rejects a broken
+live page link before a transaction can be committed.
 
 ## Modeling conventions
 
@@ -168,10 +178,18 @@ date required by page `updated` validation.
 
 ## Links, references, and revisions
 
-Relative inline Markdown links and reference definitions are checked from the
-containing document. Repository escapes and missing targets are lint errors.
-External schemes and pure anchors are not resolved; anchors within local files
-are not validated in v0.4.
+Relative inline Markdown links and reference definitions in synthesized pages
+are checked from the containing document. Repository escapes and missing
+targets are lint errors. Links inside immutable source bodies are historical
+evidence: they are discoverable as source mentions but are not rewritten or
+required to resolve against the current page tree. External schemes and pure
+anchors are not resolved; anchors within local files are not validated.
+
+`lore references` and MCP `lore_page_references` resolve an authorized current
+page and return three separately labeled sets: live synthesized-page backlinks,
+historical source-body mentions, and source `integrated_into` records. Use that
+inventory before changing a page path or ID, consolidating pages, or deleting a
+page.
 
 Read references resolve in this priority:
 
@@ -236,8 +254,9 @@ never canonical knowledge:
 
 Transaction proposals are immutable typed JSON with a trailing newline. The
 preview digest is SHA-256 over those exact bytes. The proposal records hashes
-for the diff, lint report, and each exact resulting document. Lifecycle states
-are `previewed`, `applying`, `committed`, `discarded`, `failed`, and
+for the diff, lint report, and each exact resulting document. A delete records
+an explicit absent result and has no resulting-content artifact. Lifecycle
+states are `previewed`, `applying`, `committed`, `discarded`, `failed`, and
 `recovery_required`; invalid transitions are integrity errors.
 
 `retention.json` is optional and exists only for a committed transaction whose

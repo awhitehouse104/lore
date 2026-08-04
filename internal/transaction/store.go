@@ -90,7 +90,14 @@ func (s *Store) Save(artifacts Artifacts) (string, error) {
 		return "", fmt.Errorf("content artifact count does not match proposal operations")
 	}
 	for index, content := range artifacts.Contents {
-		if Digest(content) != artifacts.Proposal.Operations[index].ResultingContentSHA256 {
+		operation := artifacts.Proposal.Operations[index]
+		if operation.Deleted {
+			if content != nil {
+				return "", fmt.Errorf("deleted operation %d must not have a content artifact", index)
+			}
+			continue
+		}
+		if Digest(content) != operation.ResultingContentSHA256 {
 			return "", fmt.Errorf("content artifact %d hash does not match proposal", index)
 		}
 	}
@@ -128,6 +135,9 @@ func (s *Store) Save(artifacts Artifacts) (string, error) {
 		{filepath.Join(temp, "lint.json"), artifacts.Lint},
 	}
 	for index, content := range artifacts.Contents {
+		if artifacts.Proposal.Operations[index].Deleted {
+			continue
+		}
 		files = append(files, struct {
 			path string
 			data []byte
@@ -201,6 +211,9 @@ func (s *Store) Load(transactionID string) (Artifacts, error) {
 		return Artifacts{}, fmt.Errorf("content artifact path is not a regular directory")
 	}
 	for index, operation := range receipt.Proposal.Operations {
+		if operation.Deleted {
+			continue
+		}
 		content, readErr := readBounded(filepath.Join(dir, filepath.FromSlash(operation.ContentFile)), maxArtifactBytes)
 		if readErr != nil {
 			return Artifacts{}, fmt.Errorf("read content artifact %d: %w", index, readErr)
@@ -454,6 +467,9 @@ func retentionManifest(artifacts Artifacts) []RetentionArtifact {
 		},
 	)
 	for index, content := range artifacts.Contents {
+		if artifacts.Proposal.Operations[index].Deleted {
+			continue
+		}
 		manifest = append(manifest, RetentionArtifact{
 			Path:   artifacts.Proposal.Operations[index].ContentFile,
 			SHA256: artifacts.Proposal.Operations[index].ResultingContentSHA256,
@@ -552,6 +568,9 @@ func validateContentLayout(dir string, retention *RetentionReceipt, proposal *Pr
 		}
 	} else if proposal != nil {
 		for _, operation := range proposal.Operations {
+			if operation.Deleted {
+				continue
+			}
 			expected[filepath.Base(operation.ContentFile)] = false
 		}
 	}

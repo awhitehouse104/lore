@@ -44,7 +44,12 @@ const serverInstructions = "Use the configured Lore Markdown repository as evide
 	"self-contained verbatim source unit before synthesis; preserve enough context for approvals " +
 	"and relative temporal statements without inventing missing context. Every capture requires an " +
 	"explicit normal, sensitive, or local-only classification. Store shared facts once " +
-	"on the narrowest shared subject page and link entity pages to it. Resolve relative dates only " +
+	"on the narrowest shared subject page and link entity pages to it. Treat synthesized pages as a " +
+	"living current view: proactively retitle, rekey, reorganize, consolidate, split, or delete them " +
+	"when that improves the repository. Before a structural page change, inspect page references and " +
+	"repair every live synthesized-page backlink in the same transaction. Immutable source-body links " +
+	"and source integration IDs are historical evidence: do not rewrite or remove them merely because " +
+	"a page moves or disappears; add a successor integration ID when useful. Resolve relative dates only " +
 	"when capture time and context make the intended date clear, and identify the resolution as an " +
 	"inference. " +
 	"Use a known user timezone for human-facing dates and time-sensitive matters, preserve explicit " +
@@ -126,6 +131,7 @@ func (s *Server) addTools() {
 	if s.principal.Has(auth.PermissionQuery) {
 		mcp.AddTool(s.mcp, searchTool(), s.search)
 		mcp.AddTool(s.mcp, readTool(), s.read)
+		mcp.AddTool(s.mcp, pageReferencesTool(), s.pageReferences)
 	}
 	if s.principal.Has(auth.PermissionHistory) {
 		mcp.AddTool(s.mcp, recentTool(), s.recent)
@@ -246,6 +252,37 @@ func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInp
 		Content:       result.Content,
 	}
 	summary := fmt.Sprintf("Read %s lines %d-%d (%s).", output.ID, output.LineStart, output.LineEnd, output.Revision)
+	return textResult(summary), output, nil
+}
+
+func (s *Server) pageReferences(ctx context.Context, _ *mcp.CallToolRequest, input PageReferencesInput) (*mcp.CallToolResult, PageReferencesOutput, error) {
+	requestID := requestID(ctx)
+	if callResult, toolErr := s.requirePermission(auth.PermissionQuery, requestID); toolErr != nil {
+		return callResult, PageReferencesOutput{}, toolErr
+	}
+	result, err := s.service.PageReferencesAuthorized(ctx, input.Ref, s.principal.AccessPolicy())
+	if err != nil {
+		callResult, toolErr := mappedToolError(err, requestID)
+		return callResult, PageReferencesOutput{}, toolErr
+	}
+	output := PageReferencesOutput{
+		SchemaVersion:            schemaVersion,
+		Status:                   "ok",
+		RequestID:                requestID,
+		Operation:                "lore_page_references",
+		Target:                   result.Target,
+		LiveBacklinks:            result.LiveBacklinks,
+		HistoricalSourceMentions: result.HistoricalSourceMentions,
+		SourceIntegrations:       result.SourceIntegrations,
+		Warnings:                 safeSearchWarnings(result.Warnings),
+	}
+	summary := fmt.Sprintf(
+		"Found %d live backlink(s), %d historical source mention(s), and %d source integration record(s) for %s.",
+		len(output.LiveBacklinks),
+		len(output.HistoricalSourceMentions),
+		len(output.SourceIntegrations),
+		output.Target.ID,
+	)
 	return textResult(summary), output, nil
 }
 
@@ -824,6 +861,21 @@ func readTool() *mcp.Tool {
 	}
 }
 
+func pageReferencesTool() *mcp.Tool {
+	return &mcp.Tool{
+		Name:        "lore_page_references",
+		Title:       "Inspect Lore page references",
+		Description: "List authorized live page backlinks, immutable historical source mentions, and source integration records for one synthesized page.",
+		Annotations: readOnlyAnnotations("Inspect Lore page references"),
+		InputSchema: objectSchema(
+			[]string{"ref"},
+			map[string]any{
+				"ref": map[string]any{"type": "string", "minLength": 1, "maxLength": 2048},
+			},
+		),
+	}
+}
+
 func recentTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "lore_recent",
@@ -897,7 +949,7 @@ func previewTool() *mcp.Tool {
 					"minItems": 1,
 					"maxItems": transaction.MaxOperations,
 					"items": map[string]any{
-						"oneOf": []any{createPageOperationSchema(), updatePageOperationSchema(), integrateSourceOperationSchema(), setSourceSensitivityOperationSchema()},
+						"oneOf": []any{createPageOperationSchema(), updatePageOperationSchema(), deletePageOperationSchema(), integrateSourceOperationSchema(), setSourceSensitivityOperationSchema()},
 					},
 				},
 			},
@@ -997,6 +1049,17 @@ func updatePageOperationSchema() map[string]any {
 			"path":              pagePathSchema(),
 			"expected_revision": map[string]any{"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`},
 			"content":           map[string]any{"type": "string", "maxLength": transaction.MaxTotalNewContent},
+		},
+	)
+}
+
+func deletePageOperationSchema() map[string]any {
+	return objectSchema(
+		[]string{"op", "path", "expected_revision"},
+		map[string]any{
+			"op":                map[string]any{"type": "string", "const": string(transaction.OperationDeletePage)},
+			"path":              pagePathSchema(),
+			"expected_revision": map[string]any{"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`},
 		},
 	)
 }

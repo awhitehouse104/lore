@@ -37,7 +37,8 @@ type File struct {
 	OriginalExists    bool   `json:"original_exists"`
 	OriginalRevision  string `json:"original_revision,omitempty"`
 	OriginalContent   string `json:"original_content,omitempty"`
-	ResultingRevision string `json:"resulting_revision"`
+	ResultingRevision string `json:"resulting_revision,omitempty"`
+	ResultingAbsent   bool   `json:"resulting_absent,omitempty"`
 	Applied           bool   `json:"applied"`
 }
 
@@ -98,6 +99,7 @@ func NewJournal(proposal transaction.Proposal, previewDigest string, originals [
 			Path:              operation.Path,
 			OriginalExists:    originalExists[index],
 			ResultingRevision: operation.ResultingContentSHA256,
+			ResultingAbsent:   operation.Deleted,
 		}
 		if originalExists[index] {
 			entry.OriginalRevision = docs.Revision(originals[index])
@@ -332,7 +334,14 @@ func Validate(journal Journal) error {
 		if _, err := repositoryPath(file.Path); err != nil {
 			return err
 		}
-		if err := transaction.ValidateRevision(file.ResultingRevision); err != nil {
+		if file.ResultingAbsent {
+			if file.ResultingRevision != "" {
+				return fmt.Errorf("absent result for %s must not have a revision", file.Path)
+			}
+			if !file.OriginalExists {
+				return fmt.Errorf("absent result for %s requires an existing original", file.Path)
+			}
+		} else if err := transaction.ValidateRevision(file.ResultingRevision); err != nil {
 			return fmt.Errorf("invalid resulting revision for %s", file.Path)
 		}
 		if file.OriginalExists {

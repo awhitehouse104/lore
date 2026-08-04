@@ -7,6 +7,25 @@ Milestones 1–5 and the complete release matrix are finished.
 
 ## Post-v0.4 maintenance
 
+- **Living-page structural maintenance:** completed 2026-08-04. Synthesized
+  pages can now be revision-guarded deletions or change IDs during whole-page
+  updates. Page moves, consolidation, splits, and replacements compose from
+  generic create/update/delete operations inside the existing atomic
+  preview/digest/commit/recovery contract. New CLI `lore references` and MCP
+  `lore_page_references` return authorization-filtered live page backlinks,
+  immutable historical source-body mentions, and additive source-integration
+  records. Prospective lint requires live synthesized-page backlinks to be
+  repaired in the same transaction, while raw source links and historical
+  `integrated_into` IDs never block later reorganization. Delete-aware artifact
+  storage, diffs, recovery rollback/finalization, Git verification, pruning,
+  index refresh, and permission checks preserve the existing safety model.
+  Generated operating rules and MCP initialization instructions now describe
+  pages as a living current view and explicitly guide structural maintenance.
+  Focused end-to-end tests cover an atomic recipe reorganization, broken-live-
+  backlink rejection, source-history preservation, rekeying, crash recovery,
+  pruning, CLI/MCP adapters, and authorization masking.
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all pass.
 - **Review backlog item 1 — deterministic MCP test clock:** completed
   2026-07-30. The shared MCP integration fixture now uses an explicit fixed UTC
   clock aligned with its dated documents, removing a wall-clock-dependent

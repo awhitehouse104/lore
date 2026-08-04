@@ -71,6 +71,22 @@ type ReadOutput struct {
 	Content       string `json:"content"`
 }
 
+type PageReferencesInput struct {
+	Ref string `json:"ref"`
+}
+
+type PageReferencesOutput struct {
+	SchemaVersion            int                               `json:"schema_version"`
+	Status                   string                            `json:"status"`
+	RequestID                string                            `json:"request_id"`
+	Operation                string                            `json:"operation"`
+	Target                   core.PageReferenceTarget          `json:"target"`
+	LiveBacklinks            []core.LinkReference              `json:"live_backlinks"`
+	HistoricalSourceMentions []core.LinkReference              `json:"historical_source_mentions"`
+	SourceIntegrations       []core.SourceIntegrationReference `json:"source_integrations"`
+	Warnings                 []catalog.Warning                 `json:"warnings"`
+}
+
 type RecentInput struct {
 	Limit int    `json:"limit,omitempty"`
 	Since string `json:"since,omitempty"`

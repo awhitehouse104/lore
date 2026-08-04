@@ -165,7 +165,7 @@ Tool discovery is filtered by permission, and every invocation checks again:
 
 | Permission | Capabilities |
 |---|---|
-| `query` | `lore_search`, `lore_read`, page resources, page/source resource templates |
+| `query` | `lore_search`, `lore_read`, `lore_page_references`, page resources, page/source resource templates |
 | `capture` | `lore_capture` |
 | `curate` | `lore_preview`, `lore_commit`, transaction list/show/discard |
 | `inspect` | `lore_lint`, `lore_index_status` |
@@ -206,6 +206,20 @@ eligible terms absent from the principal's already-filtered vocabulary;
 `lexical` disables expansion and `fuzzy` requests the broader explicit mode.
 Search output reports `matching` and `fuzzy_expanded`, and fuzzy results include
 the query term, matched document term, and edit distance.
+
+`lore_page_references` resolves an authorized current page and returns three
+separate inventories: live backlinks from synthesized pages, historical links
+inside immutable source bodies, and source `integrated_into` records. Use it
+before changing a page path or ID, consolidating pages, or deleting a page.
+Repair all live backlinks in the same preview. Historical source links are not
+rewritten or required to resolve, and integration IDs remain as an additive
+historical ledger; add a successor ID when useful.
+
+`lore_preview` supports revision-guarded `delete_page` operations alongside
+page creates and updates. Page updates may change the ID but not `created`.
+Moving a path is one atomic preview containing the replacement create, live
+backlink updates, optional source-integration additions, and deletion of the
+old path. Prospective lint rejects broken live page links before commit.
 
 An MCP agent should use a bounded retrieval loop:
 

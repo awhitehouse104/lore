@@ -93,7 +93,11 @@ lore --repo "$HOME/lore-home" commit tx_01ARZ3NDEKTSV4RRFFQ69G5FAV \
   --preview-digest sha256:0123456789abcdef... --json
 ```
 
-The request can create or update direct children of `pages/` and can mark existing sources as integrated. Preview never changes canonical files or Git. A changed branch, HEAD, target revision, target Git status, artifact, or digest is a conflict; re-read the current documents and make a new preview rather than forcing it.
+The request can create, update, or delete direct children of `pages/` and can
+update supported source metadata. Preview never changes canonical files or
+Git. A changed branch, HEAD, target revision, target Git status, artifact, or
+digest is a conflict; re-read the current documents and make a new preview
+rather than forcing it.
 
 ## Commands
 
@@ -171,6 +175,19 @@ lore --repo PATH read page_project_foo --lines 10:40 --json
 
 A reference may be an exact managed path, document ID, filename stem, page title, or page alias, in that priority order. Ambiguous references fail with candidate paths. Human-mode content is written unchanged to stdout; its identifying header goes to stderr.
 
+### Page references
+
+```bash
+lore --repo PATH references page_project_foo
+lore --repo PATH references pages/project-foo.md --json
+```
+
+Reference discovery separates live backlinks in synthesized pages from
+historical links in immutable source bodies and additive source-integration
+records. Inspect it before changing a page path or ID, consolidating pages, or
+deleting a page. Structural maintenance belongs in one atomic preview that
+repairs every live page backlink; historical source links remain exact.
+
 ### Lint
 
 ```bash
@@ -179,8 +196,8 @@ lore --repo PATH lint --json
 ```
 
 Lint validates configuration, structure, UTF-8, frontmatter, global IDs,
-page-name ambiguity, source hashes and paths, relative Markdown links, and
-selected Git state. It also warns when an existing derived index is unhealthy,
+page-name ambiguity, source hashes and paths, synthesized-page relative
+Markdown links, and selected Git state. It also warns when an existing derived index is unhealthy,
 tracked, symlinked, or too broadly readable. Derived warnings do not invalidate
 otherwise-valid canonical Markdown. Findings are deterministic. Errors return
 exit code 1; warnings do not.
@@ -213,8 +230,8 @@ Inspection verifies stored hashes before returning metadata. Discard is allowed 
 
 Prune is an explicit local maintenance operation for old committed
 transactions. It proves that each commit remains reachable with the exact
-recorded paths and bytes, then removes content, diff, and full lint payloads
-while retaining proposal, state, and retention receipts. Start with
+recorded paths and present bytes or absent deletions, then removes content,
+diff, and full lint payloads while retaining proposal, state, and retention receipts. Start with
 `--dry-run`; there is no repository-configured automatic retention policy.
 
 ### Recovery
@@ -357,10 +374,10 @@ Git can retain deleted content indefinitely, and an MCP client/model is a
 separate disclosure boundary. Read [the security guide](docs/security.md)
 before storing sensitive material.
 
-## v0.4 limitations
+## Current limitations
 
-Lore v0.4 intentionally has no semantic/vector search, authoritative database,
-arbitrary file-write command, page delete/rename, source-body edit, automatic
+Lore intentionally has no semantic/vector search, authoritative database,
+arbitrary file-write command, source-body edit, automatic
 synthesis, URL fetching, import pipeline, web interface, server-side LLM call,
 OAuth provider, multi-repository routing, encryption, secret manager, or
 automatic transaction-retention policy. The HTTP gateway has configured
@@ -368,8 +385,11 @@ principals, not a general multi-user account system. Hosted ChatGPT
 availability is not promised because its networking, authentication,
 connector, and workspace support are independent of Lore.
 
-Transaction artifacts and the search index are derived state and can contain
-private document bytes. Use explicit transaction pruning to compact old
+There is no single-purpose rename command. Page reorganization uses the generic
+atomic transaction primitives: create or rekey a replacement, update live
+backlinks, optionally add successor source-integration IDs, and delete the old
+page. Transaction artifacts and the search index are derived state and can
+contain private document bytes. Use explicit transaction pruning to compact old
 committed payloads; it is not secure erasure and does not alter Git or backups.
 Markdown and Git remain authoritative. See the [v0.4 release
 notes](docs/release-notes-v0.4.0.md), [MCP guide](docs/mcp.md), and

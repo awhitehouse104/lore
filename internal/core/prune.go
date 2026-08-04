@@ -272,7 +272,7 @@ func (s *Service) verifyPrunableCommit(
 		return apiErr
 	}
 	for _, operation := range inspection.Proposal.Operations {
-		blob, err := s.TxGit.BlobAtCommit(ctx, s.Repo.Root, inspection.State.Commit, operation.Path)
+		blob, exists, err := s.TxGit.BlobAtCommitOptional(ctx, s.Repo.Root, inspection.State.Commit, operation.Path)
 		if err != nil {
 			return transactionRuntimeError(
 				"git_history_verification_failed",
@@ -280,21 +280,34 @@ func (s *Service) verifyPrunableCommit(
 				err,
 			)
 		}
-		if !transaction.DigestEqual(docs.SHA256(blob), operation.ResultingContentSHA256) {
-			apiErr := NewError(
-				ExitConflict,
-				"transaction_commit_mismatch",
-				fmt.Sprintf("transaction %s committed bytes no longer match its receipt", inspection.State.TransactionID),
-			)
-			apiErr.Details = map[string]any{
-				"transaction_id": inspection.State.TransactionID,
-				"commit":         inspection.State.Commit,
-				"path":           operation.Path,
+		if operation.Deleted {
+			if exists {
+				return transactionCommitMismatch(inspection, operation.Path)
 			}
-			return apiErr
+			continue
+		}
+		if !exists {
+			return transactionCommitMismatch(inspection, operation.Path)
+		}
+		if !transaction.DigestEqual(docs.SHA256(blob), operation.ResultingContentSHA256) {
+			return transactionCommitMismatch(inspection, operation.Path)
 		}
 	}
 	return nil
+}
+
+func transactionCommitMismatch(inspection transaction.PruneInspection, path string) *APIError {
+	apiErr := NewError(
+		ExitConflict,
+		"transaction_commit_mismatch",
+		fmt.Sprintf("transaction %s committed result no longer matches its receipt", inspection.State.TransactionID),
+	)
+	apiErr.Details = map[string]any{
+		"transaction_id": inspection.State.TransactionID,
+		"commit":         inspection.State.Commit,
+		"path":           path,
+	}
+	return apiErr
 }
 
 func pruneItem(inspection transaction.PruneInspection) TransactionPruneItem {

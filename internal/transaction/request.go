@@ -27,6 +27,7 @@ type OperationKind string
 const (
 	OperationCreatePage           OperationKind = "create_page"
 	OperationUpdatePage           OperationKind = "update_page"
+	OperationDeletePage           OperationKind = "delete_page"
 	OperationMarkSourceIntegrated OperationKind = "mark_source_integrated"
 	OperationSetSourceSensitivity OperationKind = "set_source_sensitivity"
 )
@@ -64,6 +65,12 @@ type updatePageWire struct {
 	Path             string        `json:"path"`
 	ExpectedRevision string        `json:"expected_revision"`
 	Content          *string       `json:"content"`
+}
+
+type deletePageWire struct {
+	Op               OperationKind `json:"op"`
+	Path             string        `json:"path"`
+	ExpectedRevision string        `json:"expected_revision"`
 }
 
 type markSourceWire struct {
@@ -253,6 +260,22 @@ func decodeOperation(raw []byte) (Operation, error) {
 			ExpectedRevision: wire.ExpectedRevision,
 			Content:          *wire.Content,
 		}, nil
+	case OperationDeletePage:
+		var wire deletePageWire
+		if err := decodeStrict(raw, &wire); err != nil {
+			return Operation{}, fmt.Errorf("decode delete_page: %w", err)
+		}
+		if err := ValidatePagePath(wire.Path); err != nil {
+			return Operation{}, err
+		}
+		if err := ValidateRevision(wire.ExpectedRevision); err != nil {
+			return Operation{}, err
+		}
+		return Operation{
+			Op:               wire.Op,
+			Path:             wire.Path,
+			ExpectedRevision: wire.ExpectedRevision,
+		}, nil
 	case OperationMarkSourceIntegrated:
 		var wire markSourceWire
 		if err := decodeStrict(raw, &wire); err != nil {
@@ -305,7 +328,7 @@ func decodeOperation(raw []byte) (Operation, error) {
 			AllowDowngrade:   wire.AllowDowngrade,
 		}, nil
 	default:
-		return Operation{}, fmt.Errorf("op must be create_page, update_page, mark_source_integrated, or set_source_sensitivity")
+		return Operation{}, fmt.Errorf("op must be create_page, update_page, delete_page, mark_source_integrated, or set_source_sensitivity")
 	}
 }
 

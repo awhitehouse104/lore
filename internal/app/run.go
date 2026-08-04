@@ -53,6 +53,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runCapture(ctx, remaining[1:], global, s)
 	case "read":
 		return runRead(ctx, remaining[1:], global, s)
+	case "references":
+		return runReferences(ctx, remaining[1:], global, s)
 	case "search":
 		return runSearch(ctx, remaining[1:], global, s)
 	case "recent":
@@ -419,6 +421,92 @@ func parseReadFlags(args []string, flags *readFlags, help io.Writer) (bool, *cor
 	}
 	if flags.reference == "" {
 		return false, core.NewError(core.ExitUsage, "reference_required", "lore read requires a reference")
+	}
+	return false, nil
+}
+
+type referencesFlags struct {
+	repo      string
+	json      bool
+	reference string
+}
+
+func runReferences(ctx context.Context, args []string, global globalOptions, s streams) int {
+	flags := referencesFlags{repo: global.repo, json: global.json || hasFlag(args, "--json")}
+	if help, apiErr := parseReferencesFlags(args, &flags, s.out); help {
+		return core.ExitOK
+	} else if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	repo, apiErr := openRepository(flags.repo)
+	if apiErr != nil {
+		return emitError(s, flags.json, apiErr)
+	}
+	result, err := core.NewService(repo).PageReferences(ctx, flags.reference)
+	if err != nil {
+		return emitOperationError(s, flags.json, err)
+	}
+	if flags.json {
+		if err := output.JSON(s.out, result); err != nil {
+			return emitOperationError(s, false, fmt.Errorf("write references output: %w", err))
+		}
+		return core.ExitOK
+	}
+	fmt.Fprintf(s.out, "%s  %s  %s\n", result.Target.Path, result.Target.ID, result.Target.Revision)
+	fmt.Fprintln(s.out, "\nLive backlinks:")
+	if len(result.LiveBacklinks) == 0 {
+		fmt.Fprintln(s.out, "  none")
+	}
+	for _, reference := range result.LiveBacklinks {
+		fmt.Fprintf(s.out, "  %s:%d  %s  %s\n", reference.Path, reference.Line, reference.ID, reference.Destination)
+	}
+	fmt.Fprintln(s.out, "\nHistorical source mentions:")
+	if len(result.HistoricalSourceMentions) == 0 {
+		fmt.Fprintln(s.out, "  none")
+	}
+	for _, reference := range result.HistoricalSourceMentions {
+		fmt.Fprintf(s.out, "  %s:%d  %s  %s\n", reference.Path, reference.Line, reference.ID, reference.Destination)
+	}
+	fmt.Fprintln(s.out, "\nSource integrations:")
+	if len(result.SourceIntegrations) == 0 {
+		fmt.Fprintln(s.out, "  none")
+	}
+	for _, reference := range result.SourceIntegrations {
+		fmt.Fprintf(s.out, "  %s:%d  %s\n", reference.Path, reference.Line, reference.ID)
+	}
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(s.err, "warning: %s: %s\n", warning.Path, warning.Message)
+	}
+	return core.ExitOK
+}
+
+func parseReferencesFlags(args []string, flags *referencesFlags, help io.Writer) (bool, *core.APIError) {
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case arg == "--help" || arg == "-h":
+			fmt.Fprintln(help, "Usage: lore [--repo PATH] references PAGE_REFERENCE [--json]")
+			return true, nil
+		case arg == "--json":
+			flags.json = true
+		case arg == "--repo" || strings.HasPrefix(arg, "--repo="):
+			value, next, err := flagValue(args, index, "--repo")
+			if err != nil {
+				return false, err
+			}
+			flags.repo, index = value, next
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return false, core.NewError(core.ExitUsage, "unknown_flag", fmt.Sprintf("lore references: unknown flag %q", arg))
+			}
+			if flags.reference != "" {
+				return false, core.NewError(core.ExitUsage, "unexpected_argument", "lore references accepts exactly one page reference")
+			}
+			flags.reference = arg
+		}
+	}
+	if flags.reference == "" {
+		return false, core.NewError(core.ExitUsage, "reference_required", "lore references requires a page reference")
 	}
 	return false, nil
 }
@@ -945,6 +1033,8 @@ Commands:
   capture   preserve raw source material
   search    find lexical evidence
   read      read a managed document
+  references
+            inspect live backlinks and historical source references to a page
   lint      validate repository integrity
   preview   validate and persist an exact transaction proposal
   commit    apply and Git-commit a previewed transaction

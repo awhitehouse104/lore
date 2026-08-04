@@ -294,7 +294,8 @@ func validateJournalProposal(journal recovery.Journal, artifacts transaction.Art
 	}
 	for index, operation := range proposal.Operations {
 		if operation.Path != journal.Files[index].Path ||
-			operation.ResultingContentSHA256 != journal.Files[index].ResultingRevision {
+			operation.ResultingContentSHA256 != journal.Files[index].ResultingRevision ||
+			operation.Deleted != journal.Files[index].ResultingAbsent {
 			return fmt.Errorf("journal file %d differs from proposal", index)
 		}
 	}
@@ -336,8 +337,8 @@ func (s *Service) findRecoveryCommit(ctx context.Context, journal recovery.Journ
 		}
 		exact := true
 		for _, file := range journal.Files {
-			blob, err := s.TxGit.BlobAtCommit(ctx, s.Repo.Root, candidate, file.Path)
-			if err != nil || docs.Revision(blob) != file.ResultingRevision {
+			blob, exists, err := s.TxGit.BlobAtCommitOptional(ctx, s.Repo.Root, candidate, file.Path)
+			if err != nil || file.ResultingAbsent == exists || (!file.ResultingAbsent && docs.Revision(blob) != file.ResultingRevision) {
 				exact = false
 				break
 			}
@@ -362,6 +363,9 @@ func (s *Service) preflightRecoveryRollback(journal recovery.Journal) error {
 			return err
 		}
 		info, err := os.Lstat(absolute)
+		if file.ResultingAbsent && errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if !file.OriginalExists && errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
@@ -377,7 +381,7 @@ func (s *Service) preflightRecoveryRollback(journal recovery.Journal) error {
 		}
 		revision := docs.Revision(current)
 		if file.OriginalExists {
-			if revision != file.OriginalRevision && revision != file.ResultingRevision {
+			if revision != file.OriginalRevision && (file.ResultingAbsent || revision != file.ResultingRevision) {
 				return fmt.Errorf("%s has an unexpected revision", file.Path)
 			}
 		} else if revision != file.ResultingRevision {
@@ -409,6 +413,16 @@ func (s *Service) restoreRecoveryFiles(journal recovery.Journal, originals [][]b
 				return err
 			}
 			continue
+		}
+		if file.ResultingAbsent {
+			if _, err := os.Lstat(absolute); errors.Is(err, fs.ErrNotExist) {
+				if err := s.Repo.AtomicApply(file.Path, originals[index], nil, false); err != nil {
+					return err
+				}
+				continue
+			} else if err != nil {
+				return err
+			}
 		}
 		current, err := os.ReadFile(absolute)
 		if err != nil {

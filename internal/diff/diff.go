@@ -19,6 +19,7 @@ type Change struct {
 	Original []byte
 	Result   []byte
 	Created  bool
+	Deleted  bool
 }
 
 func Generate(ctx context.Context, git Git, changes []Change) ([]byte, error) {
@@ -39,13 +40,19 @@ func Generate(ctx context.Context, git Git, changes []Change) ([]byte, error) {
 		if clean != change.Path || strings.HasPrefix(clean, "../") || filepath.IsAbs(filepath.FromSlash(clean)) {
 			return nil, fmt.Errorf("unsafe diff path %q", change.Path)
 		}
-		newRelative := filepath.Join("new", filepath.FromSlash(clean))
-		newAbsolute := filepath.Join(temp, newRelative)
-		if err := os.MkdirAll(filepath.Dir(newAbsolute), 0o700); err != nil {
-			return nil, fmt.Errorf("create diff path: %w", err)
+		if change.Created && change.Deleted {
+			return nil, fmt.Errorf("diff path %q cannot be both created and deleted", change.Path)
 		}
-		if err := os.WriteFile(newAbsolute, change.Result, 0o600); err != nil {
-			return nil, fmt.Errorf("write diff result: %w", err)
+		newRelative := "/dev/null"
+		if !change.Deleted {
+			newRelative = filepath.Join("new", filepath.FromSlash(clean))
+			newAbsolute := filepath.Join(temp, newRelative)
+			if err := os.MkdirAll(filepath.Dir(newAbsolute), 0o700); err != nil {
+				return nil, fmt.Errorf("create diff path: %w", err)
+			}
+			if err := os.WriteFile(newAbsolute, change.Result, 0o600); err != nil {
+				return nil, fmt.Errorf("write diff result: %w", err)
+			}
 		}
 		oldRelative := filepath.Join("old", filepath.FromSlash(clean))
 		if change.Created {
@@ -63,7 +70,7 @@ func Generate(ctx context.Context, git Git, changes []Change) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("generate diff for %s: %w", clean, err)
 		}
-		part = normalizeHeaders(part, clean, change.Created)
+		part = normalizeHeaders(part, clean, change.Created, change.Deleted)
 		if _, err := combined.Write(part); err != nil {
 			return nil, err
 		}
@@ -71,7 +78,7 @@ func Generate(ctx context.Context, git Git, changes []Change) ([]byte, error) {
 	return combined.Bytes(), nil
 }
 
-func normalizeHeaders(data []byte, path string, created bool) []byte {
+func normalizeHeaders(data []byte, path string, created, deleted bool) []byte {
 	lines := bytes.SplitAfter(data, []byte{'\n'})
 	for index, line := range lines {
 		switch {
@@ -84,7 +91,11 @@ func normalizeHeaders(data []byte, path string, created bool) []byte {
 				lines[index] = []byte("--- a/" + path + lineEnding(line))
 			}
 		case bytes.HasPrefix(line, []byte("+++ ")):
-			lines[index] = []byte("+++ b/" + path + lineEnding(line))
+			if deleted {
+				lines[index] = []byte("+++ /dev/null" + lineEnding(line))
+			} else {
+				lines[index] = []byte("+++ b/" + path + lineEnding(line))
+			}
 		}
 	}
 	return bytes.Join(lines, nil)

@@ -76,6 +76,41 @@ func TestOverlayViewRejectsUnsafePath(t *testing.T) {
 	}
 }
 
+func TestOverlayViewHidesDeletedFilesWithoutTouchingDisk(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	path := filepath.Join(root, "pages", "deleted.md")
+	if err := os.WriteFile(path, []byte("historical"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := repository.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := repository.NewOverlayViewWithDeletions(repo, nil, nil, []string{"pages/deleted.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := view.ReadFile("pages/deleted.md"); !os.IsNotExist(err) {
+		t.Fatalf("deleted overlay read error = %v", err)
+	}
+	if _, err := view.Stat("pages/deleted.md"); !os.IsNotExist(err) {
+		t.Fatalf("deleted overlay stat error = %v", err)
+	}
+	paths, _, err := view.ManagedMarkdown()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(paths, "pages/deleted.md") {
+		t.Fatalf("deleted path remains in prospective view: %v", paths)
+	}
+	if data, err := os.ReadFile(path); err != nil || string(data) != "historical" {
+		t.Fatalf("working tree deletion leaked from overlay: %q %v", data, err)
+	}
+}
+
 func contains(values []string, wanted string) bool {
 	for _, value := range values {
 		if value == wanted {

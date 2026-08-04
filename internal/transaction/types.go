@@ -48,8 +48,9 @@ type EffectiveOperation struct {
 	Sensitivity            string        `json:"sensitivity,omitempty"`
 	AllowDowngrade         bool          `json:"allow_downgrade,omitempty"`
 	OriginalRevision       string        `json:"original_revision,omitempty"`
-	ResultingContentSHA256 string        `json:"resulting_content_sha256"`
-	ContentFile            string        `json:"content_file"`
+	Deleted                bool          `json:"deleted,omitempty"`
+	ResultingContentSHA256 string        `json:"resulting_content_sha256,omitempty"`
+	ContentFile            string        `json:"content_file,omitempty"`
 }
 
 type Status string
@@ -171,11 +172,17 @@ func ValidateProposal(proposal Proposal) error {
 		if proposal.ChangedPaths[index] != operation.Path {
 			return fmt.Errorf("proposal changed_paths are not in operation order")
 		}
-		if err := ValidateRevision(operation.ResultingContentSHA256); err != nil {
-			return fmt.Errorf("operation %d has invalid resulting content hash", index)
-		}
-		if operation.ContentFile != fmt.Sprintf("content/%03d.md", index) {
-			return fmt.Errorf("operation %d has invalid content file", index)
+		if operation.Deleted {
+			if operation.ResultingContentSHA256 != "" || operation.ContentFile != "" {
+				return fmt.Errorf("operation %d deleted result must not have content metadata", index)
+			}
+		} else {
+			if err := ValidateRevision(operation.ResultingContentSHA256); err != nil {
+				return fmt.Errorf("operation %d has invalid resulting content hash", index)
+			}
+			if operation.ContentFile != fmt.Sprintf("content/%03d.md", index) {
+				return fmt.Errorf("operation %d has invalid content file", index)
+			}
 		}
 		switch operation.Op {
 		case OperationCreatePage:
@@ -184,6 +191,9 @@ func ValidateProposal(proposal Proposal) error {
 			}
 			if operation.OriginalRevision != "" || operation.ExpectedRevision != "" {
 				return fmt.Errorf("create_page operation must not have an original revision")
+			}
+			if operation.Deleted {
+				return fmt.Errorf("create_page operation must have resulting content")
 			}
 		case OperationUpdatePage:
 			if err := ValidatePagePath(operation.Path); err != nil {
@@ -195,6 +205,25 @@ func ValidateProposal(proposal Proposal) error {
 			if operation.OriginalRevision != operation.ExpectedRevision {
 				return fmt.Errorf("update_page original revision must equal expected revision")
 			}
+			if operation.Deleted {
+				return fmt.Errorf("update_page operation must have resulting content")
+			}
+		case OperationDeletePage:
+			if err := ValidatePagePath(operation.Path); err != nil {
+				return err
+			}
+			if err := ValidateRevision(operation.ExpectedRevision); err != nil {
+				return err
+			}
+			if operation.OriginalRevision != operation.ExpectedRevision {
+				return fmt.Errorf("delete_page original revision must equal expected revision")
+			}
+			if !operation.Deleted {
+				return fmt.Errorf("delete_page operation must have an absent result")
+			}
+			if !docs.ValidSensitivity(operation.Sensitivity) {
+				return fmt.Errorf("delete_page operation must record target sensitivity")
+			}
 		case OperationMarkSourceIntegrated:
 			if err := ValidateSourcePath(operation.Path); err != nil {
 				return err
@@ -204,6 +233,9 @@ func ValidateProposal(proposal Proposal) error {
 			}
 			if operation.OriginalRevision != operation.ExpectedRevision {
 				return fmt.Errorf("mark_source_integrated original revision must equal expected revision")
+			}
+			if operation.Deleted {
+				return fmt.Errorf("mark_source_integrated operation must have resulting content")
 			}
 		case OperationSetSourceSensitivity:
 			if err := ValidateSourcePath(operation.Path); err != nil {
@@ -217,6 +249,9 @@ func ValidateProposal(proposal Proposal) error {
 			}
 			if !docs.ValidSensitivity(operation.Sensitivity) {
 				return fmt.Errorf("set_source_sensitivity has invalid sensitivity")
+			}
+			if operation.Deleted {
+				return fmt.Errorf("set_source_sensitivity operation must have resulting content")
 			}
 		default:
 			return fmt.Errorf("operation %d has invalid kind %q", index, operation.Op)

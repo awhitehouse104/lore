@@ -197,6 +197,24 @@ Reference priority is exact path, ID, stem, page title, then page alias. A rule 
 
 Line numbers are one-indexed and inclusive. An end beyond EOF is clamped; malformed, reversed, non-positive, or start-beyond-EOF ranges are rejected. Without a range, content is returned exactly.
 
+## `references`
+
+```text
+lore references PAGE_REFERENCE [--json]
+```
+
+Resolves an existing synthesized page and inventories references visible to
+the caller. Results separate live backlinks from other synthesized pages,
+historical links in immutable source bodies, and source `integrated_into`
+records. Each entry includes its current path, ID, revision, and relevant line;
+link entries also include the exact destination.
+
+Run this before changing a page path or ID, consolidating pages, or deleting a
+page. Repair every live page backlink in the same transaction. Historical
+source-body links are evidence and are neither rewritten nor required to keep
+resolving. Source integration IDs are an additive historical ledger; add a
+successor ID when useful rather than removing the old one.
+
 ## `lint`
 
 ```text
@@ -211,8 +229,7 @@ Lint checks:
 - frontmatter presence, types, tokens, dates, enums, and IDs;
 - globally duplicate IDs and ambiguous page titles/aliases;
 - exact source body hashes, source filename metadata, and UTC date partitions;
-- inline and reference-style relative Markdown link existence and repository containment;
-- optional source `integrated_into` page references;
+- inline and reference-style relative Markdown link existence and repository containment for synthesized pages;
 - uncommitted source changes and detached Git HEAD warnings;
 - stale preview warnings and active or malformed recovery-journal state.
 - warnings for an existing stale, corrupt, incompatible, busy, or uncertified
@@ -237,6 +254,8 @@ Supported operations are:
 
 - `create_page`: `op`, direct `pages/*.md` path, and complete `content`;
 - `update_page`: the same plus the current whole-file `expected_revision`;
+- `delete_page`: `op`, an existing direct `pages/*.md` path, and its current
+  whole-file `expected_revision`;
 - `mark_source_integrated`: source `path`, `expected_revision`, and 1–50 unique
   `page_ids`;
 - `set_source_sensitivity`: source `path`, `expected_revision`, and the new
@@ -254,6 +273,11 @@ page metadata violations. A page body change must set `updated` to at least the
 current UTC calendar date. It never mutates the working tree, index, refs, or
 history. Instead it overlays the exact effective bytes in memory, runs full
 lint, and generates an uncolored unified diff with `a/` and `b/` paths.
+Revision-guarded page updates may change a page ID; only `created` remains
+immutable. Prospective lint prevents deletion or movement from leaving a broken
+link in another synthesized page. A path move is therefore composed in one
+request from a replacement create, backlink updates, optional additive source
+integration, and deletion of the old path.
 Source-sensitivity operations preserve the exact body and `raw_sha256`, retain
 unrelated frontmatter, and pass through the same authorization, preview,
 digest, lint, commit, and recovery checks as page operations.
@@ -273,15 +297,16 @@ lore commit TRANSACTION_ID \
 ```
 
 The digest is mandatory and compared in constant time. Commit re-reads and
-hash-verifies the proposal, diff, lint, and every resulting-content artifact,
-then requires the exact preview branch, HEAD, target existence/revisions, and
-clean target status. It reruns prospective lint and regenerates the exact diff
-before any write.
+hash-verifies the proposal, diff, lint, and every present-result content
+artifact, then requires the exact preview branch, HEAD, target
+existence/revisions, and clean target status. It reruns prospective lint and
+regenerates the exact diff before any write.
 
 Lore flushes an exact-original recovery journal before file application. After
 verified atomic publication, it lints the real tree, commits only transaction
 paths, and proves that the commit contains every and only those paths with the
-proposed bytes. Unrelated staged and unstaged state remains unchanged.
+proposed bytes or proposed absence. Unrelated staged and unstaged state remains
+unchanged.
 
 Changed preconditions return exit code 4; there is no force, merge,
 ignore-revision, or skip-lint option. Read current state and preview again.
@@ -356,8 +381,9 @@ The operation holds the repository write lock and refuses while any recovery
 journal is active. Before removal, it verifies every selected transaction,
 requires its recorded commit to remain reachable from a local branch, remote
 tracking ref, or tag, and proves the exact changed-path set and every committed
-blob hash. All selected transactions pass preflight before the first payload
-is removed, and each is revalidated immediately before compaction. These Git
+present-result blob hash or absent deletion. All selected transactions pass
+preflight before the first payload is removed, and each is revalidated
+immediately before compaction. These Git
 checks run while the write lock is held, so schedule pruning while writers are
 idle and start with a small `--limit` on constrained deployments.
 
@@ -399,7 +425,8 @@ without changing files when an unexpected edit exists.
 
 `--finalize` modifies no canonical content. It verifies an exact direct child
 of the preview base commit on the preview branch, the complete changed-path
-set, and every resulting blob SHA-256 before recording the committed state.
+set, and every resulting blob SHA-256 or absent deletion before recording the
+committed state.
 Lore never automatically resumes an interrupted apply. See
 [recovery.md](recovery.md).
 

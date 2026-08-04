@@ -194,12 +194,12 @@ func TestLintReportsMissingManagedDirectoryWithoutRuntimeFailure(t *testing.T) {
 	}
 }
 
-func TestLintOverlaySeesCreatedPageAndDoesNotTouchDisk(t *testing.T) {
+func TestLintTreatsSourceLinksAndIntegrationIDsAsHistorical(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
 	if _, err := initrepo.Initialize(context.Background(), initrepo.Options{Path: root, NoGit: true}, gitx.New()); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	sourceBody := []byte("source body")
+	sourceBody := []byte("Historical [page link](../../../pages/no-longer-present.md).")
 	source := docs.Source{
 		ID:             sourceID,
 		Kind:           "user_statement",
@@ -221,36 +221,18 @@ func TestLintOverlaySeesCreatedPageAndDoesNotTouchDisk(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sourceDir, sourceID+"-user_statement.md"), sourceData, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	page := []byte(`---
-id: page_new
-title: New
-kind: topic
-created: "2026-07-22"
-updated: "2026-07-22"
-status: active
-sensitivity: normal
----
-New page.
-`)
 	repo, err := repository.Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := repository.NewOverlayView(repo, nil, map[string][]byte{"pages/new.md": page})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := lint.RunView(context.Background(), repo, view, gitx.New())
+	result, err := lint.Run(context.Background(), repo, gitx.New())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, finding := range result.Findings {
-		if finding.Code == "integrated_page_missing" {
-			t.Fatalf("overlay page reported missing: %+v", result.Findings)
+		if finding.Code == "integrated_page_missing" || finding.Code == "broken_link" {
+			t.Fatalf("historical source reference constrained current pages: %+v", result.Findings)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(root, "pages", "new.md")); !os.IsNotExist(err) {
-		t.Fatalf("prospective page touched disk: %v", err)
 	}
 }
 
