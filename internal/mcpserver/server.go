@@ -40,6 +40,8 @@ type Server struct {
 }
 
 const serverInstructions = "Use the configured Lore Markdown repository as evidence-backed memory. " +
+	"At the start of a local stdio session, call lore_preflight when it is available; it performs the " +
+	"repository's safety checks, one-fetch fast-forward synchronization, and index reconciliation. " +
 	"Search and read before answering or curating. When permitted, capture a minimally " +
 	"self-contained verbatim source unit before synthesis; preserve enough context for approvals " +
 	"and relative temporal statements without inventing missing context. Every capture requires an " +
@@ -132,6 +134,9 @@ func (s *Server) Run(ctx context.Context, transport mcp.Transport) error {
 }
 
 func (s *Server) addTools() {
+	if s.principal.IsLocalStdio && s.principal.Has(auth.PermissionInspect) && s.principal.Has(auth.PermissionCurate) {
+		mcp.AddTool(s.mcp, preflightTool(), s.preflight)
+	}
 	if s.principal.Has(auth.PermissionQuery) {
 		mcp.AddTool(s.mcp, searchTool(), s.search)
 		mcp.AddTool(s.mcp, readTool(), s.read)
@@ -154,6 +159,33 @@ func (s *Server) addTools() {
 		mcp.AddTool(s.mcp, transactionShowTool(), s.transactionShow)
 		mcp.AddTool(s.mcp, transactionDiscardTool(), s.transactionDiscard)
 	}
+}
+
+func (s *Server) preflight(ctx context.Context, _ *mcp.CallToolRequest, input PreflightInput) (*mcp.CallToolResult, PreflightOutput, error) {
+	requestID := requestID(ctx)
+	if callResult, toolErr := s.requirePermission(auth.PermissionInspect, requestID); toolErr != nil {
+		return callResult, PreflightOutput{}, toolErr
+	}
+	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
+		return callResult, PreflightOutput{}, toolErr
+	}
+	result, err := s.service.Preflight(ctx, core.PreflightOptions{Sync: true, Deep: input.Deep})
+	if err != nil {
+		callResult, toolErr := mappedToolError(err, requestID)
+		return callResult, PreflightOutput{}, toolErr
+	}
+	output := PreflightOutput{
+		SchemaVersion: schemaVersion,
+		Status:        result.Status,
+		RequestID:     requestID,
+		Operation:     "lore_preflight",
+		Result:        result,
+	}
+	summary := "Lore preflight is ready; the local clone is synchronized and its index is usable."
+	if !result.Ready {
+		summary = fmt.Sprintf("Lore preflight is blocked by %d condition(s); inspect the structured blockers before continuing.", len(result.Blockers))
+	}
+	return textResult(summary), output, nil
 }
 
 func (s *Server) search(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
@@ -913,6 +945,24 @@ func indexStatusTool() *mcp.Tool {
 		Description: "Inspect derived search-index health, compatibility, freshness, counts, and warning codes.",
 		Annotations: readOnlyAnnotations("Inspect Lore index"),
 		InputSchema: objectSchema(nil, map[string]any{}),
+	}
+}
+
+func preflightTool() *mcp.Tool {
+	annotations := mutationAnnotations("Prepare local Lore session", false, true)
+	yes := true
+	annotations.OpenWorldHint = &yes
+	return &mcp.Tool{
+		Name:        "lore_preflight",
+		Title:       "Prepare local Lore session",
+		Description: "Fail closed on an unsafe local clone, fetch the configured branch once, fast-forward only when strictly behind, and reconcile the derived index. Local-full stdio only.",
+		Annotations: annotations,
+		InputSchema: objectSchema(
+			nil,
+			map[string]any{
+				"deep": map[string]any{"type": "boolean", "default": false, "description": "Run full lint and index verification even when Git HEAD is unchanged."},
+			},
+		),
 	}
 }
 

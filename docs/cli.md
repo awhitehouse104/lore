@@ -70,6 +70,44 @@ init: create Lore knowledge repository
 
 Missing Git identity is a successful initialization with an actionable warning.
 
+## `preflight`
+
+```text
+lore --repo PATH preflight [--sync] [--deep] [--branch NAME] [--json]
+```
+
+Runs the session-start safety workflow as one lock-protected operation. It
+checks the expected branch (default `main`), the complete tracked and untracked
+worktree, the recovery journal, and whether any actor owns a previewed
+transaction. A blocker returns a structured result with `ready: false` and
+exit code 4; preflight never stashes, resets, merges divergent history, or
+discards a transaction.
+
+`--sync` then fetches exactly the configured `git.remote` branch once. Lore
+classifies the local clone as synchronized, behind, ahead, or diverged. It
+fast-forwards only the strictly-behind case, using the remote-tracking ref from
+that fetch rather than invoking `git pull` or performing a second network
+request. Ahead or diverged history fails closed for explicit operator
+reconciliation.
+
+After synchronization, preflight checks the disposable index. It builds a
+missing index and updates a stale compatible index, with canonical lint first,
+then performs full verification when HEAD changed. When HEAD is unchanged and
+the compatible index already certifies that exact clean Git snapshot, the fast
+path uses lightweight index verification and does not repeat a full repository
+lint. `--deep` forces lint and full index verification for an explicit audit.
+Corrupt, incompatible, uncertified, or busy index state blocks rather than
+being cleared automatically.
+
+JSON includes stable blocker codes, initial ahead/behind counts, any dirty
+paths, index action and final status, whether a fast-forward occurred, and
+per-stage timing. Use this at the beginning of a normal synchronized local
+agent session:
+
+```bash
+lore --repo . preflight --sync --json
+```
+
 ## `capture`
 
 ```text

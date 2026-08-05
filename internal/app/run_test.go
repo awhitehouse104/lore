@@ -66,6 +66,53 @@ func TestInitAndLintJSON(t *testing.T) {
 	}
 }
 
+func TestPreflightJSONBuildsIndexAndFailsClosedBeforeSyncWhenDirty(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git unavailable: %v", err)
+	}
+	globalConfig := filepath.Join(t.TempDir(), "gitconfig")
+	if err := os.WriteFile(globalConfig, []byte("[user]\n\tname = Lore Test\n\temail = lore@example.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", globalConfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	if code := Run(t.Context(), []string{"init", root}, strings.NewReader(""), &stdout, &stderr); code != core.ExitOK {
+		t.Fatalf("init returned %d, stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code := Run(t.Context(), []string{"--repo", root, "preflight", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != core.ExitOK {
+		t.Fatalf("local preflight returned %d, stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var ready core.PreflightResult
+	if err := json.Unmarshal(stdout.Bytes(), &ready); err != nil {
+		t.Fatal(err)
+	}
+	if !ready.Ready || ready.Scope != "local" || ready.Remote.Checked || ready.IndexAction != "built" {
+		t.Fatalf("local preflight = %+v", ready)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "preserve.md"), []byte("uncommitted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	code = Run(t.Context(), []string{"--repo", root, "preflight", "--sync", "--json"}, strings.NewReader(""), &stdout, &stderr)
+	if code != core.ExitConflict {
+		t.Fatalf("dirty preflight returned %d, stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	var blocked core.PreflightResult
+	if err := json.Unmarshal(stdout.Bytes(), &blocked); err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Ready || blocked.Remote.Checked || len(blocked.Blockers) != 1 || blocked.Blockers[0].Code != "worktree_dirty" {
+		t.Fatalf("dirty preflight = %+v", blocked)
+	}
+}
+
 func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 	root := t.TempDir()
 	var setupOut, setupErr bytes.Buffer
@@ -1082,6 +1129,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 	tests := [][]string{
 		{"version", "--bad", "--json"},
 		{"lint", "--bad", "--json"},
+		{"preflight", "--bad", "--json"},
 		{"capture", "--bad", "--json"},
 		{"search", "--bad", "--json"},
 		{"read", "--bad", "--json"},
@@ -1119,7 +1167,7 @@ func TestJSONFlagProducesErrorEnvelopeRegardlessOfPosition(t *testing.T) {
 }
 
 func TestEveryCommandSupportsHelp(t *testing.T) {
-	for _, command := range []string{"init", "capture", "search", "read", "lint", "preview", "commit", "transaction", "recover", "index", "recent", "version"} {
+	for _, command := range []string{"init", "capture", "search", "read", "lint", "preflight", "preview", "commit", "transaction", "recover", "index", "recent", "version"} {
 		t.Run(command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			code := Run(context.Background(), []string{command, "--help"}, strings.NewReader(""), &stdout, &stderr)

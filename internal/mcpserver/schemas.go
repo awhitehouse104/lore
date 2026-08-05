@@ -136,6 +136,18 @@ type IndexStatusOutput struct {
 	Warnings           []loreindex.Warning `json:"warnings"`
 }
 
+type PreflightInput struct {
+	Deep bool `json:"deep,omitempty"`
+}
+
+type PreflightOutput struct {
+	SchemaVersion int                  `json:"schema_version"`
+	Status        string               `json:"status"`
+	RequestID     string               `json:"request_id"`
+	Operation     string               `json:"operation"`
+	Result        core.PreflightResult `json:"result"`
+}
+
 type CaptureInput struct {
 	Kind           string   `json:"kind"`
 	Origin         string   `json:"origin"`

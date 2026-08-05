@@ -65,6 +65,11 @@ type Commit struct {
 	Subject     string    `json:"subject"`
 }
 
+type AheadBehind struct {
+	Ahead  int `json:"ahead"`
+	Behind int `json:"behind"`
+}
+
 func New() Client {
 	return Client{
 		Executable:     "git",
@@ -454,6 +459,78 @@ func (c Client) PushHead(ctx context.Context, dir, remote string) error {
 	}
 	_, err = c.runNetwork(ctx, dir, "push", "--no-signed", remote, "HEAD:refs/heads/"+branch)
 	return err
+}
+
+// FetchBranch fetches exactly one branch into its normal remote-tracking ref.
+// The explicit refspec lets callers fast-forward from the fetched object
+// without a second network operation.
+func (c Client) FetchBranch(ctx context.Context, dir, remote, branch string) error {
+	trackingRef, err := c.remoteTrackingRef(ctx, dir, remote, branch)
+	if err != nil {
+		return err
+	}
+	refspec := "+refs/heads/" + branch + ":" + trackingRef
+	_, err = c.runNetwork(ctx, dir, "fetch", "--quiet", "--no-tags", remote, refspec)
+	return err
+}
+
+func (c Client) AheadBehind(ctx context.Context, dir, remote, branch string) (AheadBehind, error) {
+	trackingRef, err := c.remoteTrackingRef(ctx, dir, remote, branch)
+	if err != nil {
+		return AheadBehind{}, err
+	}
+	stdout, err := c.run(ctx, dir, "rev-list", "--left-right", "--count", "HEAD..."+trackingRef)
+	if err != nil {
+		return AheadBehind{}, err
+	}
+	fields := strings.Fields(string(stdout))
+	if len(fields) != 2 {
+		return AheadBehind{}, fmt.Errorf("parse Git ahead/behind counts: expected 2 fields, got %d", len(fields))
+	}
+	ahead, err := strconv.Atoi(fields[0])
+	if err != nil || ahead < 0 {
+		return AheadBehind{}, fmt.Errorf("parse Git ahead count %q", fields[0])
+	}
+	behind, err := strconv.Atoi(fields[1])
+	if err != nil || behind < 0 {
+		return AheadBehind{}, fmt.Errorf("parse Git behind count %q", fields[1])
+	}
+	return AheadBehind{Ahead: ahead, Behind: behind}, nil
+}
+
+func (c Client) FastForward(ctx context.Context, dir, remote, branch string) error {
+	trackingRef, err := c.remoteTrackingRef(ctx, dir, remote, branch)
+	if err != nil {
+		return err
+	}
+	_, err = c.run(ctx, dir, "merge", "--ff-only", "--no-edit", "--no-stat", trackingRef)
+	return err
+}
+
+func (c Client) ValidateBranch(ctx context.Context, dir, branch string) error {
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("invalid Git branch name")
+	}
+	if _, err := c.run(ctx, dir, "check-ref-format", "--branch", branch); err != nil {
+		return fmt.Errorf("invalid Git branch name: %w", err)
+	}
+	return nil
+}
+
+func (c Client) remoteTrackingRef(ctx context.Context, dir, remote, branch string) (string, error) {
+	if remote == "" || strings.HasPrefix(remote, "-") || strings.IndexFunc(remote, func(r rune) bool {
+		return r == 0 || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	}) >= 0 {
+		return "", fmt.Errorf("invalid Git remote name")
+	}
+	if err := c.ValidateBranch(ctx, dir, branch); err != nil {
+		return "", err
+	}
+	trackingRef := "refs/remotes/" + remote + "/" + branch
+	if _, err := c.run(ctx, dir, "check-ref-format", trackingRef); err != nil {
+		return "", fmt.Errorf("invalid Git remote-tracking ref: %w", err)
+	}
+	return trackingRef, nil
 }
 
 func (c Client) stageablePaths(ctx context.Context, dir string, pathspecs []string) ([]string, error) {

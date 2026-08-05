@@ -99,6 +99,12 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 
 ## Tool boundaries
 
+- At the start of a session in a Git-synchronized writable clone, run the
+  repository's declared preflight before reading or changing knowledge. Use
+  local-full MCP `lore_preflight` when available or CLI
+  `lore --repo . preflight --sync --json`; stop on any blocker. Do not replace
+  it with an ad hoc subset of Git, recovery, transaction, lint, or index
+  checks. An agent without either interface must ask the operator to run it.
 - Use Lore CLI or MCP tools for every repository mutation or administrative
   operation that Lore supports. Never directly edit managed pages, sources,
   source-integration metadata, transactions, recovery state, or derived index

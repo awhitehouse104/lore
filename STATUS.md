@@ -380,6 +380,20 @@ Milestones 1–5 and the complete release matrix are finished.
   commit, recovery, and index-refresh path. Less-restrictive changes require an
   explicit `allow_downgrade` acknowledgment. Generated and MCP guidance also
   distinguishes routine index verification from troubleshooting.
+- **Dogfood follow-up — single-operation session preflight:** completed
+  2026-08-05. The new typed core preflight and `lore preflight --sync` replace
+  the multi-command, multi-round-trip clone startup ritual. Preflight holds the
+  repository writer lock while it fails closed on the wrong branch, a dirty
+  full worktree, active recovery, or any pending preview; fetches the
+  configured branch exactly once; fast-forwards only strictly-behind history
+  from the fetched tracking ref; and reconciles the disposable index with lint
+  and full verification when required. Ahead and diverged histories remain
+  explicit blockers. An unchanged HEAD with a fresh certified index takes the
+  lightweight path, while `--deep` preserves an on-demand full audit. The
+  structured local-full stdio `lore_preflight` tool exposes the same operation,
+  is absent from HTTP and local-query profiles, and fixes the expected branch
+  to `main`; generated and MCP instructions make it the required first step in
+  a synchronized writable session.
 
 ## v0.4 completed milestones
 

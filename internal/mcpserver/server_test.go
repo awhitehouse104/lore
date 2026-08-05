@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -74,7 +74,8 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		if tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint != wantDestructive {
 			t.Errorf("%s destructive annotation = %+v", tool.Name, tool.Annotations)
 		}
-		if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint {
+		wantOpenWorld := tool.Name == "lore_preflight"
+		if tool.Annotations.OpenWorldHint == nil || *tool.Annotations.OpenWorldHint != wantOpenWorld {
 			t.Errorf("%s open-world annotation = %+v", tool.Name, tool.Annotations)
 		}
 	}
@@ -84,6 +85,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		"lore_index_status",
 		"lore_lint",
 		"lore_page_references",
+		"lore_preflight",
 		"lore_preview",
 		"lore_read",
 		"lore_recent",
@@ -197,6 +199,39 @@ func TestMutationSchemasRequireSensitivityAndExposeSourceReclassification(t *tes
 	for _, fragment := range []string{"delete_page", "set_source_sensitivity", "allow_downgrade"} {
 		if !bytes.Contains(previewSchema, []byte(fragment)) {
 			t.Fatalf("preview schema missing %q: %s", fragment, previewSchema)
+		}
+	}
+}
+
+func TestPreflightToolReturnsStructuredBlockerAndIsLocalFullOnly(t *testing.T) {
+	service := newTestService(t)
+	if err := os.WriteFile(filepath.Join(service.Repo.Root, "preserve.md"), []byte("uncommitted\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localSession := connectTestClient(t, service, fullPrincipal(t))
+	output := decodeOutput[PreflightOutput](t, callTool(t, localSession, "lore_preflight", map[string]any{}))
+	if output.Status != "blocked" || output.Operation != "lore_preflight" || output.Result.Ready ||
+		output.Result.Remote.Checked || len(output.Result.Blockers) != 1 || output.Result.Blockers[0].Code != "worktree_dirty" {
+		t.Fatalf("preflight output = %+v", output)
+	}
+
+	remotePrincipal, err := auth.NewPrincipal(
+		"remote_admin",
+		auth.TransportHTTP,
+		[]auth.Permission{auth.PermissionQuery, auth.PermissionCapture, auth.PermissionCurate, auth.PermissionInspect, auth.PermissionHistory},
+		[]string{"normal", "sensitive"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteSession := connectTestClient(t, service, remotePrincipal)
+	tools, err := remoteSession.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools.Tools {
+		if tool.Name == "lore_preflight" {
+			t.Fatal("HTTP principal was offered local preflight")
 		}
 	}
 }
@@ -378,7 +413,7 @@ func TestLegacyInitializeAndToolList(t *testing.T) {
 	})
 	list := readJSONLine(t, reader)
 	tools := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 12 {
+	if len(tools) != 13 {
 		t.Fatalf("legacy tool list = %#v", list)
 	}
 }
@@ -389,6 +424,8 @@ func expectedAnnotations(name string) (readOnly, idempotent, destructive bool) {
 		return false, false, true
 	case "lore_preview":
 		return false, false, false
+	case "lore_preflight":
+		return false, true, false
 	case "lore_commit", "lore_transaction_discard":
 		return false, true, true
 	default:

@@ -61,6 +61,8 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runRecent(ctx, remaining[1:], global, s)
 	case "lint":
 		return runLint(ctx, remaining[1:], global, s)
+	case "preflight":
+		return runPreflight(ctx, remaining[1:], global, s)
 	case "preview":
 		return runPreview(ctx, remaining[1:], global, s)
 	case "commit":
@@ -1036,6 +1038,7 @@ Commands:
   references
             inspect live backlinks and historical source references to a page
   lint      validate repository integrity
+  preflight check local safety, synchronize one clone, and reconcile its index
   preview   validate and persist an exact transaction proposal
   commit    apply and Git-commit a previewed transaction
   transaction

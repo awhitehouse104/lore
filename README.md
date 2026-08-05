@@ -46,6 +46,17 @@ Initialize a separate knowledge repository:
 lore init "$HOME/lore-home"
 ```
 
+In a clone shared through Git with another agent or machine, begin each
+writable session with one fail-closed synchronization operation:
+
+```bash
+lore --repo "$HOME/lore-home" preflight --sync --json
+```
+
+It checks local safety, fetches once, fast-forwards only when strictly behind,
+and reconciles the derived index. See the [CLI reference](docs/cli.md#preflight)
+for blocker behavior and the optional deep audit.
+
 Capture exact source bytes through stdin. Stdin is preferred for private material because `--text` values may appear in shell history or process listings.
 
 ```bash

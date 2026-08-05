@@ -25,6 +25,17 @@ lore mcp stdio --repo /srv/lore/home --profile local-query
 local sensitivities. The profile is not a client tool argument. Stdio protocol
 messages are the only stdout output; diagnostics use stderr.
 
+At the beginning of a writable local session, a `local-full` client should
+call `lore_preflight` once before reading or mutating knowledge. The tool is a
+local-stdio-only administrative capability: it performs the same fail-closed
+checks as `lore preflight --sync`, fetches `main` once, fast-forwards only when
+strictly behind, and reconciles the local derived index. It returns blockers as
+a successful structured result with `ready: false`, so the agent can explain
+the condition without guessing or continuing. It is structurally absent from
+HTTP and `local-query`; an agent without the tool must ask the operator to run
+the CLI preflight rather than reconstructing a weaker sequence of tool calls.
+Set `deep: true` only for an explicit full lint/index audit.
+
 ### Codex
 
 The current Codex configuration lives in `~/.codex/config.toml`, or in a
