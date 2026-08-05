@@ -170,7 +170,10 @@ logs.
 Tool discovery is permission-filtered, but authorization does not rely on
 discovery: every invocation checks again. Unauthorized direct reads are
 indistinguishable from nonexistent content. Transactions are actor-bound, and
-commit rechecks current sensitivities. Capture and commit idempotency records
+missing and cross-actor transaction lookups share the same public `not_found`
+response while advising the caller to keep preview and commit on one actor and
+interface. Local CLI's `local-cli` actor does not share transactions with MCP
+principals. Commit rechecks current sensitivities. Capture and commit idempotency records
 are principal-scoped and contain hashes plus minimal result metadata, never
 captured bodies or diffs.
 

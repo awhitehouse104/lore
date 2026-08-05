@@ -30,7 +30,9 @@ Treat synthesized pages as a living current view. Retitle, rekey, reorganize,
 consolidate, split, or delete them when useful, using structured page-reference
 discovery and one atomic transaction to repair every live page backlink.
 Historical links in immutable sources and old `integrated_into` IDs remain as
-evidence; add successor integration IDs rather than removing history.
+evidence; newly added integration IDs must resolve after the transaction, while
+existing IDs may outlive their pages. Add successor IDs rather than removing
+history. Keep preview and commit on the same CLI or MCP actor.
 
 Start retrieval with ordinary `lore search`, inspect and read likely results,
 then reformulate weak searches with distinctive terms from the evidence. Do not

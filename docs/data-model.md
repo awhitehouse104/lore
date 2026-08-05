@@ -87,7 +87,10 @@ present, is RFC 3339 UTC. `integrated_into` contains unique syntactically valid
 page IDs. Lore writes it as a sorted, additive historical union. An ID may
 legitimately outlive its current synthesized page, so lint does not require it
 to resolve and structural maintenance does not remove it. A successor page ID
-may be added while retaining the historical ID.
+may be added while retaining the historical ID. Each ID newly supplied to
+`mark_source_integrated` must, however, resolve in the prospective repository;
+an existing historical ID is retained automatically and need not be resubmitted
+when its page is deleted.
 
 The source filename ID and kind must equal its frontmatter, and its path
 year/month must equal `captured_at` in UTC. Source bodies are append-oriented
@@ -258,6 +261,10 @@ for the diff, lint report, and each exact resulting document. A delete records
 an explicit absent result and has no resulting-content artifact. Lifecycle
 states are `previewed`, `applying`, `committed`, `discarded`, `failed`, and
 `recovery_required`; invalid transitions are integrity errors.
+
+Each proposal records its actor. Local CLI uses `local-cli`; MCP uses the
+configured principal ID. Preview, inspection, discard, and commit are
+actor-bound, so changing interfaces or MCP principals requires a fresh preview.
 
 `retention.json` is optional and exists only for a committed transaction whose
 payload compaction has started. It binds the transaction ID and preview digest

@@ -3,22 +3,25 @@ package mcpserver
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 
 	"lore/internal/core"
+	"lore/internal/docs"
 	"lore/internal/idempotency"
+	"lore/internal/transaction"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type externalError struct {
-	SchemaVersion int               `json:"schema_version"`
-	Status        string            `json:"status"`
-	RequestID     string            `json:"request_id"`
-	Code          string            `json:"code"`
-	Reason        string            `json:"reason,omitempty"`
-	Message       string            `json:"message"`
-	Details       map[string]string `json:"details,omitempty"`
-	ErrorID       string            `json:"error_id,omitempty"`
+	SchemaVersion int            `json:"schema_version"`
+	Status        string         `json:"status"`
+	RequestID     string         `json:"request_id"`
+	Code          string         `json:"code"`
+	Reason        string         `json:"reason,omitempty"`
+	Message       string         `json:"message"`
+	Details       map[string]any `json:"details,omitempty"`
+	ErrorID       string         `json:"error_id,omitempty"`
 }
 
 type toolError struct {
@@ -33,13 +36,15 @@ func (e *toolError) Error() string {
 func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 	code, message := "internal_error", "The Lore operation failed unexpectedly."
 	reason := ""
-	var details map[string]string
+	var details map[string]any
 	errorID := ""
 	var apiErr *core.APIError
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case "reference_not_found":
 			code, message = "not_found", "The requested document was not found."
+		case "transaction_unavailable":
+			code, message = "not_found", "No transaction with this ID is available to the current actor. Preview and commit must use the same actor and interface."
 		case "permission_denied":
 			code, message = "permission_denied", "The principal is not authorized for this operation."
 		case "ambiguous_reference":
@@ -87,22 +92,45 @@ func mappedToolError(err error, requestID string) (*mcp.CallToolResult, error) {
 	return result, &toolError{code: code, message: string(data)}
 }
 
-func safeValidationDisclosure(apiErr *core.APIError, fallbackMessage string) (string, string, map[string]string) {
-	if apiErr == nil || apiErr.Code != "updated_too_old" {
+func safeValidationDisclosure(apiErr *core.APIError, fallbackMessage string) (string, string, map[string]any) {
+	if apiErr == nil {
 		return "", fallbackMessage, nil
 	}
-	details := make(map[string]string, 3)
-	for _, key := range []string{"field", "minimum", "path"} {
-		if value, ok := apiErr.Details[key].(string); ok && value != "" {
-			details[key] = value
+	switch apiErr.Code {
+	case "updated_too_old":
+		details := make(map[string]any, 3)
+		for _, key := range []string{"field", "minimum", "path"} {
+			if value, ok := apiErr.Details[key].(string); ok && value != "" {
+				details[key] = value
+			}
 		}
-	}
-	if len(details) != 3 {
+		if len(details) != 3 {
+			return "", fallbackMessage, nil
+		}
+		return "updated_too_old",
+			"A content-changing page update must set updated to at least the current UTC calendar date.",
+			details
+	case "integrated_page_missing":
+		pageIDs, ok := apiErr.Details["page_ids"].([]string)
+		if !ok || len(pageIDs) == 0 || len(pageIDs) > transaction.MaxIntegrationPages {
+			return "", fallbackMessage, nil
+		}
+		pageIDs = append([]string(nil), pageIDs...)
+		for _, pageID := range pageIDs {
+			if err := docs.ValidatePageID(pageID); err != nil {
+				return "", fallbackMessage, nil
+			}
+		}
+		sort.Strings(pageIDs)
+		return "integrated_page_missing",
+			"New source integration IDs must name pages present after the transaction.",
+			map[string]any{
+				"field":    "operations[].page_ids",
+				"page_ids": pageIDs,
+			}
+	default:
 		return "", fallbackMessage, nil
 	}
-	return "updated_too_old",
-		"A content-changing page update must set updated to at least the current UTC calendar date.",
-		details
 }
 
 func mappedIdempotencyError(err error, requestID string) (*mcp.CallToolResult, error) {

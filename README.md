@@ -97,7 +97,8 @@ The request can create, update, or delete direct children of `pages/` and can
 update supported source metadata. Preview never changes canonical files or
 Git. A changed branch, HEAD, target revision, target Git status, artifact, or
 digest is a conflict; re-read the current documents and make a new preview
-rather than forcing it.
+rather than forcing it. Keep preview and commit on the same interface and
+actor: CLI uses `local-cli`, while each MCP principal is separate.
 
 ## Commands
 

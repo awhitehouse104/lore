@@ -192,7 +192,12 @@ reveal inaccessible knowledge.
 
 Transactions belong to the principal that previewed them. Another principal
 cannot enumerate, show, discard, or commit them. Commit reauthorizes every
-affected document against current sensitivity metadata.
+affected document against current sensitivity metadata. Local CLI transactions
+belong to the distinct `local-cli` actor and are therefore unavailable through
+MCP. Keep preview and commit on the same actor and interface; after switching
+between MCP and CLI, create a fresh preview. A transaction unavailable to the
+current actor has the same `not_found` response whether it is absent or belongs
+to someone else, so the error does not disclose another actor's state.
 
 ## Tools and resources
 
@@ -214,6 +219,14 @@ before changing a page path or ID, consolidating pages, or deleting a page.
 Repair all live backlinks in the same preview. Historical source links are not
 rewritten or required to resolve, and integration IDs remain as an additive
 historical ledger; add a successor ID when useful.
+
+A newly supplied `mark_source_integrated.page_ids` value must name a page that
+exists in the prospective post-transaction repository, including a page created
+by that transaction. Existing source ledger values may outlive a deleted page
+and are retained automatically; do not resubmit the old ID when deleting its
+page. An absent prospective ID returns `reason: integrated_page_missing` with
+`details.field: operations[].page_ids` and a bounded `details.page_ids` array
+containing only the invalid caller-supplied IDs.
 
 `lore_preview` supports revision-guarded `delete_page` operations alongside
 page creates and updates. Page updates may change the ID but not `created`.
@@ -285,11 +298,15 @@ interval. An independently modified source remains visible as
 
 MCP error `code` values remain broad and backward-compatible. Whitelisted,
 actionable validation failures may also include a stable `reason` and sanitized
-string `details`; other validation failures retain the generic public shape.
+`details`; other validation failures retain the generic public shape.
 For example, a content-changing page update whose `updated` field precedes the
 server's current UTC date returns `code: invalid_argument`, `reason:
 updated_too_old`, and `field`, `path`, and required `minimum` details. Error
 details never include page or source bodies.
+
+Transaction lookup remains actor-masked. `lore_commit` and transaction
+inspection return `code: not_found` with same-actor guidance for both a missing
+transaction and one owned by another actor; they never identify the owner.
 
 Resource URIs are canonical ID-only forms:
 

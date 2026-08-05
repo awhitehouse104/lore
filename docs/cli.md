@@ -213,7 +213,9 @@ Run this before changing a page path or ID, consolidating pages, or deleting a
 page. Repair every live page backlink in the same transaction. Historical
 source-body links are evidence and are neither rewritten nor required to keep
 resolving. Source integration IDs are an additive historical ledger; add a
-successor ID when useful rather than removing the old one.
+successor ID when useful rather than removing the old one. A newly supplied ID
+must resolve after the proposed transaction; an existing ID may outlive its
+page and is retained without being resubmitted.
 
 ## `lint`
 
@@ -278,6 +280,9 @@ immutable. Prospective lint prevents deletion or movement from leaving a broken
 link in another synthesized page. A path move is therefore composed in one
 request from a replacement create, backlink updates, optional additive source
 integration, and deletion of the old path.
+CLI previews belong to the `local-cli` actor and must be inspected, discarded,
+or committed through CLI. MCP principals are distinct actors; switching
+interfaces requires a fresh preview.
 Source-sensitivity operations preserve the exact body and `raw_sha256`, retain
 unrelated frontmatter, and pass through the same authorization, preview,
 digest, lint, commit, and recovery checks as page operations.

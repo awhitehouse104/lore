@@ -740,7 +740,7 @@ func (s *Service) transactionDiscard(ctx context.Context, transactionID string, 
 }
 
 func transactionNotFound() *APIError {
-	return NewError(ExitValidation, "reference_not_found", "transaction was not found")
+	return NewError(ExitValidation, "transaction_unavailable", "no transaction with this ID is available to the current actor")
 }
 
 func (s *Service) requireTransactionGit(ctx context.Context) *APIError {

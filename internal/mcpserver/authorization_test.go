@@ -270,6 +270,14 @@ Created through a bounded MCP transaction.
 	if !otherShow.IsError || !strings.Contains(toolResultText(t, otherShow), `"code":"not_found"`) {
 		t.Fatalf("ownership-masked show = %s", toolResultText(t, otherShow))
 	}
+	var unavailableShow externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, otherShow)), &unavailableShow); err != nil {
+		t.Fatal(err)
+	}
+	if unavailableShow.Message != "No transaction with this ID is available to the current actor. Preview and commit must use the same actor and interface." ||
+		strings.Contains(toolResultText(t, otherShow), owner.ID) {
+		t.Fatalf("ownership guidance = %s", toolResultText(t, otherShow))
+	}
 	otherCommit, err := otherSession.CallTool(t.Context(), &mcp.CallToolParams{
 		Name: "lore_commit",
 		Arguments: map[string]any{
@@ -282,6 +290,30 @@ Created through a bounded MCP transaction.
 	}
 	if !otherCommit.IsError || !strings.Contains(toolResultText(t, otherCommit), `"code":"not_found"`) {
 		t.Fatalf("ownership-masked commit = %s", toolResultText(t, otherCommit))
+	}
+	var unavailableCommit externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, otherCommit)), &unavailableCommit); err != nil {
+		t.Fatal(err)
+	}
+	if unavailableCommit.Message != unavailableShow.Message || strings.Contains(toolResultText(t, otherCommit), owner.ID) {
+		t.Fatalf("ownership commit guidance = %s", toolResultText(t, otherCommit))
+	}
+	missingCommit, err := otherSession.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_commit",
+		Arguments: map[string]any{
+			"transaction_id": "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"preview_digest": "sha256:" + strings.Repeat("0", 64),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missingEnvelope externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, missingCommit)), &missingEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if !missingCommit.IsError || missingEnvelope.Code != unavailableCommit.Code || missingEnvelope.Message != unavailableCommit.Message {
+		t.Fatalf("missing transaction was distinguishable: missing=%+v owned=%+v", missingEnvelope, unavailableCommit)
 	}
 
 	commitArguments := map[string]any{

@@ -7,6 +7,20 @@ Milestones 1–5 and the complete release matrix are finished.
 
 ## Post-v0.4 maintenance
 
+- **Actionable MCP transaction diagnostics:** completed 2026-08-04. Safe
+  semantic validation now reports `integrated_page_missing`, the exact
+  `operations[].page_ids` field, and a bounded array containing only invalid
+  IDs supplied by the caller; malformed or unlisted validation details still
+  fail closed to the generic public error. Missing and cross-actor transactions
+  remain deliberately indistinguishable, but now return transaction-specific
+  same-actor/interface guidance instead of a misleading document-not-found
+  message. A missing transaction cannot be distinguished from another actor's
+  transaction through commit. Shared operating rules and MCP documentation now
+  clarify that new integration IDs must resolve prospectively while existing
+  ledger IDs may outlive their pages, and that switching between CLI and MCP
+  requires a fresh preview.
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all pass.
 - **Living-page structural maintenance:** completed 2026-08-04. Synthesized
   pages can now be revision-guarded deletions or change IDs during whole-page
   updates. Page moves, consolidation, splits, and replacements compose from

@@ -65,6 +65,10 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 	}
 	artifacts, err := store.Load(options.TransactionID)
 	if err != nil {
+		var notFound *transaction.NotFoundError
+		if access != nil && errors.As(err, &notFound) {
+			return result, transactionNotFound()
+		}
 		return result, transactionRuntimeError("transaction_integrity_failed", fmt.Sprintf("transaction %s failed integrity verification", options.TransactionID), err)
 	}
 	if !transaction.DigestEqual(options.PreviewDigest, artifacts.PreviewDigest) {
@@ -107,6 +111,10 @@ func (s *Service) commit(ctx context.Context, options CommitOptions, access *sea
 	}
 	artifacts, err = store.Load(options.TransactionID)
 	if err != nil {
+		var notFound *transaction.NotFoundError
+		if access != nil && errors.As(err, &notFound) {
+			return result, transactionNotFound()
+		}
 		return result, transactionRuntimeError("transaction_integrity_failed", fmt.Sprintf("transaction %s failed integrity verification", options.TransactionID), err)
 	}
 	if !transaction.DigestEqual(options.PreviewDigest, artifacts.PreviewDigest) {

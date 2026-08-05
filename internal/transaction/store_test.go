@@ -65,6 +65,44 @@ func TestStoreRoundTripPermissionsAndTamperDetection(t *testing.T) {
 	}
 }
 
+func TestStoreLoadDistinguishesMissingTransactionFromDamagedArtifacts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "knowledge")
+	repo := testRepository(t, root)
+	store, err := NewStore(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Load(transactionID)
+	var notFound *NotFoundError
+	if !errors.As(err, &notFound) || !errors.Is(err, os.ErrNotExist) || notFound.TransactionID != transactionID {
+		t.Fatalf("missing transaction error = %v", err)
+	}
+
+	proposal := testProposal()
+	state := State{
+		SchemaVersion: SchemaVersion,
+		TransactionID: transactionID,
+		Status:        StatusPreviewed,
+		UpdatedAt:     proposal.CreatedAt,
+	}
+	if _, err := store.Save(Artifacts{
+		Proposal: proposal,
+		State:    state,
+		Diff:     []byte("diff"),
+		Lint:     []byte("lint"),
+		Contents: [][]byte{[]byte("content")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, ".lore", "transactions", transactionID, "proposal.json")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Load(transactionID)
+	if err == nil || errors.As(err, &notFound) {
+		t.Fatalf("damaged transaction error = %v", err)
+	}
+}
+
 func TestStoreDiscardIsIdempotentAndRetainsReceipt(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "knowledge")
 	repo := testRepository(t, root)

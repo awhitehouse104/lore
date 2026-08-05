@@ -60,6 +60,8 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 				"CLI `lore references` or MCP `lore_page_references`",
 				"Never rewrite an immutable source body",
 				"additive historical ledger",
+				"newly supplied ID must name a page present",
+				"Complete preview and commit through the same actor and interface",
 				"preserve ambiguity or ask for clarification",
 				"known user timezone",
 				"preferred name",

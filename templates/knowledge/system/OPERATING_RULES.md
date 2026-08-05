@@ -78,12 +78,18 @@ This file is the authoritative shared policy for Lore knowledge repositories.
   that later moves or disappears. Such links record what the evidence referred
   to at capture time and do not block structural maintenance.
 - Treat source `integrated_into` values as an additive historical ledger. A
-  value may name a page ID that no longer exists. Add a successor page ID when
-  it helps provenance; do not remove the historical ID.
+  newly supplied ID must name a page present after the proposed transaction;
+  an existing ledger value may later outlive its page. Add a successor page ID
+  when it helps provenance; do not resubmit or remove the historical ID merely
+  because its page is being deleted.
 - For a page body change, set `updated` to at least the current UTC calendar
   date. If client and server dates differ, follow the `minimum` returned with
   `updated_too_old`.
 - Inspect the complete diff and lint result before committing.
+- Complete preview and commit through the same actor and interface. Local CLI
+  transactions belong to `local-cli`; each MCP principal is a separate actor.
+  If switching between MCP and CLI after a failure, create a fresh preview and
+  commit it through the newly chosen interface.
 - Never retry a conflict with force; re-read current documents and create a
   new preview.
 - Do not directly modify protected files through a normal

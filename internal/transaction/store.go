@@ -41,6 +41,20 @@ type Store struct {
 	afterPruneStep func(string) error
 }
 
+// NotFoundError identifies an absent transaction directory without conflating
+// it with a missing or damaged artifact inside an existing transaction.
+type NotFoundError struct {
+	TransactionID string
+}
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("transaction was not found: %s", e.TransactionID)
+}
+
+func (e *NotFoundError) Unwrap() error {
+	return fs.ErrNotExist
+}
+
 type PruneInspection struct {
 	Proposal              Proposal
 	State                 State
@@ -804,6 +818,9 @@ func (s *Store) transactionDir(transactionID string) (string, error) {
 	dir := filepath.Join(s.root, transactionID)
 	info, err := os.Lstat(dir)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", &NotFoundError{TransactionID: transactionID}
+		}
 		return "", err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {

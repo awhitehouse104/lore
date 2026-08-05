@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "successor integration ID", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -245,6 +245,47 @@ func TestPreviewDisclosesSafeUTCUpdateMinimum(t *testing.T) {
 	}
 }
 
+func TestPreviewDisclosesMissingProspectiveIntegrationPageIDs(t *testing.T) {
+	service := newTestService(t)
+	sourcePath := "sources/2026/07/src_01ARZ3NDEKTSV4RRFFQ69G5FAV-evidence.md"
+	sourceData, err := os.ReadFile(filepath.Join(service.Repo.Root, filepath.FromSlash(sourcePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := connectTestClient(t, service, fullPrincipal(t))
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_preview",
+		Arguments: map[string]any{
+			"schema_version": 1,
+			"message":        "integrate: test missing page feedback",
+			"operations": []any{map[string]any{
+				"op":                "mark_source_integrated",
+				"path":              sourcePath,
+				"expected_revision": docs.Revision(sourceData),
+				"page_ids":          []any{"page_z_missing", "page_a_missing"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("preview result = %+v, want tool error", result)
+	}
+	var envelope externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, result)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "invalid_argument" || envelope.Reason != "integrated_page_missing" ||
+		envelope.Details["field"] != "operations[].page_ids" ||
+		!reflect.DeepEqual(envelope.Details["page_ids"], []any{"page_a_missing", "page_z_missing"}) {
+		t.Fatalf("error envelope = %+v", envelope)
+	}
+	if strings.Contains(toolResultText(t, result), "Normal evidence for transaction authorization") {
+		t.Fatalf("error disclosed source body: %s", toolResultText(t, result))
+	}
+}
+
 func TestMappedToolErrorKeepsUnlistedValidationFailuresGeneric(t *testing.T) {
 	apiErr := core.NewError(core.ExitValidation, "private_validation_state", "private validation detail")
 	apiErr.Details = map[string]any{"path": "pages/private.md"}
@@ -259,6 +300,23 @@ func TestMappedToolErrorKeepsUnlistedValidationFailuresGeneric(t *testing.T) {
 	}
 	if strings.Contains(toolResultText(t, result), "private") {
 		t.Fatalf("generic error disclosed private detail: %s", toolResultText(t, result))
+	}
+}
+
+func TestMappedToolErrorRejectsMalformedIntegrationDisclosure(t *testing.T) {
+	apiErr := core.NewError(core.ExitValidation, "integrated_page_missing", "private validation detail")
+	apiErr.Details = map[string]any{"page_ids": []string{"not-a-page-id"}, "path": "pages/private.md"}
+	result, _ := mappedToolError(apiErr, "req_01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	var envelope externalError
+	if err := json.Unmarshal([]byte(toolResultText(t, result)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "invalid_argument" || envelope.Reason != "" || envelope.Details != nil ||
+		envelope.Message != "The tool arguments are invalid." {
+		t.Fatalf("error envelope = %+v", envelope)
+	}
+	if strings.Contains(toolResultText(t, result), "private") || strings.Contains(toolResultText(t, result), "not-a-page-id") {
+		t.Fatalf("malformed disclosure leaked private detail: %s", toolResultText(t, result))
 	}
 }
 
