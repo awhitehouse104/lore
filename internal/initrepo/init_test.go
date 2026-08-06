@@ -62,6 +62,8 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 				"additive historical ledger",
 				"newly supplied ID must name a page present",
 				"Complete preview and commit through the same actor and interface",
+				"Prefer a revision-guarded `patch_page` operation",
+				"use MCP `lore_read_many` for a bounded ordered batch",
 				"preserve ambiguity or ask for clarification",
 				"known user timezone",
 				"preferred name",

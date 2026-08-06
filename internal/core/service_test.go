@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -601,6 +602,99 @@ Readable.
 	}
 	if result.Content != string(page) {
 		t.Fatalf("content = %q, want %q", result.Content, page)
+	}
+}
+
+func TestReadManyUsesIndependentRangesAndPreservesRequestOrder(t *testing.T) {
+	repo := newServiceRepository(t)
+	first := []byte(`---
+id: page_batch_first
+title: Batch First
+kind: topic
+created: "2026-08-05"
+updated: "2026-08-05"
+status: active
+sensitivity: normal
+---
+First line.
+Second line.
+`)
+	second := []byte(`---
+id: page_batch_second
+title: Batch Second
+kind: topic
+created: "2026-08-05"
+updated: "2026-08-05"
+status: active
+sensitivity: normal
+---
+Second document.
+`)
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "batch-first.md"), first, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.Root, "pages", "batch-second.md"), second, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := core.NewService(repo).ReadMany(context.Background(), []core.ReadManyRequest{
+		{Ref: "page_batch_second", StartLine: 10, EndLine: 10},
+		{Ref: "page_batch_first", StartLine: 10, EndLine: 11},
+	})
+	if err != nil {
+		t.Fatalf("ReadMany: %v", err)
+	}
+	if len(result.Documents) != 2 || result.Documents[0].ID != "page_batch_second" || result.Documents[0].Content != "Second document.\n" ||
+		result.Documents[1].ID != "page_batch_first" || result.Documents[1].Content != "First line.\nSecond line.\n" {
+		t.Fatalf("result = %+v", result)
+	}
+	wantBytes := len("Second document.\n") + len("First line.\nSecond line.\n")
+	if result.TotalBytes != wantBytes {
+		t.Fatalf("total bytes = %d, want %d", result.TotalBytes, wantBytes)
+	}
+	if _, err := core.NewService(repo).ReadMany(context.Background(), make([]core.ReadManyRequest, core.MaximumReadManyItems+1)); err == nil {
+		t.Fatal("ReadMany accepted too many requests")
+	}
+}
+
+func TestReadManyEnforcesPerItemAndAggregateByteLimits(t *testing.T) {
+	repo := newServiceRepository(t)
+	writePage := func(name, id, body string) {
+		t.Helper()
+		page := fmt.Sprintf(`---
+id: %s
+title: %s
+kind: topic
+created: "2026-08-05"
+updated: "2026-08-05"
+status: active
+sensitivity: normal
+---
+%s
+`, id, name, body)
+		if err := os.WriteFile(filepath.Join(repo.Root, "pages", name+".md"), []byte(page), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePage("oversized", "page_batch_oversized", strings.Repeat("x", core.MaximumReadItemBytes+1))
+	for index := 0; index < 3; index++ {
+		writePage(fmt.Sprintf("aggregate-%d", index), fmt.Sprintf("page_batch_aggregate_%d", index), strings.Repeat("y", 180*1024))
+	}
+
+	_, err := core.NewService(repo).ReadMany(context.Background(), []core.ReadManyRequest{{
+		Ref: "page_batch_oversized", StartLine: 10, EndLine: 10,
+	}})
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "read_too_large" {
+		t.Fatalf("per-item error = %#v", err)
+	}
+
+	_, err = core.NewService(repo).ReadMany(context.Background(), []core.ReadManyRequest{
+		{Ref: "page_batch_aggregate_0", StartLine: 10, EndLine: 10},
+		{Ref: "page_batch_aggregate_1", StartLine: 10, EndLine: 10},
+		{Ref: "page_batch_aggregate_2", StartLine: 10, EndLine: 10},
+	})
+	if !errors.As(err, &apiErr) || apiErr.Code != "batch_read_too_large" {
+		t.Fatalf("aggregate error = %#v", err)
 	}
 }
 

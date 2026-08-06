@@ -7,6 +7,22 @@ Milestones 1–5 and the complete release matrix are finished.
 
 ## Post-v0.4 maintenance
 
+- **Lower-friction agent reading and editing:** completed 2026-08-05. Added
+  authorization-filtered MCP `lore_read_many`, which preserves request order
+  while reading 1–8 independently ranged documents after one catalog scan and
+  enforces per-item and aggregate response bounds. Added revision-guarded
+  `patch_page` transactions for 1–50 exact, unique, non-overlapping text
+  replacements matched against the original page. Patches still materialize
+  the complete prospective page and pass the existing metadata, full-diff,
+  lint, digest, commit, recovery, Git, and authorization contracts. Safe MCP
+  diagnostics identify missing, ambiguous, or overlapping replacement indexes
+  without echoing caller or repository content. Shared operating guidance now
+  prefers bounded batch reads for several likely results, exact patches for
+  small localized edits, and whole-page updates for substantial rewrites.
+  Authorized reads now also filter inaccessible documents before alias/title
+  ambiguity resolution, preventing protected candidate paths from leaking.
+  `go vet ./...`, `go test ./...`, `go test -race ./...`, and
+  `go build ./cmd/lore` all pass.
 - **Actionable MCP transaction diagnostics:** completed 2026-08-04. Safe
   semantic validation now reports `integrated_page_missing`, the exact
   `operations[].page_ids` field, and a bounded array containing only invalid

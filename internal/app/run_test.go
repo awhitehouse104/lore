@@ -154,8 +154,8 @@ func TestMCPStdioKeepsStdoutProtocolClean(t *testing.T) {
 			}
 			if requestIndex == 2 {
 				tools := response["result"].(map[string]any)["tools"].([]any)
-				if len(tools) != 3 {
-					t.Fatalf("local-query advertised %d tools, want 3", len(tools))
+				if len(tools) != 4 {
+					t.Fatalf("local-query advertised %d tools, want 4", len(tools))
 				}
 			}
 		}

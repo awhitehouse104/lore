@@ -20,6 +20,7 @@ import (
 	"lore/internal/lock"
 	"lore/internal/repository"
 	"lore/internal/search"
+	"lore/internal/transaction"
 )
 
 const fixedTransactionID = "tx_01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -99,6 +100,136 @@ func TestPreviewCreateInspectAndDiscard(t *testing.T) {
 	}
 	if _, err := service.TransactionDiscard(context.Background(), fixedTransactionID); err != nil {
 		t.Fatalf("idempotent TransactionDiscard: %v", err)
+	}
+}
+
+func TestPatchPagePreviewsAndCommitsExactRevisionGuardedReplacements(t *testing.T) {
+	repo := transactionTestRepository(t)
+	current := validTransactionPage("page_patch_target", "Patch target", "2026-08-04", "# Details\n\nOld detail.\n\nKeep this paragraph.\n")
+	path := filepath.Join(repo.Root, "pages", "patch-target.md")
+	if err := os.WriteFile(path, current, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/patch-target.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: patch fixture")
+
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 8, 5, 15, 0, 0, 0, time.UTC)}
+	request := transactionRequest(t, "update: patch one detail", []map[string]any{{
+		"op": "patch_page", "path": "pages/patch-target.md", "expected_revision": docs.Revision(current),
+		"replacements": []map[string]any{
+			{"old": `updated: "2026-08-04"`, "new": `updated: "2026-08-05"`},
+			{"old": "Old detail.", "new": "New precise detail."},
+		},
+	}})
+	preview, err := service.Preview(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Preview: %v", err)
+	}
+	if !preview.Lint.Valid || !strings.Contains(preview.Diff, "+New precise detail.") ||
+		strings.Contains(preview.Diff, "+Keep this paragraph.") {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if data := mustRead(t, path); !bytes.Equal(data, current) {
+		t.Fatal("patch preview changed the canonical page")
+	}
+	shown, err := service.TransactionShow(preview.TransactionID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shown.Proposal.Operations) != 1 || shown.Proposal.Operations[0].Op != transaction.OperationPatchPage {
+		t.Fatalf("stored proposal = %+v", shown.Proposal)
+	}
+	committed, err := service.Commit(context.Background(), core.CommitOptions{
+		TransactionID: preview.TransactionID,
+		PreviewDigest: preview.PreviewDigest,
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	expected := bytes.Replace(current, []byte(`updated: "2026-08-04"`), []byte(`updated: "2026-08-05"`), 1)
+	expected = bytes.Replace(expected, []byte("Old detail."), []byte("New precise detail."), 1)
+	if data := mustRead(t, path); !bytes.Equal(data, expected) {
+		t.Fatalf("committed page = %q, want %q", data, expected)
+	}
+	if committed.Commit == "" || len(committed.ChangedPaths) != 1 || committed.ChangedPaths[0] != "pages/patch-target.md" {
+		t.Fatalf("commit result = %+v", committed)
+	}
+}
+
+func TestPatchPageRejectsMissingAmbiguousAndOverlappingText(t *testing.T) {
+	tests := []struct {
+		name         string
+		replacements []map[string]any
+		wantCode     string
+		wantIndex    int
+	}{
+		{
+			name: "missing", wantCode: "patch_text_not_found", wantIndex: 0,
+			replacements: []map[string]any{{"old": "Not present.", "new": "Replacement."}},
+		},
+		{
+			name: "ambiguous", wantCode: "patch_text_ambiguous", wantIndex: 0,
+			replacements: []map[string]any{{"old": "Repeated.", "new": "Replacement."}},
+		},
+		{
+			name: "overlap", wantCode: "patch_replacements_overlap", wantIndex: -1,
+			replacements: []map[string]any{
+				{"old": "# Details\n\nRepeated.", "new": "# Details\n\nChanged."},
+				{"old": "Repeated.", "new": "Changed."},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := transactionTestRepository(t)
+			body := "# Details\n\nRepeated.\n\nRepeated.\n"
+			if tt.name == "overlap" {
+				body = "# Details\n\nRepeated.\n"
+			}
+			current := validTransactionPage("page_patch_errors", "Patch errors", "2026-08-05", body)
+			path := filepath.Join(repo.Root, "pages", "patch-errors.md")
+			if err := os.WriteFile(path, current, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, repo.Root, "add", "--", "pages/patch-errors.md")
+			runGit(t, repo.Root, "commit", "-m", "maintenance: patch error fixture")
+			service := core.NewService(repo)
+			service.Clock = fixedClock{value: time.Date(2026, 8, 5, 15, 0, 0, 0, time.UTC)}
+			_, err := service.Preview(context.Background(), transactionRequest(t, "update: patch error", []map[string]any{{
+				"op": "patch_page", "path": "pages/patch-errors.md", "expected_revision": docs.Revision(current),
+				"replacements": tt.replacements,
+			}}))
+			var apiErr *core.APIError
+			if !errors.As(err, &apiErr) || apiErr.Code != tt.wantCode {
+				t.Fatalf("error = %#v, want %s", err, tt.wantCode)
+			}
+			if tt.wantIndex >= 0 && apiErr.Details["replacement_index"] != tt.wantIndex {
+				t.Fatalf("details = %+v", apiErr.Details)
+			}
+		})
+	}
+}
+
+func TestPatchPageRequiresCurrentUpdatedDateForContentChanges(t *testing.T) {
+	repo := transactionTestRepository(t)
+	current := validTransactionPage("page_patch_date", "Patch date", "2026-08-04", "Old detail.\n")
+	path := filepath.Join(repo.Root, "pages", "patch-date.md")
+	if err := os.WriteFile(path, current, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repo.Root, "add", "--", "pages/patch-date.md")
+	runGit(t, repo.Root, "commit", "-m", "maintenance: patch date fixture")
+	service := core.NewService(repo)
+	service.Clock = fixedClock{value: time.Date(2026, 8, 5, 15, 0, 0, 0, time.UTC)}
+	_, err := service.Preview(context.Background(), transactionRequest(t, "update: patch without date", []map[string]any{{
+		"op": "patch_page", "path": "pages/patch-date.md", "expected_revision": docs.Revision(current),
+		"replacements": []map[string]any{{"old": "Old detail.", "new": "New detail."}},
+	}}))
+	var apiErr *core.APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "updated_too_old" ||
+		apiErr.Details["minimum"] != "2026-08-05" || apiErr.Details["path"] != "pages/patch-date.md" {
+		t.Fatalf("error = %#v", err)
 	}
 }
 

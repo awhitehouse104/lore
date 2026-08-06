@@ -294,6 +294,8 @@ Supported operations are:
 
 - `create_page`: `op`, direct `pages/*.md` path, and complete `content`;
 - `update_page`: the same plus the current whole-file `expected_revision`;
+- `patch_page`: `op`, an existing direct `pages/*.md` path, its current
+  whole-file `expected_revision`, and 1–50 exact `{old,new}` replacements;
 - `delete_page`: `op`, an existing direct `pages/*.md` path, and its current
   whole-file `expected_revision`;
 - `mark_source_integrated`: source `path`, `expected_revision`, and 1–50 unique
@@ -313,6 +315,14 @@ page metadata violations. A page body change must set `updated` to at least the
 current UTC calendar date. It never mutates the working tree, index, refs, or
 history. Instead it overlays the exact effective bytes in memory, runs full
 lint, and generates an uncolored unified diff with `a/` and `b/` paths.
+For `patch_page`, every nonempty `old` block must occur exactly once in the
+original page and replacement ranges must not overlap. All matches are made
+against the original revision, not the result of earlier replacements. Include
+the exact old and new `updated` lines when advancing the required date. A
+missing, repeated, or overlapping block fails safely without including the
+block's content in the error. Prefer this operation for small localized edits
+and `update_page` for substantial rewrites; both still produce and validate the
+complete prospective page and full diff.
 Revision-guarded page updates may change a page ID; only `created` remains
 immutable. Prospective lint prevents deletion or movement from leaving a broken
 link in another synthesized page. A path move is therefore composed in one

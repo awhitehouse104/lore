@@ -195,7 +195,7 @@ func ValidateProposal(proposal Proposal) error {
 			if operation.Deleted {
 				return fmt.Errorf("create_page operation must have resulting content")
 			}
-		case OperationUpdatePage:
+		case OperationUpdatePage, OperationPatchPage:
 			if err := ValidatePagePath(operation.Path); err != nil {
 				return err
 			}
@@ -203,10 +203,10 @@ func ValidateProposal(proposal Proposal) error {
 				return err
 			}
 			if operation.OriginalRevision != operation.ExpectedRevision {
-				return fmt.Errorf("update_page original revision must equal expected revision")
+				return fmt.Errorf("%s original revision must equal expected revision", operation.Op)
 			}
 			if operation.Deleted {
-				return fmt.Errorf("update_page operation must have resulting content")
+				return fmt.Errorf("%s operation must have resulting content", operation.Op)
 			}
 		case OperationDeletePage:
 			if err := ValidatePagePath(operation.Path); err != nil {

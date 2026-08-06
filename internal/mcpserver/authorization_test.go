@@ -16,6 +16,15 @@ import (
 
 func TestPermissionFilteredDiscoveryAndSensitivityMasking(t *testing.T) {
 	service := newTestService(t)
+	sensitivePath := filepath.Join(service.Repo.Root, "pages", "sensitive-notes.md")
+	sensitiveData, err := os.ReadFile(sensitivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sensitiveData = []byte(strings.Replace(string(sensitiveData), "kind: topic\n", "kind: topic\naliases: [foo]\n", 1))
+	if err := os.WriteFile(sensitivePath, sensitiveData, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	principal := testPrincipal(t, "normal-reader", []auth.Permission{auth.PermissionQuery}, []string{"normal"})
 	session := connectTestClient(t, service, principal)
 	list, err := session.ListTools(t.Context(), nil)
@@ -26,7 +35,7 @@ func TestPermissionFilteredDiscoveryAndSensitivityMasking(t *testing.T) {
 	for _, tool := range list.Tools {
 		names = append(names, tool.Name)
 	}
-	if want := []string{"lore_page_references", "lore_read", "lore_search"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"lore_page_references", "lore_read", "lore_read_many", "lore_search"}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("query-only tools = %v, want %v", names, want)
 	}
 
@@ -51,6 +60,25 @@ func TestPermissionFilteredDiscoveryAndSensitivityMasking(t *testing.T) {
 	if !readResult.IsError || !strings.Contains(errorText, `"code":"not_found"`) ||
 		strings.Contains(errorText, "sensitive") || strings.Contains(errorText, "page_sensitive_notes") {
 		t.Fatalf("masked read error = %s", errorText)
+	}
+	aliasRead := decodeOutput[ReadOutput](t, callTool(t, session, "lore_read", map[string]any{"ref": "foo"}))
+	if aliasRead.ID != "page_project_foo" {
+		t.Fatalf("authorized alias resolution = %+v", aliasRead)
+	}
+	batchResult, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_read_many",
+		Arguments: map[string]any{"items": []any{
+			map[string]any{"ref": "page_project_foo"},
+			map[string]any{"ref": "page_sensitive_notes"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batchError := toolResultText(t, batchResult)
+	if !batchResult.IsError || !strings.Contains(batchError, `"code":"not_found"`) ||
+		strings.Contains(batchError, "sensitive") || strings.Contains(batchError, "page_sensitive_notes") {
+		t.Fatalf("masked batch-read error = %s", batchError)
 	}
 	referencesResult, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 		Name:      "lore_page_references",

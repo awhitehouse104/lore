@@ -176,7 +176,7 @@ Tool discovery is filtered by permission, and every invocation checks again:
 
 | Permission | Capabilities |
 |---|---|
-| `query` | `lore_search`, `lore_read`, `lore_page_references`, page resources, page/source resource templates |
+| `query` | `lore_search`, `lore_read`, `lore_read_many`, `lore_page_references`, page resources, page/source resource templates |
 | `capture` | `lore_capture` |
 | `curate` | `lore_preview`, `lore_commit`, transaction list/show/discard |
 | `inspect` | `lore_lint`, `lore_index_status` |
@@ -216,6 +216,15 @@ All successful structured tool results use schema version `1`. Search and read
 outputs include provenance, exact line information, and SHA-256 revisions.
 Read responses are bounded; request another line range when `more` is true.
 
+`lore_read_many` reads 1–8 authorized references in request order after one
+catalog scan. Each item has its own optional `start_line` and `end_line`; an
+omitted range returns up to 160 lines. Each item is capped at 400 lines and
+256 KiB, and the complete response is capped at 512 KiB. The call is
+all-or-nothing: an invalid, ambiguous, oversized, or unauthorized item fails
+the batch, and unauthorized references retain normal not-found masking. Use it
+for a selective set of likely search results, not as an unbounded repository
+dump.
+
 `lore_search` accepts `matching: auto|lexical|fuzzy`, defaulting to `auto`.
 Matching mode is independent of `backend`. Adaptive mode typo-expands only
 eligible terms absent from the principal's already-filtered vocabulary;
@@ -239,8 +248,16 @@ page. An absent prospective ID returns `reason: integrated_page_missing` with
 `details.field: operations[].page_ids` and a bounded `details.page_ids` array
 containing only the invalid caller-supplied IDs.
 
-`lore_preview` supports revision-guarded `delete_page` operations alongside
-page creates and updates. Page updates may change the ID but not `created`.
+`lore_preview` supports revision-guarded `patch_page` and `delete_page`
+operations alongside page creates and whole-page updates. A `patch_page`
+operation supplies 1–50 `{old,new}` replacements. Every nonempty `old` block
+must occur exactly once in the original revision, replacement ranges must not
+overlap, and all matches are resolved against the original bytes rather than
+against earlier replacements. The prospective complete page then passes the
+same metadata, lint, diff, digest, commit, and recovery checks as an
+`update_page`. Include the exact `updated` line in the replacements when the
+page content changes; use `update_page` for a substantial rewrite.
+Page updates may change the ID but not `created`.
 Moving a path is one atomic preview containing the replacement create, live
 backlink updates, optional source-integration additions, and deletion of the
 old path. Prospective lint rejects broken live page links before commit.
@@ -248,7 +265,8 @@ old path. Prospective lint rejects broken live page links before commit.
 An MCP agent should use a bounded retrieval loop:
 
 1. Start with `matching: auto` and the natural query.
-2. Inspect the top snippets and use `lore_read` on likely results.
+2. Inspect the top snippets. Use `lore_read` for one likely result or
+   `lore_read_many` for a selective ordered set of likely results.
 3. If evidence is weak or absent, retry with two to four distinctive terms
    learned from the returned evidence and add type, tag, or path filters when
    they narrow the question.

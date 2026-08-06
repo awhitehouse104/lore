@@ -39,8 +39,10 @@ history. Keep preview and commit on the same CLI or MCP actor.
 
 Start retrieval with ordinary `lore search`, inspect and read likely results,
 then reformulate weak searches with distinctive terms from the evidence. Do not
-infer absence from one query. Authorized local agents may also use `rg` over
-`pages/` and `sources/`; the Markdown remains authoritative. The optional
+infer absence from one query. MCP agents can use `lore_read_many` to read a
+small ordered set of likely documents in one bounded call. Authorized local
+agents may also use `rg` over `pages/` and `sources/`; the Markdown remains
+authoritative. The optional
 `.lore/index.sqlite` is disposable derived state; inspect it through
 `lore index status --verify` and never edit it directly.
 

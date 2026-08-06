@@ -14,12 +14,13 @@ import (
 )
 
 const (
-	SchemaVersion       = 1
-	MaxRequestBytes     = 16 * 1024 * 1024
-	MaxOperations       = 50
-	MaxTotalNewContent  = 16 * 1024 * 1024
-	MaxDiffBytes        = 16 * 1024 * 1024
-	MaxIntegrationPages = 50
+	SchemaVersion        = 1
+	MaxRequestBytes      = 16 * 1024 * 1024
+	MaxOperations        = 50
+	MaxTotalNewContent   = 16 * 1024 * 1024
+	MaxDiffBytes         = 16 * 1024 * 1024
+	MaxIntegrationPages  = 50
+	MaxPatchReplacements = 50
 )
 
 type OperationKind string
@@ -27,6 +28,7 @@ type OperationKind string
 const (
 	OperationCreatePage           OperationKind = "create_page"
 	OperationUpdatePage           OperationKind = "update_page"
+	OperationPatchPage            OperationKind = "patch_page"
 	OperationDeletePage           OperationKind = "delete_page"
 	OperationMarkSourceIntegrated OperationKind = "mark_source_integrated"
 	OperationSetSourceSensitivity OperationKind = "set_source_sensitivity"
@@ -46,6 +48,12 @@ type Operation struct {
 	PageIDs          []string      `json:"page_ids,omitempty"`
 	Sensitivity      string        `json:"sensitivity,omitempty"`
 	AllowDowngrade   bool          `json:"allow_downgrade,omitempty"`
+	Replacements     []Replacement `json:"replacements,omitempty"`
+}
+
+type Replacement struct {
+	Old string `json:"old"`
+	New string `json:"new"`
 }
 
 type requestWire struct {
@@ -65,6 +73,13 @@ type updatePageWire struct {
 	Path             string        `json:"path"`
 	ExpectedRevision string        `json:"expected_revision"`
 	Content          *string       `json:"content"`
+}
+
+type patchPageWire struct {
+	Op               OperationKind `json:"op"`
+	Path             string        `json:"path"`
+	ExpectedRevision string        `json:"expected_revision"`
+	Replacements     []Replacement `json:"replacements"`
 }
 
 type deletePageWire struct {
@@ -146,6 +161,16 @@ func DecodeRequest(data []byte, maxPageBytes int64) (Request, error) {
 			totalContent += contentBytes
 			if totalContent > MaxTotalNewContent {
 				return Request{}, fmt.Errorf("total resulting page content exceeds %d bytes", MaxTotalNewContent)
+			}
+		} else if operation.Op == OperationPatchPage {
+			for replacementIndex, replacement := range operation.Replacements {
+				if int64(len([]byte(replacement.Old))) > maxPageBytes || int64(len([]byte(replacement.New))) > maxPageBytes {
+					return Request{}, fmt.Errorf("operation %d replacement %d exceeds configured maximum of %d bytes", index, replacementIndex, maxPageBytes)
+				}
+				totalContent += len([]byte(replacement.New))
+				if totalContent > MaxTotalNewContent {
+					return Request{}, fmt.Errorf("total patch replacement content exceeds %d bytes", MaxTotalNewContent)
+				}
 			}
 		}
 		request.Operations = append(request.Operations, operation)
@@ -260,6 +285,42 @@ func decodeOperation(raw []byte) (Operation, error) {
 			ExpectedRevision: wire.ExpectedRevision,
 			Content:          *wire.Content,
 		}, nil
+	case OperationPatchPage:
+		var wire patchPageWire
+		if err := decodeStrict(raw, &wire); err != nil {
+			return Operation{}, fmt.Errorf("decode patch_page: %w", err)
+		}
+		if err := ValidatePagePath(wire.Path); err != nil {
+			return Operation{}, err
+		}
+		if err := ValidateRevision(wire.ExpectedRevision); err != nil {
+			return Operation{}, err
+		}
+		if len(wire.Replacements) < 1 || len(wire.Replacements) > MaxPatchReplacements {
+			return Operation{}, fmt.Errorf("replacements must contain between 1 and %d entries", MaxPatchReplacements)
+		}
+		seen := make(map[string]struct{}, len(wire.Replacements))
+		for index, replacement := range wire.Replacements {
+			if replacement.Old == "" {
+				return Operation{}, fmt.Errorf("replacement %d old text must not be empty", index)
+			}
+			if !utf8.ValidString(replacement.Old) || !utf8.ValidString(replacement.New) {
+				return Operation{}, fmt.Errorf("replacement %d text must be valid UTF-8", index)
+			}
+			if replacement.Old == replacement.New {
+				return Operation{}, fmt.Errorf("replacement %d must change the matched text", index)
+			}
+			if _, exists := seen[replacement.Old]; exists {
+				return Operation{}, fmt.Errorf("replacements must contain unique old text")
+			}
+			seen[replacement.Old] = struct{}{}
+		}
+		return Operation{
+			Op:               wire.Op,
+			Path:             wire.Path,
+			ExpectedRevision: wire.ExpectedRevision,
+			Replacements:     append([]Replacement(nil), wire.Replacements...),
+		}, nil
 	case OperationDeletePage:
 		var wire deletePageWire
 		if err := decodeStrict(raw, &wire); err != nil {
@@ -328,7 +389,7 @@ func decodeOperation(raw []byte) (Operation, error) {
 			AllowDowngrade:   wire.AllowDowngrade,
 		}, nil
 	default:
-		return Operation{}, fmt.Errorf("op must be create_page, update_page, delete_page, mark_source_integrated, or set_source_sensitivity")
+		return Operation{}, fmt.Errorf("op must be create_page, update_page, patch_page, delete_page, mark_source_integrated, or set_source_sensitivity")
 	}
 }
 

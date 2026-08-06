@@ -71,6 +71,19 @@ type ReadOutput struct {
 	Content       string `json:"content"`
 }
 
+type ReadManyInput struct {
+	Items []core.ReadManyRequest `json:"items"`
+}
+
+type ReadManyOutput struct {
+	SchemaVersion int               `json:"schema_version"`
+	Status        string            `json:"status"`
+	RequestID     string            `json:"request_id"`
+	Operation     string            `json:"operation"`
+	Documents     []core.ReadResult `json:"documents"`
+	TotalBytes    int               `json:"total_bytes"`
+}
+
 type PageReferencesInput struct {
 	Ref string `json:"ref"`
 }

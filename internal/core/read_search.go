@@ -34,6 +34,26 @@ type ReadResult struct {
 	Content       string `json:"content"`
 }
 
+const (
+	DefaultReadManyLines = 160
+	MaximumReadManyItems = 8
+	MaximumReadManyLines = 400
+	MaximumReadItemBytes = 256 * 1024
+	MaximumReadManyBytes = 512 * 1024
+)
+
+type ReadManyRequest struct {
+	Ref       string `json:"ref"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+}
+
+type ReadManyResult struct {
+	SchemaVersion int          `json:"schema_version"`
+	Documents     []ReadResult `json:"documents"`
+	TotalBytes    int          `json:"total_bytes"`
+}
+
 type SearchResult struct {
 	SchemaVersion    int                 `json:"schema_version"`
 	Query            string              `json:"query"`
@@ -86,13 +106,91 @@ func (s *Service) read(ctx context.Context, reference string, requested *LineRan
 		apiErr.Cause = err
 		return ReadResult{}, apiErr
 	}
+	return s.readFromCatalog(documentCatalog, reference, requested, access)
+}
+
+func (s *Service) ReadMany(ctx context.Context, requests []ReadManyRequest) (ReadManyResult, error) {
+	return s.readMany(ctx, requests, search.AllAccessPolicy())
+}
+
+func (s *Service) ReadManyAuthorized(ctx context.Context, requests []ReadManyRequest, access search.AccessPolicy) (ReadManyResult, error) {
+	if access.AllowedSensitivities == nil {
+		return ReadManyResult{}, NewError(ExitUsage, "access_policy_required", "batch read requires an explicit sensitivity access policy")
+	}
+	return s.readMany(ctx, requests, access)
+}
+
+func (s *Service) readMany(ctx context.Context, requests []ReadManyRequest, access search.AccessPolicy) (ReadManyResult, error) {
+	result := ReadManyResult{SchemaVersion: SchemaVersion, Documents: []ReadResult{}}
+	if s == nil || s.Repo == nil {
+		return result, NewError(ExitRuntime, "service_unavailable", "read service is not fully configured")
+	}
+	if len(requests) < 1 || len(requests) > MaximumReadManyItems {
+		return result, NewError(ExitUsage, "invalid_batch_size", fmt.Sprintf("batch read requires between 1 and %d requests", MaximumReadManyItems))
+	}
+	documentCatalog, _, err := catalog.Scan(ctx, s.Repo, false)
+	if err != nil {
+		apiErr := NewError(ExitRuntime, "catalog_scan_failed", "could not scan managed documents")
+		apiErr.Cause = err
+		return result, apiErr
+	}
+	result.Documents = make([]ReadResult, 0, len(requests))
+	for index, request := range requests {
+		start := request.StartLine
+		if start == 0 {
+			start = 1
+		}
+		end := request.EndLine
+		if end == 0 {
+			end = start + DefaultReadManyLines - 1
+		}
+		if start < 1 || end < start || end-start+1 > MaximumReadManyLines {
+			apiErr := NewError(ExitValidation, "invalid_line_range", fmt.Sprintf("batch read request %d must contain between 1 and %d lines", index, MaximumReadManyLines))
+			apiErr.Details = map[string]any{"index": index}
+			return result, apiErr
+		}
+		document, err := s.readFromCatalog(documentCatalog, request.Ref, &LineRange{Start: start, End: end}, access)
+		if err != nil {
+			var apiErr *APIError
+			if errors.As(err, &apiErr) {
+				if apiErr.Details == nil {
+					apiErr.Details = map[string]any{}
+				}
+				apiErr.Details["index"] = index
+			}
+			return result, err
+		}
+		contentBytes := len([]byte(document.Content))
+		if contentBytes > MaximumReadItemBytes {
+			apiErr := NewError(ExitValidation, "read_too_large", fmt.Sprintf("batch read request %d exceeds the %d-byte per-document limit", index, MaximumReadItemBytes))
+			apiErr.Details = map[string]any{"index": index}
+			return result, apiErr
+		}
+		if result.TotalBytes+contentBytes > MaximumReadManyBytes {
+			apiErr := NewError(ExitValidation, "batch_read_too_large", fmt.Sprintf("batch read exceeds the %d-byte aggregate limit; request fewer documents or smaller ranges", MaximumReadManyBytes))
+			apiErr.Details = map[string]any{"index": index, "bytes_before": result.TotalBytes}
+			return result, apiErr
+		}
+		result.Documents = append(result.Documents, document)
+		result.TotalBytes += contentBytes
+	}
+	return result, nil
+}
+
+func (s *Service) readFromCatalog(documentCatalog catalog.Catalog, reference string, requested *LineRange, access search.AccessPolicy) (ReadResult, error) {
 	resolvedReference, err := normalizeReadReference(reference)
 	if err != nil {
 		apiErr := NewError(ExitUsage, "unsafe_reference", err.Error())
 		apiErr.Cause = err
 		return ReadResult{}, apiErr
 	}
-	document, err := documentCatalog.Resolve(s.Repo, resolvedReference)
+	authorizedCatalog := catalog.Catalog{Documents: make([]*docs.Document, 0, len(documentCatalog.Documents))}
+	for _, candidate := range documentCatalog.Documents {
+		if access.Allows(candidate.Sensitivity()) {
+			authorizedCatalog.Documents = append(authorizedCatalog.Documents, candidate)
+		}
+	}
+	document, err := authorizedCatalog.Resolve(s.Repo, resolvedReference)
 	if err != nil {
 		var ambiguous *catalog.AmbiguousError
 		var unsafe *catalog.UnsafeReferenceError
@@ -120,10 +218,6 @@ func (s *Service) read(ctx context.Context, reference string, requested *LineRan
 			return ReadResult{}, apiErr
 		}
 	}
-	if !access.Allows(document.Sensitivity()) {
-		return ReadResult{}, NewError(ExitValidation, "reference_not_found", "no managed document matches reference")
-	}
-
 	content, lineStart, lineEnd, err := sliceLines(document.Data, requested)
 	if err != nil {
 		apiErr := NewError(ExitValidation, "invalid_line_range", err.Error())

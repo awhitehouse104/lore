@@ -42,7 +42,8 @@ type Server struct {
 const serverInstructions = "Use the configured Lore Markdown repository as evidence-backed memory. " +
 	"At the start of a local stdio session, call lore_preflight when it is available; it performs the " +
 	"repository's safety checks, one-fetch fast-forward synchronization, and index reconciliation. " +
-	"Search and read before answering or curating. When permitted, capture a minimally " +
+	"Search and read before answering or curating; use lore_read_many for a selective bounded batch " +
+	"when several likely results matter. When permitted, capture a minimally " +
 	"self-contained verbatim source unit before synthesis; preserve enough context for approvals " +
 	"and relative temporal statements without inventing missing context. Every capture requires an " +
 	"explicit normal, sensitive, or local-only classification. Store shared facts once " +
@@ -64,6 +65,8 @@ const serverInstructions = "Use the configured Lore Markdown repository as evide
 	"solicit unrelated personal defaults. " +
 	"For page body changes, set updated to at least the server's current UTC calendar date; follow " +
 	"the minimum date in validation details when client and server dates differ. " +
+	"For a small localized page edit, prefer patch_page with the current revision and exact old text " +
+	"that occurs once; include an exact updated-date replacement when changing page content. " +
 	"Use Lore tools for every repository operation they support; never directly mutate managed " +
 	"Markdown or derived state. Authorized read-only local retrieval, Git synchronization, and " +
 	"explicit protected-file maintenance are the exceptions. Preview and inspect the complete diff " +
@@ -140,6 +143,7 @@ func (s *Server) addTools() {
 	if s.principal.Has(auth.PermissionQuery) {
 		mcp.AddTool(s.mcp, searchTool(), s.search)
 		mcp.AddTool(s.mcp, readTool(), s.read)
+		mcp.AddTool(s.mcp, readManyTool(), s.readMany)
 		mcp.AddTool(s.mcp, pageReferencesTool(), s.pageReferences)
 	}
 	if s.principal.Has(auth.PermissionHistory) {
@@ -288,6 +292,28 @@ func (s *Server) read(ctx context.Context, _ *mcp.CallToolRequest, input ReadInp
 		Content:       result.Content,
 	}
 	summary := fmt.Sprintf("Read %s lines %d-%d (%s).", output.ID, output.LineStart, output.LineEnd, output.Revision)
+	return textResult(summary), output, nil
+}
+
+func (s *Server) readMany(ctx context.Context, _ *mcp.CallToolRequest, input ReadManyInput) (*mcp.CallToolResult, ReadManyOutput, error) {
+	requestID := requestID(ctx)
+	if callResult, toolErr := s.requirePermission(auth.PermissionQuery, requestID); toolErr != nil {
+		return callResult, ReadManyOutput{}, toolErr
+	}
+	result, err := s.service.ReadManyAuthorized(ctx, input.Items, s.principal.AccessPolicy())
+	if err != nil {
+		callResult, toolErr := mappedToolError(err, requestID)
+		return callResult, ReadManyOutput{}, toolErr
+	}
+	output := ReadManyOutput{
+		SchemaVersion: schemaVersion,
+		Status:        "ok",
+		RequestID:     requestID,
+		Operation:     "lore_read_many",
+		Documents:     result.Documents,
+		TotalBytes:    result.TotalBytes,
+	}
+	summary := fmt.Sprintf("Read %d authorized Lore document(s) in one bounded batch (%d bytes).", len(output.Documents), output.TotalBytes)
 	return textResult(summary), output, nil
 }
 
@@ -897,6 +923,34 @@ func readTool() *mcp.Tool {
 	}
 }
 
+func readManyTool() *mcp.Tool {
+	itemSchema := objectSchema(
+		[]string{"ref"},
+		map[string]any{
+			"ref":        map[string]any{"type": "string", "minLength": 1, "maxLength": 2048},
+			"start_line": map[string]any{"type": "integer", "minimum": 1},
+			"end_line":   map[string]any{"type": "integer", "minimum": 1},
+		},
+	)
+	return &mcp.Tool{
+		Name:        "lore_read_many",
+		Title:       "Read multiple Lore documents",
+		Description: fmt.Sprintf("Read up to %d authorized managed documents with independent bounded line ranges using one catalog scan and one MCP round trip. Results are capped at %d aggregate bytes.", core.MaximumReadManyItems, core.MaximumReadManyBytes),
+		Annotations: readOnlyAnnotations("Read multiple Lore documents"),
+		InputSchema: objectSchema(
+			[]string{"items"},
+			map[string]any{
+				"items": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": core.MaximumReadManyItems,
+					"items":    itemSchema,
+				},
+			},
+		),
+	}
+}
+
 func pageReferencesTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "lore_page_references",
@@ -991,7 +1045,7 @@ func previewTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "lore_preview",
 		Title:       "Preview Lore transaction",
-		Description: "Validate and persist an exact authorized Lore transaction proposal without changing canonical knowledge. A page body change must set updated to at least the server's current UTC calendar date; an updated_too_old error returns the required minimum. Newly supplied source integration IDs must exist after the transaction.",
+		Description: "Validate and persist an exact authorized Lore transaction proposal without changing canonical knowledge. Use revision-guarded patch_page for bounded exact-text edits and update_page for whole-page replacement. A page body change must set updated to at least the server's current UTC calendar date; an updated_too_old error returns the required minimum. Newly supplied source integration IDs must exist after the transaction.",
 		Annotations: mutationAnnotations("Preview Lore transaction", false, false),
 		InputSchema: objectSchema(
 			[]string{"schema_version", "message", "operations"},
@@ -1003,7 +1057,7 @@ func previewTool() *mcp.Tool {
 					"minItems": 1,
 					"maxItems": transaction.MaxOperations,
 					"items": map[string]any{
-						"oneOf": []any{createPageOperationSchema(), updatePageOperationSchema(), deletePageOperationSchema(), integrateSourceOperationSchema(), setSourceSensitivityOperationSchema()},
+						"oneOf": []any{createPageOperationSchema(), updatePageOperationSchema(), patchPageOperationSchema(), deletePageOperationSchema(), integrateSourceOperationSchema(), setSourceSensitivityOperationSchema()},
 					},
 				},
 			},
@@ -1103,6 +1157,29 @@ func updatePageOperationSchema() map[string]any {
 			"path":              pagePathSchema(),
 			"expected_revision": map[string]any{"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`},
 			"content":           map[string]any{"type": "string", "maxLength": transaction.MaxTotalNewContent},
+		},
+	)
+}
+
+func patchPageOperationSchema() map[string]any {
+	replacementSchema := objectSchema(
+		[]string{"old", "new"},
+		map[string]any{
+			"old": map[string]any{"type": "string", "minLength": 1, "maxLength": transaction.MaxTotalNewContent, "description": "Exact current UTF-8 text that must occur once in the revision-guarded page."},
+			"new": map[string]any{"type": "string", "maxLength": transaction.MaxTotalNewContent},
+		},
+	)
+	return objectSchema(
+		[]string{"op", "path", "expected_revision", "replacements"},
+		map[string]any{
+			"op":                map[string]any{"type": "string", "const": string(transaction.OperationPatchPage)},
+			"path":              pagePathSchema(),
+			"expected_revision": map[string]any{"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`},
+			"replacements": map[string]any{
+				"type": "array", "minItems": 1, "maxItems": transaction.MaxPatchReplacements,
+				"description": "Non-overlapping replacements matched against the original page, not against earlier replacements. Include the updated frontmatter line when changing page content.",
+				"items":       replacementSchema,
+			},
 		},
 	)
 }

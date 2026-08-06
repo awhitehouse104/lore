@@ -339,31 +339,33 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 			return transaction.EffectiveOperation{}, nil, nil, false, revisionConflict(operation.Path, operation.ExpectedRevision, currentRevision)
 		}
 		resulting := []byte(operation.Content)
-		currentDocument, err := docs.Parse(operation.Path, original)
-		if err != nil || currentDocument.Page == nil {
-			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "invalid_current_page", fmt.Sprintf("current page is invalid: %s", operation.Path))
+		if apiErr := validatePageUpdateTransition(operation.Op, operation.Path, original, resulting, now); apiErr != nil {
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
-		proposedDocument, apiErr := validatePageContent(operation.Path, resulting)
+		return transaction.EffectiveOperation{
+			Op:                     operation.Op,
+			Path:                   operation.Path,
+			ExpectedRevision:       operation.ExpectedRevision,
+			OriginalRevision:       currentRevision,
+			ResultingContentSHA256: docs.SHA256(resulting),
+		}, original, resulting, false, nil
+	case transaction.OperationPatchPage:
+		original, apiErr := readRegularTarget(absolute, operation.Path)
 		if apiErr != nil {
 			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
-		if currentDocument.Page.Created != proposedDocument.Page.Created {
-			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "immutable_page_created", fmt.Sprintf("update_page cannot change created for %s", operation.Path))
+		currentRevision := docs.Revision(original)
+		if currentRevision != operation.ExpectedRevision {
+			return transaction.EffectiveOperation{}, nil, nil, false, revisionConflict(operation.Path, operation.ExpectedRevision, currentRevision)
 		}
-		currentUpdated, _ := time.Parse("2006-01-02", string(currentDocument.Page.Updated))
-		proposedUpdated, _ := time.Parse("2006-01-02", string(proposedDocument.Page.Updated))
-		if proposedUpdated.Before(currentUpdated) {
-			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "updated_regressed", fmt.Sprintf("update_page updated date precedes the current value for %s", operation.Path))
+		resulting, apiErr := applyPageReplacements(operation.Path, original, operation.Replacements)
+		if apiErr != nil {
+			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
-		today, _ := time.Parse("2006-01-02", now.UTC().Format("2006-01-02"))
-		if docs.PageChangedExceptUpdated(currentDocument, proposedDocument) && proposedUpdated.Before(today) {
-			minimum := today.Format("2006-01-02")
-			apiErr := NewError(ExitValidation, "updated_too_old", fmt.Sprintf("update_page updated date must be at least %s for content changes to %s", minimum, operation.Path))
-			apiErr.Details = map[string]any{
-				"field":   "updated",
-				"minimum": minimum,
-				"path":    operation.Path,
-			}
+		if int64(len(resulting)) > s.Repo.Config.Capture.MaxBytes {
+			return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "page_too_large", fmt.Sprintf("patched page exceeds configured maximum of %d bytes", s.Repo.Config.Capture.MaxBytes))
+		}
+		if apiErr := validatePageUpdateTransition(operation.Op, operation.Path, original, resulting, now); apiErr != nil {
 			return transaction.EffectiveOperation{}, nil, nil, false, apiErr
 		}
 		return transaction.EffectiveOperation{
@@ -457,6 +459,104 @@ func (s *Service) effectiveOperation(operation transaction.Operation, now time.T
 	default:
 		return transaction.EffectiveOperation{}, nil, nil, false, NewError(ExitValidation, "invalid_operation", "unsupported transaction operation")
 	}
+}
+
+type pageReplacementMatch struct {
+	index int
+	start int
+	end   int
+	new   []byte
+}
+
+func applyPageReplacements(path string, original []byte, replacements []transaction.Replacement) ([]byte, *APIError) {
+	matches := make([]pageReplacementMatch, 0, len(replacements))
+	resultingBytes := len(original)
+	for index, replacement := range replacements {
+		oldBytes := []byte(replacement.Old)
+		start, count := uniqueMatch(original, oldBytes)
+		switch {
+		case count == 0:
+			apiErr := NewError(ExitValidation, "patch_text_not_found", fmt.Sprintf("patch_page replacement %d does not match the current page", index))
+			apiErr.Details = map[string]any{"field": fmt.Sprintf("operations[].replacements[%d].old", index), "path": path, "replacement_index": index}
+			return nil, apiErr
+		case count > 1:
+			apiErr := NewError(ExitValidation, "patch_text_ambiguous", fmt.Sprintf("patch_page replacement %d matches the current page more than once", index))
+			apiErr.Details = map[string]any{"field": fmt.Sprintf("operations[].replacements[%d].old", index), "path": path, "replacement_index": index}
+			return nil, apiErr
+		}
+		newBytes := []byte(replacement.New)
+		resultingBytes += len(newBytes) - len(oldBytes)
+		matches = append(matches, pageReplacementMatch{index: index, start: start, end: start + len(oldBytes), new: newBytes})
+	}
+	sort.Slice(matches, func(i, j int) bool { return matches[i].start < matches[j].start })
+	for index := 1; index < len(matches); index++ {
+		if matches[index].start < matches[index-1].end {
+			left, right := matches[index-1].index, matches[index].index
+			apiErr := NewError(ExitValidation, "patch_replacements_overlap", "patch_page replacements match overlapping current text")
+			apiErr.Details = map[string]any{"path": path, "replacement_indexes": []int{left, right}}
+			return nil, apiErr
+		}
+	}
+	resulting := make([]byte, 0, resultingBytes)
+	cursor := 0
+	for _, match := range matches {
+		resulting = append(resulting, original[cursor:match.start]...)
+		resulting = append(resulting, match.new...)
+		cursor = match.end
+	}
+	resulting = append(resulting, original[cursor:]...)
+	return resulting, nil
+}
+
+func uniqueMatch(data, target []byte) (start, count int) {
+	start = -1
+	for offset := 0; offset <= len(data)-len(target); {
+		relative := bytes.Index(data[offset:], target)
+		if relative < 0 {
+			break
+		}
+		match := offset + relative
+		if count == 0 {
+			start = match
+		}
+		count++
+		if count > 1 {
+			return start, count
+		}
+		offset = match + 1
+	}
+	return start, count
+}
+
+func validatePageUpdateTransition(operation transaction.OperationKind, path string, original, resulting []byte, now time.Time) *APIError {
+	currentDocument, err := docs.Parse(path, original)
+	if err != nil || currentDocument.Page == nil {
+		return NewError(ExitValidation, "invalid_current_page", fmt.Sprintf("current page is invalid: %s", path))
+	}
+	proposedDocument, apiErr := validatePageContent(path, resulting)
+	if apiErr != nil {
+		return apiErr
+	}
+	if currentDocument.Page.Created != proposedDocument.Page.Created {
+		return NewError(ExitValidation, "immutable_page_created", fmt.Sprintf("%s cannot change created for %s", operation, path))
+	}
+	currentUpdated, _ := time.Parse("2006-01-02", string(currentDocument.Page.Updated))
+	proposedUpdated, _ := time.Parse("2006-01-02", string(proposedDocument.Page.Updated))
+	if proposedUpdated.Before(currentUpdated) {
+		return NewError(ExitValidation, "updated_regressed", fmt.Sprintf("%s updated date precedes the current value for %s", operation, path))
+	}
+	today, _ := time.Parse("2006-01-02", now.UTC().Format("2006-01-02"))
+	if docs.PageChangedExceptUpdated(currentDocument, proposedDocument) && proposedUpdated.Before(today) {
+		minimum := today.Format("2006-01-02")
+		apiErr := NewError(ExitValidation, "updated_too_old", fmt.Sprintf("%s updated date must be at least %s for content changes to %s", operation, minimum, path))
+		apiErr.Details = map[string]any{
+			"field":   "updated",
+			"minimum": minimum,
+			"path":    path,
+		}
+		return apiErr
+	}
+	return nil
 }
 
 func sensitivityRank(value string) int {

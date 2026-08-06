@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional"} {
+	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional", "lore_read_many", "patch_page"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -88,6 +88,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 		"lore_preflight",
 		"lore_preview",
 		"lore_read",
+		"lore_read_many",
 		"lore_recent",
 		"lore_search",
 		"lore_transaction_discard",
@@ -136,6 +137,17 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if readOutput.ID != "page_project_foo" || readOutput.Sensitivity != "normal" ||
 		!strings.Contains(readOutput.Content, "Project Foo") {
 		t.Fatalf("read output = %+v", readOutput)
+	}
+	readManyOutput := decodeOutput[ReadManyOutput](t, callTool(t, clientSession, "lore_read_many", map[string]any{
+		"items": []any{
+			map[string]any{"ref": "page_project_foo", "start_line": 1, "end_line": 5},
+			map[string]any{"ref": "page_sensitive_notes", "start_line": 1, "end_line": 4},
+		},
+	}))
+	if readManyOutput.Operation != "lore_read_many" || len(readManyOutput.Documents) != 2 ||
+		readManyOutput.Documents[0].ID != "page_project_foo" || readManyOutput.Documents[1].ID != "page_sensitive_notes" ||
+		readManyOutput.TotalBytes != len(readManyOutput.Documents[0].Content)+len(readManyOutput.Documents[1].Content) {
+		t.Fatalf("read-many output = %+v", readManyOutput)
 	}
 	referencesOutput := decodeOutput[PageReferencesOutput](t, callTool(t, clientSession, "lore_page_references", map[string]any{
 		"ref": "page_project_foo",
@@ -196,7 +208,7 @@ func TestMutationSchemasRequireSensitivityAndExposeSourceReclassification(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fragment := range []string{"delete_page", "set_source_sensitivity", "allow_downgrade"} {
+	for _, fragment := range []string{"patch_page", "replacements", "delete_page", "set_source_sensitivity", "allow_downgrade"} {
 		if !bytes.Contains(previewSchema, []byte(fragment)) {
 			t.Fatalf("preview schema missing %q: %s", fragment, previewSchema)
 		}
@@ -277,6 +289,44 @@ func TestPreviewDisclosesSafeUTCUpdateMinimum(t *testing.T) {
 	}
 	if strings.Contains(toolResultText(t, result), "Project Foo remains deployable") {
 		t.Fatalf("error disclosed page body: %s", toolResultText(t, result))
+	}
+}
+
+func TestPreviewDisclosesSafePatchMismatchWithoutEchoingText(t *testing.T) {
+	service := newTestService(t)
+	pagePath := filepath.Join(service.Repo.Root, "pages", "project-foo.md")
+	current, err := os.ReadFile(pagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretOldText := "missing private patch sentinel"
+	session := connectTestClient(t, service, fullPrincipal(t))
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "lore_preview",
+		Arguments: map[string]any{
+			"schema_version": 1,
+			"message":        "maintenance: test patch mismatch",
+			"operations": []any{map[string]any{
+				"op": "patch_page", "path": "pages/project-foo.md", "expected_revision": docs.Revision(current),
+				"replacements": []any{map[string]any{"old": secretOldText, "new": "replacement"}},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsError {
+		t.Fatalf("preview result = %+v, want tool error", result)
+	}
+	var envelope externalError
+	text := toolResultText(t, result)
+	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Code != "invalid_argument" || envelope.Reason != "patch_text_not_found" ||
+		envelope.Details["path"] != "pages/project-foo.md" || envelope.Details["replacement_index"] != float64(0) ||
+		strings.Contains(text, secretOldText) {
+		t.Fatalf("error envelope = %+v", envelope)
 	}
 }
 
@@ -413,7 +463,7 @@ func TestLegacyInitializeAndToolList(t *testing.T) {
 	})
 	list := readJSONLine(t, reader)
 	tools := list["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 13 {
+	if len(tools) != 14 {
 		t.Fatalf("legacy tool list = %#v", list)
 	}
 }

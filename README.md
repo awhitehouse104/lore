@@ -104,8 +104,10 @@ lore --repo "$HOME/lore-home" commit tx_01ARZ3NDEKTSV4RRFFQ69G5FAV \
   --preview-digest sha256:0123456789abcdef... --json
 ```
 
-The request can create, update, or delete direct children of `pages/` and can
-update supported source metadata. Preview never changes canonical files or
+The request can create, patch, update, or delete direct children of `pages/`
+and can update supported source metadata. Exact revision-guarded patches are
+useful for small localized edits; whole-page updates remain available for broad
+rewrites. Preview never changes canonical files or
 Git. A changed branch, HEAD, target revision, target Git status, artifact, or
 digest is a conflict; re-read the current documents and make a new preview
 rather than forcing it. Keep preview and commit on the same interface and
@@ -171,6 +173,11 @@ explicit fuzzy matching for uncertain spelling and lexical matching for exact
 verification; never infer absence from one zero-result query. An authorized
 local agent may also search the authoritative `pages/` and `sources/` Markdown
 with `rg` when that is simpler than an API round trip.
+
+MCP clients can use `lore_read_many` to fetch a selective ordered batch of up
+to eight likely documents in one tool call. Per-item line and byte limits plus
+an aggregate response limit preserve the same bounded-read model; authorization
+and not-found masking apply to every item.
 
 The repository includes a deterministic agent-retrieval evaluation corpus,
 graded query suite, and checked-in behavioral baseline. Run

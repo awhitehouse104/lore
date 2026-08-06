@@ -68,6 +68,11 @@ This file is the authoritative shared policy for Lore knowledge repositories.
 
 - Use `lore preview` and `lore commit` for normal page creates, updates, and
   deletes.
+- Prefer a revision-guarded `patch_page` operation for a small, exact localized
+  edit. Each `old` block must occur exactly once in the original page, and all
+  replacements are matched against that same original revision. Use
+  `update_page` when the whole page is being substantially rewritten. Include
+  the exact `updated` line as a replacement whenever changing page content.
 - Before changing a page path or ID, consolidating pages, or deleting a page,
   inspect it with CLI `lore references` or MCP `lore_page_references`. Repair
   or remove every live backlink from another synthesized page in the same
@@ -121,6 +126,10 @@ This file is the authoritative shared policy for Lore knowledge repositories.
   matching. It safely falls back to authoritative Markdown when a suitable
   derived index is unavailable.
 - Inspect top snippets and read likely documents before drawing a conclusion.
+- When several returned documents are likely to matter, use MCP
+  `lore_read_many` for a bounded ordered batch instead of paying one tool round
+  trip per document. Keep the batch selective; it is not a substitute for
+  search or authorization filtering.
 - If results are weak or empty, retry with two to four distinctive terms from
   the evidence and available scope or metadata filters. Use
   `--matching fuzzy` for uncertain spelling and `--matching lexical` for exact

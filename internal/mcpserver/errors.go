@@ -128,6 +128,34 @@ func safeValidationDisclosure(apiErr *core.APIError, fallbackMessage string) (st
 				"field":    "operations[].page_ids",
 				"page_ids": pageIDs,
 			}
+	case "patch_text_not_found", "patch_text_ambiguous":
+		field, fieldOK := apiErr.Details["field"].(string)
+		path, pathOK := apiErr.Details["path"].(string)
+		index, indexOK := apiErr.Details["replacement_index"].(int)
+		if !fieldOK || !pathOK || !indexOK || index < 0 || index >= transaction.MaxPatchReplacements || transaction.ValidatePagePath(path) != nil {
+			return "", fallbackMessage, nil
+		}
+		message := "The exact patch text was not found in the revision-guarded page."
+		if apiErr.Code == "patch_text_ambiguous" {
+			message = "The exact patch text occurs more than once; provide a larger unique context block."
+		}
+		return apiErr.Code, message, map[string]any{
+			"field": field, "path": path, "replacement_index": index,
+		}
+	case "patch_replacements_overlap":
+		path, pathOK := apiErr.Details["path"].(string)
+		indexes, indexesOK := apiErr.Details["replacement_indexes"].([]int)
+		if !pathOK || !indexesOK || len(indexes) != 2 || transaction.ValidatePagePath(path) != nil {
+			return "", fallbackMessage, nil
+		}
+		for _, index := range indexes {
+			if index < 0 || index >= transaction.MaxPatchReplacements {
+				return "", fallbackMessage, nil
+			}
+		}
+		return apiErr.Code,
+			"Patch replacements select overlapping current text; combine them into one exact replacement.",
+			map[string]any{"path": path, "replacement_indexes": indexes}
 	default:
 		return "", fallbackMessage, nil
 	}
