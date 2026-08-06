@@ -150,7 +150,8 @@ type IndexStatusOutput struct {
 }
 
 type PreflightInput struct {
-	Deep bool `json:"deep,omitempty"`
+	Sync *bool `json:"sync,omitempty"`
+	Deep bool  `json:"deep,omitempty"`
 }
 
 type PreflightOutput struct {

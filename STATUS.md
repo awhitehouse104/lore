@@ -407,9 +407,11 @@ Milestones 1–5 and the complete release matrix are finished.
   explicit blockers. An unchanged HEAD with a fresh certified index takes the
   lightweight path, while `--deep` preserves an on-demand full audit. The
   structured local-full stdio `lore_preflight` tool exposes the same operation,
-  is absent from HTTP and local-query profiles, and fixes the expected branch
-  to `main`; generated and MCP instructions make it the required first step in
-  a synchronized writable session.
+  defaults to synchronized operation, and now accepts explicit `sync: false`
+  for an intentionally local-only repository with no remote. It remains absent
+  from HTTP and local-query profiles and fixes the expected branch to `main`;
+  generated and MCP instructions distinguish local-only from synchronized
+  writable sessions.
 
 ## v0.4 completed milestones
 

@@ -41,7 +41,8 @@ type Server struct {
 
 const serverInstructions = "Use the configured Lore Markdown repository as evidence-backed memory. " +
 	"At the start of a local stdio session, call lore_preflight when it is available; it performs the " +
-	"repository's safety checks, one-fetch fast-forward synchronization, and index reconciliation. " +
+	"repository's safety checks, one-fetch fast-forward synchronization, and index reconciliation; " +
+	"use sync false only for an intentionally local-only repository with no remote. " +
 	"Search and read before answering or curating; use lore_read_many for a selective bounded batch " +
 	"when several likely results matter. When permitted, capture a minimally " +
 	"self-contained verbatim source unit before synthesis; preserve enough context for approvals " +
@@ -173,7 +174,11 @@ func (s *Server) preflight(ctx context.Context, _ *mcp.CallToolRequest, input Pr
 	if callResult, toolErr := s.requirePermission(auth.PermissionCurate, requestID); toolErr != nil {
 		return callResult, PreflightOutput{}, toolErr
 	}
-	result, err := s.service.Preflight(ctx, core.PreflightOptions{Sync: true, Deep: input.Deep})
+	syncRepository := true
+	if input.Sync != nil {
+		syncRepository = *input.Sync
+	}
+	result, err := s.service.Preflight(ctx, core.PreflightOptions{Sync: syncRepository, Deep: input.Deep})
 	if err != nil {
 		callResult, toolErr := mappedToolError(err, requestID)
 		return callResult, PreflightOutput{}, toolErr
@@ -185,7 +190,10 @@ func (s *Server) preflight(ctx context.Context, _ *mcp.CallToolRequest, input Pr
 		Operation:     "lore_preflight",
 		Result:        result,
 	}
-	summary := "Lore preflight is ready; the local clone is synchronized and its index is usable."
+	summary := "Lore preflight is ready; the local repository is safe and its index is usable."
+	if syncRepository {
+		summary = "Lore preflight is ready; the local clone is synchronized and its index is usable."
+	}
 	if !result.Ready {
 		summary = fmt.Sprintf("Lore preflight is blocked by %d condition(s); inspect the structured blockers before continuing.", len(result.Blockers))
 	}
@@ -1009,11 +1017,12 @@ func preflightTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "lore_preflight",
 		Title:       "Prepare local Lore session",
-		Description: "Fail closed on an unsafe local clone, fetch the configured branch once, fast-forward only when strictly behind, and reconcile the derived index. Local-full stdio only.",
+		Description: "Fail closed on an unsafe local repository and reconcile its derived index. By default, fetch the configured branch once and fast-forward only when strictly behind; set sync false only for an intentionally local-only repository with no remote. Local-full stdio only.",
 		Annotations: annotations,
 		InputSchema: objectSchema(
 			nil,
 			map[string]any{
+				"sync": map[string]any{"type": "boolean", "default": true, "description": "Synchronize from the configured Git remote. Set false only when the repository is intentionally local-only and has no remote."},
 				"deep": map[string]any{"type": "boolean", "default": false, "description": "Run full lint and index verification even when Git HEAD is unchanged."},
 			},
 		),

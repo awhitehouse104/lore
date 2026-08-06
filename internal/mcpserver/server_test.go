@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional", "lore_read_many", "patch_page"} {
+	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "sync false", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional", "lore_read_many", "patch_page"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -245,6 +245,16 @@ func TestPreflightToolReturnsStructuredBlockerAndIsLocalFullOnly(t *testing.T) {
 		if tool.Name == "lore_preflight" {
 			t.Fatal("HTTP principal was offered local preflight")
 		}
+	}
+}
+
+func TestPreflightToolSupportsIntentionalLocalOnlyRepository(t *testing.T) {
+	service := newTestService(t)
+	localSession := connectTestClient(t, service, fullPrincipal(t))
+	output := decodeOutput[PreflightOutput](t, callTool(t, localSession, "lore_preflight", map[string]any{"sync": false}))
+	if output.Status != "ready" || !output.Result.Ready || output.Result.Scope != "local" ||
+		output.Result.Remote.Checked || output.Result.Index == nil || output.Result.Index.IndexState != "fresh" {
+		t.Fatalf("local-only preflight output = %+v", output)
 	}
 }
 

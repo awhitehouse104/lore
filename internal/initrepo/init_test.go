@@ -72,6 +72,7 @@ func TestInitializeFreshRepositoryAndIdempotent(t *testing.T) {
 				"UTC metadata clock",
 				"minimum` returned with `updated_too_old`",
 				"local-full MCP `lore_preflight`",
+				"intentionally local-only repository",
 				"every repository mutation or administrative operation",
 				"routine verification and derived-index troubleshooting",
 				"tool arguments to claim or override",

@@ -108,6 +108,13 @@ agent session:
 lore --repo . preflight --sync --json
 ```
 
+For an intentionally local-only repository with no configured remote, omit
+`--sync`. Local safety, lint, and index reconciliation still run:
+
+```bash
+lore --repo . preflight --json
+```
+
 ## `capture`
 
 ```text

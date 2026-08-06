@@ -29,12 +29,16 @@ At the beginning of a writable local session, a `local-full` client should
 call `lore_preflight` once before reading or mutating knowledge. The tool is a
 local-stdio-only administrative capability: it performs the same fail-closed
 checks as `lore preflight --sync`, fetches `main` once, fast-forwards only when
-strictly behind, and reconciles the local derived index. It returns blockers as
-a successful structured result with `ready: false`, so the agent can explain
-the condition without guessing or continuing. It is structurally absent from
-HTTP and `local-query`; an agent without the tool must ask the operator to run
-the CLI preflight rather than reconstructing a weaker sequence of tool calls.
-Set `deep: true` only for an explicit full lint/index audit.
+strictly behind, and reconciles the local derived index. For an intentionally
+local-only repository with no Git remote, call it with `sync: false`; this
+performs the same operation as CLI `lore preflight` without attempting a
+fetch. Synchronization remains the default when `sync` is omitted. The tool
+returns blockers as a successful structured result with `ready: false`, so the
+agent can explain the condition without guessing or continuing. It is
+structurally absent from HTTP and `local-query`; an agent without the tool must
+ask the operator to run the corresponding CLI preflight rather than
+reconstructing a weaker sequence of tool calls. Set `deep: true` only for an
+explicit full lint/index audit.
 
 ### Codex
 
