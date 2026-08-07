@@ -91,7 +91,7 @@ func TestPreflightJSONBuildsIndexAndFailsClosedBeforeSyncWhenDirty(t *testing.T)
 	if err := json.Unmarshal(stdout.Bytes(), &ready); err != nil {
 		t.Fatal(err)
 	}
-	if !ready.Ready || ready.Scope != "local" || ready.Remote.Checked || ready.IndexAction != "built" {
+	if !ready.Ready || ready.Scope != "local" || ready.RepositoryRoot != root || ready.Remote.Checked || ready.IndexAction != "built" {
 		t.Fatalf("local preflight = %+v", ready)
 	}
 

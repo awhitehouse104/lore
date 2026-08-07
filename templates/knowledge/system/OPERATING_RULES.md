@@ -110,6 +110,11 @@ This file is the authoritative shared policy for Lore knowledge repositories.
   `lore --repo . preflight --sync --json`; stop on any blocker. Do not replace
   it with an ad hoc subset of Git, recovery, transaction, lint, or index
   checks. An agent without either interface must ask the operator to run it.
+- Before using any other Lore tool, require preflight's `repository_root` to
+  exactly match the intended current repository root. Stop and report a
+  mismatch even when the shell working tree is correct. Clients that access
+  multiple Lore repositories must give each one a unique project-scoped MCP
+  server identity; never use a writable user-global server as a fallback.
 - In an intentionally local-only repository with no Git remote, use MCP
   `lore_preflight` with `sync: false` or CLI `lore --repo . preflight --json`.
   Do not disable synchronization merely to ignore a configured remote.

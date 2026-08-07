@@ -412,6 +412,16 @@ Milestones 1–5 and the complete release matrix are finished.
   from HTTP and local-query profiles and fixes the expected branch to `main`;
   generated and MCP instructions distinguish local-only from synchronized
   writable sessions.
+- **Dogfood follow-up — fail-closed multi-repository MCP identity:** completed
+  2026-08-06. A Codex remote session demonstrated that a client can retain an
+  already-running stdio server by configured name while its selected Git
+  working directory changes. Preflight now returns and prints the canonical,
+  symlink-resolved `repository_root`; its MCP summary and server instructions
+  require agents to compare that root with the intended repository before any
+  other Lore operation. Generated policy and MCP documentation require a
+  unique project-scoped server identity for each writable Lore repository and
+  prohibit a writable user-global fallback. The preflight tool remains local
+  stdio only, so this path disclosure does not expand the HTTP surface.
 
 ## v0.4 completed milestones
 

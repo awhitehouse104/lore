@@ -43,6 +43,9 @@ const serverInstructions = "Use the configured Lore Markdown repository as evide
 	"At the start of a local stdio session, call lore_preflight when it is available; it performs the " +
 	"repository's safety checks, one-fetch fast-forward synchronization, and index reconciliation; " +
 	"use sync false only for an intentionally local-only repository with no remote. " +
+	"Before using any other Lore tool, verify that preflight's repository_root is the intended current " +
+	"repository root; stop on any mismatch. Configure each Lore repository under a unique project-scoped " +
+	"client server identity and never fall back from an intended repository to another one. " +
 	"Search and read before answering or curating; use lore_read_many for a selective bounded batch " +
 	"when several likely results matter. When permitted, capture a minimally " +
 	"self-contained verbatim source unit before synthesis; preserve enough context for approvals " +
@@ -190,12 +193,12 @@ func (s *Server) preflight(ctx context.Context, _ *mcp.CallToolRequest, input Pr
 		Operation:     "lore_preflight",
 		Result:        result,
 	}
-	summary := "Lore preflight is ready; the local repository is safe and its index is usable."
+	summary := fmt.Sprintf("Lore preflight is ready for repository %s; the local repository is safe and its index is usable.", result.RepositoryRoot)
 	if syncRepository {
-		summary = "Lore preflight is ready; the local clone is synchronized and its index is usable."
+		summary = fmt.Sprintf("Lore preflight is ready for repository %s; the local clone is synchronized and its index is usable.", result.RepositoryRoot)
 	}
 	if !result.Ready {
-		summary = fmt.Sprintf("Lore preflight is blocked by %d condition(s); inspect the structured blockers before continuing.", len(result.Blockers))
+		summary = fmt.Sprintf("Lore preflight is blocked for repository %s by %d condition(s); inspect the structured blockers before continuing.", result.RepositoryRoot, len(result.Blockers))
 	}
 	return textResult(summary), output, nil
 }

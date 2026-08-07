@@ -23,7 +23,7 @@ func TestPreflightBuildsIndexAndFastForwardsWithOneSynchronizedOperation(t *test
 	if err != nil {
 		t.Fatalf("first Preflight: %v", err)
 	}
-	if !first.Ready || first.Status != "ready" || first.Scope != "synchronized" ||
+	if !first.Ready || first.Status != "ready" || first.Scope != "synchronized" || first.RepositoryRoot != root ||
 		!first.Remote.Checked || first.Remote.Ahead != 0 || first.Remote.Behind != 0 ||
 		first.Index == nil || first.Index.IndexState != "fresh" || first.IndexAction != "built" ||
 		first.Lint == nil || !first.Lint.Valid {

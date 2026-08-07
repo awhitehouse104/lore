@@ -98,6 +98,9 @@ func printPreflightResult(s streams, result core.PreflightResult) {
 	} else {
 		fmt.Fprintf(s.out, "Lore preflight: blocked (%s)\n", result.Scope)
 	}
+	if result.RepositoryRoot != "" {
+		fmt.Fprintf(s.out, "Repository: %s\n", result.RepositoryRoot)
+	}
 	if result.Local.Branch != "" {
 		fmt.Fprintf(s.out, "Branch: %s\n", result.Local.Branch)
 	}

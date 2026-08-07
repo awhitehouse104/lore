@@ -99,10 +99,12 @@ lint. `--deep` forces lint and full index verification for an explicit audit.
 Corrupt, incompatible, uncertified, or busy index state blocks rather than
 being cleared automatically.
 
-JSON includes stable blocker codes, initial ahead/behind counts, any dirty
-paths, index action and final status, whether a fast-forward occurred, and
-per-stage timing. Use this at the beginning of a normal synchronized local
-agent session:
+JSON includes the canonical symlink-resolved `repository_root`, stable blocker
+codes, initial ahead/behind counts, any dirty paths, index action and final
+status, whether a fast-forward occurred, and per-stage timing. Human output
+prints the same root. An agent must verify that root against its intended
+working repository before using any other Lore operation. Use this at the
+beginning of a normal synchronized local agent session:
 
 ```bash
 lore --repo . preflight --sync --json

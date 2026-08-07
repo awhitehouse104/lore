@@ -46,7 +46,7 @@ func TestModernProtocolListsAndCallsReadOnlyTools(t *testing.T) {
 	if initializeResult == nil || initializeResult.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("modern negotiation result = %+v", initializeResult)
 	}
-	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "sync false", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional", "lore_read_many", "patch_page"} {
+	for _, fragment := range []string{"lore_preflight", "one-fetch fast-forward", "sync false", "repository_root", "unique project-scoped", "never fall back", "self-contained", "Every capture requires an explicit", "shared facts", "living current view", "inspect page references", "repair every live synthesized-page backlink", "Immutable source-body links", "newly supplied integration ID", "existing IDs may outlive", "same actor and interface", "each MCP principal is separate", "relative dates", "known user timezone", "preferred name", "with the user's consent", "do not solicit unrelated personal defaults", "UTC metadata", "current UTC calendar date", "Lore tools for every repository operation they support", "tool arguments", "Never downgrade a known sensitivity without explicit trusted-user direction", "Idempotency keys are optional", "lore_read_many", "patch_page"} {
 		if !strings.Contains(initializeResult.Instructions, fragment) {
 			t.Errorf("server instructions missing %q: %q", fragment, initializeResult.Instructions)
 		}
@@ -223,6 +223,7 @@ func TestPreflightToolReturnsStructuredBlockerAndIsLocalFullOnly(t *testing.T) {
 	localSession := connectTestClient(t, service, fullPrincipal(t))
 	output := decodeOutput[PreflightOutput](t, callTool(t, localSession, "lore_preflight", map[string]any{}))
 	if output.Status != "blocked" || output.Operation != "lore_preflight" || output.Result.Ready ||
+		output.Result.RepositoryRoot != service.Repo.Root ||
 		output.Result.Remote.Checked || len(output.Result.Blockers) != 1 || output.Result.Blockers[0].Code != "worktree_dirty" {
 		t.Fatalf("preflight output = %+v", output)
 	}

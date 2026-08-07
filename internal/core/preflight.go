@@ -60,20 +60,21 @@ type PreflightTiming struct {
 }
 
 type PreflightResult struct {
-	SchemaVersion int                `json:"schema_version"`
-	Status        string             `json:"status"`
-	Scope         string             `json:"scope"`
-	Ready         bool               `json:"ready"`
-	HeadBefore    string             `json:"head_before"`
-	HeadAfter     string             `json:"head_after"`
-	Local         PreflightLocal     `json:"local"`
-	Remote        PreflightRemote    `json:"remote"`
-	Lint          *lint.Result       `json:"lint,omitempty"`
-	Index         *loreindex.Status  `json:"index,omitempty"`
-	IndexAction   string             `json:"index_action"`
-	Blockers      []PreflightBlocker `json:"blockers"`
-	Timings       []PreflightTiming  `json:"timings"`
-	DurationMS    int64              `json:"duration_ms"`
+	SchemaVersion  int                `json:"schema_version"`
+	RepositoryRoot string             `json:"repository_root"`
+	Status         string             `json:"status"`
+	Scope          string             `json:"scope"`
+	Ready          bool               `json:"ready"`
+	HeadBefore     string             `json:"head_before"`
+	HeadAfter      string             `json:"head_after"`
+	Local          PreflightLocal     `json:"local"`
+	Remote         PreflightRemote    `json:"remote"`
+	Lint           *lint.Result       `json:"lint,omitempty"`
+	Index          *loreindex.Status  `json:"index,omitempty"`
+	IndexAction    string             `json:"index_action"`
+	Blockers       []PreflightBlocker `json:"blockers"`
+	Timings        []PreflightTiming  `json:"timings"`
+	DurationMS     int64              `json:"duration_ms"`
 }
 
 func (s *Service) Preflight(ctx context.Context, options PreflightOptions) (result PreflightResult, returnErr error) {
@@ -185,17 +186,20 @@ func newPreflightResult(s *Service, options PreflightOptions) PreflightResult {
 		branch = DefaultPreflightBranch
 	}
 	remote := ""
+	repositoryRoot := ""
 	if s != nil && s.Repo != nil {
 		remote = s.Repo.Config.Git.Remote
+		repositoryRoot = s.Repo.Root
 	}
 	scope := "local"
 	if options.Sync {
 		scope = "synchronized"
 	}
 	return PreflightResult{
-		SchemaVersion: SchemaVersion,
-		Status:        "blocked",
-		Scope:         scope,
+		SchemaVersion:  SchemaVersion,
+		RepositoryRoot: repositoryRoot,
+		Status:         "blocked",
+		Scope:          scope,
 		Local: PreflightLocal{
 			Changes: []PreflightChange{},
 		},

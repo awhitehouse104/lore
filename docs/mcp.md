@@ -38,58 +38,49 @@ agent can explain the condition without guessing or continuing. It is
 structurally absent from HTTP and `local-query`; an agent without the tool must
 ask the operator to run the corresponding CLI preflight rather than
 reconstructing a weaker sequence of tool calls. Set `deep: true` only for an
-explicit full lint/index audit.
+explicit full lint/index audit. Before using any other Lore tool, compare the
+returned canonical `repository_root` with the intended current repository and
+stop on any mismatch.
 
 ### Codex
 
-The current Codex configuration lives in `~/.codex/config.toml`, or in a
-trusted project's `.codex/config.toml`:
+Prefer a trusted project's `.codex/config.toml`. Give every Lore repository a
+unique MCP server identity and avoid a writable user-global Lore fallback;
+clients may retain an already-running stdio process by server identity across
+sessions.
 
 ```toml
-[mcp_servers.lore]
-command = "/usr/local/bin/lore"
-args = ["mcp", "stdio", "--repo", "/srv/lore/home", "--profile", "local-full"]
+[mcp_servers.lore_example_project]
+command = "lore"
+args = ["mcp", "stdio", "--repo", ".", "--profile", "local-full"]
+cwd = "."
+required = true
 default_tools_approval_mode = "writes"
-```
-
-Equivalent current CLI registration:
-
-```bash
-codex mcp add lore -- \
-  /usr/local/bin/lore mcp stdio \
-  --repo /srv/lore/home --profile local-full
 ```
 
 `default_tools_approval_mode = "writes"` asks for approval on mutating tools.
 Client confirmation is defense in depth: Lore independently authorizes every
-call and revalidates every write.
+call and revalidates every write. Start Codex with the repository root selected
+as the project directory, and verify `repository_root` during preflight.
 
 ### Claude Code
 
-Current Claude Code registration requires `--` before the stdio command:
-
-```bash
-claude mcp add --transport stdio --scope local lore -- \
-  /usr/local/bin/lore mcp stdio \
-  --repo /srv/lore/home --profile local-full
-```
-
-`local` scope is private to the current project. Use `--scope user` only when
-the same repository should be available from all of your projects. A
-project-scoped `.mcp.json` is shareable and therefore should contain no
-credentials:
+A project-scoped `.mcp.json` is shareable and therefore should contain no
+credentials. Give each Lore repository a unique server name; do not register a
+writable Lore repository at user scope when the client accesses more than one
+repository:
 
 ```json
 {
   "mcpServers": {
-    "lore": {
+    "lore_example_project": {
       "type": "stdio",
-      "command": "/usr/local/bin/lore",
+      "command": "lore",
       "args": [
         "mcp",
         "stdio",
         "--repo",
-        "/srv/lore/home",
+        "${CLAUDE_PROJECT_DIR:-.}",
         "--profile",
         "local-full"
       ]
@@ -97,6 +88,9 @@ credentials:
   }
 }
 ```
+
+Claude Code asks for one-time approval of a checked-in project server. Verify
+the canonical `repository_root` during preflight before continuing.
 
 ## Remote Streamable HTTP
 
