@@ -45,23 +45,45 @@ stop on any mismatch.
 ### Codex
 
 Prefer a trusted project's `.codex/config.toml`. Give every Lore repository a
-unique MCP server identity and avoid a writable user-global Lore fallback;
-clients may retain an already-running stdio process by server identity across
-sessions.
+unique MCP server identity and avoid an enabled writable user-global Lore
+fallback; clients may retain an already-running stdio process by server
+identity across sessions.
+
+Codex's persistent app server does not necessarily start in the selected
+project directory. Keep the server identity and enablement in the repository,
+but provide an absolute working directory from the machine-local user config.
+The disabled user-level definition is harmless outside the project; the
+higher-precedence project layer enables only its matching server.
+
+Machine-local `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.lore_example_project]
+command = "/absolute/path/to/lore"
+args = ["mcp", "stdio", "--repo", ".", "--profile", "local-full"]
+cwd = "/absolute/path/to/knowledge-repository"
+enabled = false
+required = true
+default_tools_approval_mode = "writes"
+```
+
+Checked-in `.codex/config.toml`:
 
 ```toml
 [mcp_servers.lore_example_project]
 command = "lore"
 args = ["mcp", "stdio", "--repo", ".", "--profile", "local-full"]
-cwd = "."
+enabled = true
 required = true
 default_tools_approval_mode = "writes"
 ```
 
 `default_tools_approval_mode = "writes"` asks for approval on mutating tools.
 Client confirmation is defense in depth: Lore independently authorizes every
-call and revalidates every write. Start Codex with the repository root selected
-as the project directory, and verify `repository_root` during preflight.
+call and revalidates every write. Do not use a relative `cwd` for a remote-
+control daemon: it can resolve from the daemon's launch directory instead of
+the selected project. Start Codex with the repository root selected as the
+project directory, and verify `repository_root` during preflight.
 
 ### Claude Code
 

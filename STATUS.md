@@ -7,6 +7,15 @@ Milestones 1–5 and the complete release matrix are finished.
 
 ## Post-v0.4 maintenance
 
+- **Repository-safe Codex MCP launch guidance:** completed 2026-08-07. Codex
+  examples now separate portable project-scoped MCP identity and enablement
+  from a machine-local absolute working directory. This accounts for the
+  persistent remote-control app server resolving a relative MCP `cwd` from its
+  own launch context, which can make a valid Lore child exit during initialize
+  or attach it to the wrong repository. Machine-local definitions remain
+  disabled outside their matching project; the trusted project layer enables
+  only its unique server identity, and preflight still verifies the canonical
+  repository root before use.
 - **Lower-friction agent reading and editing:** completed 2026-08-05. Added
   authorization-filtered MCP `lore_read_many`, which preserves request order
   while reading 1–8 independently ranged documents after one catalog scan and
